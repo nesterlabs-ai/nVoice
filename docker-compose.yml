@@ -24,6 +24,7 @@ services:
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8765
       - WEBSOCKET_SERVER=websocket_server
+      - PUBLIC_URL=${PUBLIC_URL}
       # Session Settings
       - SESSION_TIMEOUT=180
       - LOG_LEVEL=INFO
