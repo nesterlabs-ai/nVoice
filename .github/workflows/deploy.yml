@@ -81,24 +81,24 @@ jobs:
             PUBLIC=$(aws ssm get-parameter --name "/nester/PUBLIC_URL" --with-decryption --region $REGION --query "Parameter.Value" --output text)
             DOMAIN_VAL=$(aws ssm get-parameter --name "/nester/DOMAIN" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "localhost")
 
-            cat > .env << EOF
-            DEEPGRAM_API_KEY=$DEEPGRAM
-            OPENAI_API_KEY=$OPENAI
-            GOOGLE_API_KEY=$GOOGLE
-            ELEVENLABS_API_KEY=$ELEVENLABS
-            ELEVENLABS_VOICE_ID=$ELEVENLABS_VOICE
-            PINECONE_API_KEY=$PINECONE
-            PINECONE_INDEX=$PINECONE_IDX
-            PUBLIC_URL=$PUBLIC
-            DOMAIN=$DOMAIN_VAL
-            FASTAPI_HOST=0.0.0.0
-            FASTAPI_PORT=7860
-            WEBSOCKET_HOST=0.0.0.0
-            WEBSOCKET_PORT=8765
-            WEBSOCKET_SERVER=websocket_server
-            SESSION_TIMEOUT=180
-            LOG_LEVEL=INFO
-            EOF
+            cat > .env <<ENVEOF
+DEEPGRAM_API_KEY=$DEEPGRAM
+OPENAI_API_KEY=$OPENAI
+GOOGLE_API_KEY=$GOOGLE
+ELEVENLABS_API_KEY=$ELEVENLABS
+ELEVENLABS_VOICE_ID=$ELEVENLABS_VOICE
+PINECONE_API_KEY=$PINECONE
+PINECONE_INDEX=$PINECONE_IDX
+PUBLIC_URL=$PUBLIC
+DOMAIN=$DOMAIN_VAL
+FASTAPI_HOST=0.0.0.0
+FASTAPI_PORT=7860
+WEBSOCKET_HOST=0.0.0.0
+WEBSOCKET_PORT=8765
+WEBSOCKET_SERVER=websocket_server
+SESSION_TIMEOUT=180
+LOG_LEVEL=INFO
+ENVEOF
             chmod 600 .env
 
             echo "Pulling latest images..."
