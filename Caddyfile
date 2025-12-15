@@ -8,12 +8,7 @@
 #   - 123.45.67.89.nip.io (free subdomain using your IP)
 
 {$DOMAIN:localhost} {
-    # Frontend - serve static files and SPA routes
-    handle {
-        reverse_proxy frontend:80
-    }
-
-    # API endpoints - proxy to backend
+    # API endpoints - proxy to backend (MUST be before catch-all)
     handle /connect* {
         reverse_proxy backend:7860
     }
@@ -32,6 +27,11 @@
             header_up Connection {header.Connection}
             header_up Upgrade {header.Upgrade}
         }
+    }
+
+    # Frontend - catch-all for static files and SPA routes (MUST be last)
+    handle {
+        reverse_proxy frontend:80
     }
 
     # Direct WebSocket port (if needed)
