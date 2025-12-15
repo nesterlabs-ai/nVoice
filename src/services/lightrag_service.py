@@ -46,24 +46,14 @@ class LightRAGService:
         try:
             logger.info(f"LightRAG query: {query}")
             
+            # Simple payload - LightRAG API only needs query and mode
             payload = {
                 "query": query,
-                "mode": self.mode,
-                "only_need_context": False,
-                "only_need_prompt": False,
-                "response_type": "string",
-                "top_k": self.top_k,
-                "chunk_top_k": 3,
-                "max_entity_tokens": 300,  # Reduced for faster response
-                "max_relation_tokens": 300,
-                "max_total_tokens": 1000,  # Reduced for faster response
-                "stream": self.use_streaming
+                "mode": self.mode
             }
             
-            if self.use_streaming:
-                return await self._get_streaming_response(payload)
-            else:
-                return await self._get_non_streaming_response(payload)
+            # Always use non-streaming for reliability
+            return await self._get_non_streaming_response(payload)
             
         except httpx.TimeoutException:
             logger.error("LightRAG API timeout")
@@ -117,8 +107,6 @@ class LightRAGService:
 
     async def _get_non_streaming_response(self, payload: Dict[str, Any]) -> str:
         """Get response using non-streaming API."""
-        payload["stream"] = False
-        
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.api_url}/query",
