@@ -26,6 +26,13 @@
         reverse_proxy backend:8765 {
             header_up Connection {header.Connection}
             header_up Upgrade {header.Upgrade}
+            # Disable buffering for real-time streaming
+            flush_interval -1
+            # Keep connection alive for long-running sessions
+            transport http {
+                keepalive 30s
+                keepalive_idle_conns 10
+            }
         }
     }
 

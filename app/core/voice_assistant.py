@@ -202,9 +202,10 @@ class VoiceAssistant:
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
             logger.info(f"Client disconnected: {client}")
-            if self.task:
-                await self.task.cancel()
-            logger.debug("Session ended, server will accept new connections")
+            # Don't cancel task immediately - the server loop will handle cleanup
+            # and restart for new connections. Cancelling here causes issues when
+            # a replacement connection arrives (Pipecat closes old connection first)
+            logger.debug("Client disconnected, awaiting session end")
 
         logger.info("Transport handlers set up successfully")
 
