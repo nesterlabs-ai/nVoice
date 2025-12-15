@@ -11,8 +11,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
+ IMAGE_NAME: ${{ github.repository | lower }}
 jobs:
   build:
     name: Build Docker Images
@@ -98,10 +97,8 @@ jobs:
             echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u akkupratap323 --password-stdin
             
             echo "📦 Pulling pre-built images..."
-            docker pull ghcr.io/${{ github.repository }}-backend:latest
-            docker pull ghcr.io/${{ github.repository }}-frontend:latest
-            
-            echo "🔄 Updating containers..."
+    docker pull ghcr.io/${{ github.repository | lower }}-backend:latest            docker pull ghcr.io/${{ github.repository }}-frontend:latest
+    docker pull ghcr.io/${{ github.repository | lower }}-frontend:latest            echo "🔄 Updating containers..."
             docker-compose -f docker-compose.ghcr.yml down
             docker-compose -f docker-compose.ghcr.yml up -d
             
