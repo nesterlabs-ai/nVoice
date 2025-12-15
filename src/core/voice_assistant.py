@@ -8,6 +8,7 @@ import asyncio
 from typing import Dict, List, Any
 
 from loguru import logger
+from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -179,10 +180,9 @@ class VoiceAssistant:
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
             logger.info(f"Client connected: {client}")
-            # Kick off the conversation
-            context_aggregator = self.conversation_manager.get_context_aggregator()
-            await self.task.queue_frames([context_aggregator.user().get_context_frame()])
-            logger.debug("Queued initial context frame")
+            # Send a single greeting directly via TTS (not via LLM to avoid multi-sentence responses)
+            await self.task.queue_frames([TTSSpeakFrame("Hey there! How can I help you today?")])
+            logger.debug("Queued greeting frame")
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
