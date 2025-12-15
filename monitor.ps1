@@ -6,7 +6,8 @@ param(
     [string]$Service = "all"
 )
 
-$SSH_KEY = "LightsailDefaultKey-ap-south-1 (2).pem"
+# SSH Configuration - Update these paths for your system
+$SSH_KEY = Join-Path $PSScriptRoot "LightsailDefaultKey-ap-south-1 (2).pem"
 $SSH_USER = "ec2-user"
 $SSH_HOST = "3.6.64.48"
 $PROJECT_DIR = "nester-bot"

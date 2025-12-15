@@ -12,20 +12,27 @@ stt:
   provider: "deepgram"
   config:
     device: "cpu"
-    model: "nova-2"  # Better model for English accent recognition
+    model: "nova-2"  # Best Deepgram model for accuracy
     api_key: "${DEEPGRAM_API_KEY}"
-    language: "en"  # English only for better accent recognition
-    # Noise reduction settings
+    language: "en"
+    # Optimized for low latency
     smart_format: true       # Better formatting
-    endpointing: 500         # 500ms silence to end utterance
-    utterance_end_ms: 1200   # Wait before finalizing
-    no_speech_prob: 0.4      # Higher threshold for non-speech
+    endpointing: 300         # 300ms silence for faster response
+    utterance_end_ms: 1000   # Reduced for faster finalization
+    interim_results: true    # Enable streaming for lower latency
+    punctuate: true          # Better text formatting
+    filler_words: false      # Remove "um", "uh" for cleaner transcripts
 
 tts:
-  provider: "deepgram"
+  provider: "deepgram"  # Using Deepgram for cost-effectiveness
   config:
-    api_key: "${DEEPGRAM_API_KEY}"  # Same API key as STT
-    voice: "aura-asteria-en"  # Female English voice (options: aura-luna-en, aura-stella-en, aura-orion-en, aura-arcas-en, aura-helios-en, aura-zeus-en)
+    api_key: "${DEEPGRAM_API_KEY}"
+    # Aura voice options for better quality:
+    # Female: aura-asteria-en (warm), aura-luna-en (expressive), aura-stella-en (friendly)
+    # Male: aura-orion-en (deep), aura-arcas-en (calm), aura-perseus-en (authoritative)
+    voice: "aura-asteria-en"  # Warm, natural female voice
+    encoding: "linear16"      # High quality audio (16-bit PCM)
+    sample_rate: 24000        # Higher sample rate for better quality (24kHz)
 
 input_analyzer:
   custom_patterns:
@@ -58,9 +65,9 @@ server:
   fastapi_host: "0.0.0.0"
   fastapi_port: 7860
   session_timeout: 180
-  # VAD settings for background noise filtering (stricter settings)
+  # VAD settings optimized for low latency and responsiveness
   vad:
-    confidence: 0.88       # Higher = stricter speech detection (default: 0.7, range: 0.5-0.95)
-    start_secs: 0.35       # Seconds of speech needed to start (default: 0.2)
-    stop_secs: 0.5         # Seconds of silence to stop (default: 0.8)
-    min_volume: 0.78       # Minimum volume threshold (default: 0.6, range: 0.5-0.9)
+    confidence: 0.7        # Balanced for good detection without false positives
+    start_secs: 0.2        # Faster speech detection (reduced from 0.35)
+    stop_secs: 0.8         # Enough silence to avoid cutting off speech
+    min_volume: 0.6        # Lower threshold for better detection
