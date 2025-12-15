@@ -1,0 +1,66 @@
+# Voice RAG Assistant Configuration
+# This file contains the main configuration structure
+# Sensitive keys are loaded from environment variables
+
+# Language configuration
+language:
+  primary: "en"  # Primary language (en for English)
+  support_hinglish: false  # Disabled - English only
+  auto_detect: false
+
+stt:
+  provider: "deepgram"
+  config:
+    device: "cpu"
+    model: "nova-2"  # Better model for English accent recognition
+    api_key: "${DEEPGRAM_API_KEY}"
+    language: "en"  # English only for better accent recognition
+    # Noise reduction settings
+    smart_format: true       # Better formatting
+    endpointing: 500         # 500ms silence to end utterance
+    utterance_end_ms: 1200   # Wait before finalizing
+    no_speech_prob: 0.4      # Higher threshold for non-speech
+
+tts:
+  provider: "deepgram"
+  config:
+    api_key: "${DEEPGRAM_API_KEY}"  # Same API key as STT
+    voice: "aura-asteria-en"  # Female English voice (options: aura-luna-en, aura-stella-en, aura-orion-en, aura-arcas-en, aura-helios-en, aura-zeus-en)
+
+input_analyzer:
+  custom_patterns:
+    greeting:
+      - '\bgood night\b'
+      - '\bsup\b'
+    feedback:
+      - '\bawesome\b'
+      - '\bperfect\b'
+
+rag:
+  type: "lightrag"  # Using external LightRAG API
+  config:
+    api_url: "https://lightragnl.duckdns.org"  # LightRAG server
+    mode: "local"  # Query mode: local is faster than mix
+    top_k: 3  # Reduced for faster response
+    timeout: 20  # API timeout in seconds
+    use_streaming: false  # Disabled - non-streaming is more reliable
+
+conversation:
+  llm:
+    provider: "openai"  # Using OpenAI GPT
+    model: "gpt-3.5-turbo"  # Fast and cost-effective
+    api_key: "${OPENAI_API_KEY}"
+
+# Server and VAD (Voice Activity Detection) settings
+server:
+  websocket_host: "0.0.0.0"
+  websocket_port: 8765
+  fastapi_host: "0.0.0.0"
+  fastapi_port: 7860
+  session_timeout: 180
+  # VAD settings for background noise filtering (stricter settings)
+  vad:
+    confidence: 0.88       # Higher = stricter speech detection (default: 0.7, range: 0.5-0.95)
+    start_secs: 0.35       # Seconds of speech needed to start (default: 0.2)
+    stop_secs: 0.5         # Seconds of silence to stop (default: 0.8)
+    min_volume: 0.78       # Minimum volume threshold (default: 0.6, range: 0.5-0.9)
