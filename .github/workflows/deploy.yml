@@ -79,7 +79,8 @@ jobs:
             PINECONE=$(aws ssm get-parameter --name "/nester/PINECONE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
             PINECONE_IDX=$(aws ssm get-parameter --name "/nester/PINECONE_INDEX" --with-decryption --region $REGION --query "Parameter.Value" --output text)
             PUBLIC=$(aws ssm get-parameter --name "/nester/PUBLIC_URL" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            
+            DOMAIN_VAL=$(aws ssm get-parameter --name "/nester/DOMAIN" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "localhost")
+
             cat > .env << EOF
             DEEPGRAM_API_KEY=$DEEPGRAM
             OPENAI_API_KEY=$OPENAI
@@ -89,6 +90,7 @@ jobs:
             PINECONE_API_KEY=$PINECONE
             PINECONE_INDEX=$PINECONE_IDX
             PUBLIC_URL=$PUBLIC
+            DOMAIN=$DOMAIN_VAL
             FASTAPI_HOST=0.0.0.0
             FASTAPI_PORT=7860
             WEBSOCKET_HOST=0.0.0.0
@@ -98,13 +100,18 @@ jobs:
             LOG_LEVEL=INFO
             EOF
             chmod 600 .env
-            
-            echo "Restarting containers..."
-            docker-compose down || true
-            docker-compose up -d
-            
-            echo "Waiting for services..."
-            sleep 20
-            
+
+            echo "Pulling latest images..."
+            docker-compose -f docker-compose.https.yml pull || true
+
+            echo "Restarting containers with HTTPS..."
+            docker-compose -f docker-compose.https.yml down || true
+            docker-compose -f docker-compose.https.yml up -d --build
+
+            echo "Waiting for services to start..."
+            sleep 30
+
+            echo "Checking service health..."
+            docker-compose -f docker-compose.https.yml ps
+
             echo "Deployment complete!"
-            docker ps

@@ -22,6 +22,10 @@
         reverse_proxy backend:7860
     }
 
+    handle /health* {
+        reverse_proxy backend:7860
+    }
+
     # WebSocket endpoint - with proper upgrade headers
     handle /ws* {
         reverse_proxy backend:7860 {
@@ -46,9 +50,9 @@
     # Enable compression
     encode gzip
 
-    # Logging
+    # Logging - use stdout for Docker compatibility
     log {
-        output file /var/log/caddy/access.log
+        output stdout
         format console
     }
 }
