@@ -59,15 +59,46 @@ jobs:
     steps:
       - name: Deploy to Lightsail via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          PINECONE_INDEX: ${{ secrets.PINECONE_INDEX }}
+          PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: DEEPGRAM_API_KEY,OPENAI_API_KEY,GOOGLE_API_KEY,ELEVENLABS_API_KEY,ELEVENLABS_VOICE_ID,PINECONE_API_KEY,PINECONE_INDEX,PUBLIC_URL
           script: |
             cd ~/nester-bot
             
             echo "Pulling latest code..."
             git pull origin main
+            
+            echo "Creating .env from GitHub Secrets..."
+            cat > .env << EOF
+            # Auto-generated from GitHub Secrets
+            DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+            OPENAI_API_KEY=${OPENAI_API_KEY}
+            GOOGLE_API_KEY=${GOOGLE_API_KEY}
+            ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+            ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
+            PINECONE_API_KEY=${PINECONE_API_KEY}
+            PINECONE_INDEX=${PINECONE_INDEX}
+            PUBLIC_URL=${PUBLIC_URL}
+            FASTAPI_HOST=0.0.0.0
+            FASTAPI_PORT=7860
+            WEBSOCKET_HOST=0.0.0.0
+            WEBSOCKET_PORT=8765
+            WEBSOCKET_SERVER=websocket_server
+            SESSION_TIMEOUT=180
+            LOG_LEVEL=INFO
+            EOF
+            chmod 600 .env
             
             echo "Logging into GitHub Container Registry..."
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u akkupratap323 --password-stdin
