@@ -228,6 +228,17 @@ class WebsocketClientApp {
    * This sets up the RTVI client, initializes devices, and establishes the connection
    */
   public async connect(): Promise<void> {
+    // Prevent multiple connection attempts
+    if (this.isConnected || this.rtviClient) {
+      this.log('Already connected or connection in progress');
+      return;
+    }
+
+    // Disable button during connection attempt
+    if (this.connectBtn) {
+      this.connectBtn.disabled = true;
+    }
+
     try {
       const startTime = Date.now();
       const backendUrl = this.getBackendUrl();
@@ -287,6 +298,11 @@ class WebsocketClientApp {
         } catch (disconnectError) {
           this.log(`Cleanup error: ${disconnectError}`);
         }
+        this.rtviClient = null;
+      }
+      // Re-enable button on error
+      if (this.connectBtn) {
+        this.connectBtn.disabled = false;
       }
     }
   }
