@@ -59,37 +59,36 @@ jobs:
     steps:
       - name: Deploy to Lightsail via SSH
         uses: appleboy/ssh-action@v1.0.3
-        env:
-          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
-          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          PINECONE_INDEX: ${{ secrets.PINECONE_INDEX }}
-          PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: DEEPGRAM_API_KEY,OPENAI_API_KEY,GOOGLE_API_KEY,ELEVENLABS_API_KEY,ELEVENLABS_VOICE_ID,PINECONE_API_KEY,PINECONE_INDEX,PUBLIC_URL
           script: |
             cd ~/nester-bot
             
             echo "Pulling latest code..."
             git pull origin main
             
-            echo "Creating .env from GitHub Secrets..."
+            echo "Fetching secrets from AWS Parameter Store..."
+            REGION="ap-south-1"
+            DEEPGRAM=$(aws ssm get-parameter --name "/nester/DEEPGRAM_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            OPENAI=$(aws ssm get-parameter --name "/nester/OPENAI_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            GOOGLE=$(aws ssm get-parameter --name "/nester/GOOGLE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            ELEVENLABS=$(aws ssm get-parameter --name "/nester/ELEVENLABS_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            ELEVENLABS_VOICE=$(aws ssm get-parameter --name "/nester/ELEVENLABS_VOICE_ID" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            PINECONE=$(aws ssm get-parameter --name "/nester/PINECONE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            PINECONE_IDX=$(aws ssm get-parameter --name "/nester/PINECONE_INDEX" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            PUBLIC=$(aws ssm get-parameter --name "/nester/PUBLIC_URL" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            
             cat > .env << EOF
-            # Auto-generated from GitHub Secrets
-            DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
-            OPENAI_API_KEY=${OPENAI_API_KEY}
-            GOOGLE_API_KEY=${GOOGLE_API_KEY}
-            ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
-            ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
-            PINECONE_API_KEY=${PINECONE_API_KEY}
-            PINECONE_INDEX=${PINECONE_INDEX}
-            PUBLIC_URL=${PUBLIC_URL}
+            DEEPGRAM_API_KEY=$DEEPGRAM
+            OPENAI_API_KEY=$OPENAI
+            GOOGLE_API_KEY=$GOOGLE
+            ELEVENLABS_API_KEY=$ELEVENLABS
+            ELEVENLABS_VOICE_ID=$ELEVENLABS_VOICE
+            PINECONE_API_KEY=$PINECONE
+            PINECONE_INDEX=$PINECONE_IDX
+            PUBLIC_URL=$PUBLIC
             FASTAPI_HOST=0.0.0.0
             FASTAPI_PORT=7860
             WEBSOCKET_HOST=0.0.0.0
@@ -100,19 +99,12 @@ jobs:
             EOF
             chmod 600 .env
             
-            echo "Logging into GitHub Container Registry..."
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u akkupratap323 --password-stdin
-            
-            echo "Pulling pre-built images..."
-            docker pull ghcr.io/akkupratap323/nestervoiceai-backend:latest
-            docker pull ghcr.io/akkupratap323/nestervoiceai-frontend:latest
-            
-            echo "Updating containers..."
-            docker-compose -f docker-compose.ghcr.yml down || true
-            docker-compose -f docker-compose.ghcr.yml up -d
+            echo "Restarting containers..."
+            docker-compose down || true
+            docker-compose up -d
             
             echo "Waiting for services..."
-            sleep 15
+            sleep 20
             
             echo "Deployment complete!"
             docker ps
