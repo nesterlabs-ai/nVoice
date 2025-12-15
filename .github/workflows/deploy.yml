@@ -1,17 +1,13 @@
-# GitHub Actions - Build on GitHub, Deploy to Lightsail
-# Uses GitHub Container Registry (GHCR) for Docker images
-
-name: Build & Deploy
+name: Build and Deploy
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -20,10 +16,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -34,42 +27,27 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=
-            type=raw,value=latest
-
-      # Build Backend Image
       - name: Build and push Backend
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+          tags: ghcr.io/akkupratap323/nestervoiceai-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Build Frontend Image
       - name: Build and push Frontend
         uses: docker/build-push-action@v5
         with:
           context: ./client
           file: ./client/Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+          tags: ghcr.io/akkupratap323/nestervoiceai-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -77,11 +55,8 @@ jobs:
     name: Deploy to Lightsail
     runs-on: ubuntu-latest
     needs: build
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
+    steps:
       - name: Deploy to Lightsail via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -91,22 +66,22 @@ jobs:
           script: |
             cd ~/nester-bot
             
-            echo "📥 Pulling latest code..."
+            echo "Pulling latest code..."
             git pull origin main
             
-            echo "🔐 Logging into GitHub Container Registry..."
-            echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u akkupratap323 --password-stdin
+            echo "Logging into GitHub Container Registry..."
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u akkupratap323 --password-stdin
             
-            echo "📦 Pulling pre-built images..."
-            docker pull ghcr.io/${{ github.repository }}-backend:latest
-            docker pull ghcr.io/${{ github.repository }}-frontend:latest
+            echo "Pulling pre-built images..."
+            docker pull ghcr.io/akkupratap323/nestervoiceai-backend:latest
+            docker pull ghcr.io/akkupratap323/nestervoiceai-frontend:latest
             
-            echo "🔄 Updating containers..."
-            docker-compose -f docker-compose.ghcr.yml down
+            echo "Updating containers..."
+            docker-compose -f docker-compose.ghcr.yml down || true
             docker-compose -f docker-compose.ghcr.yml up -d
             
-            echo "⏳ Waiting for services..."
+            echo "Waiting for services..."
             sleep 15
             
-            echo "✅ Deployment complete!"
+            echo "Deployment complete!"
             docker ps
