@@ -52,8 +52,16 @@ class TextToSpeechService:
                 raise ValueError("Deepgram API key is required")
 
             voice = self.config.get("voice", "aura-asteria-en")
-            self.tts_service = DeepgramTTSService(api_key=api_key, voice=voice)
-            logger.info(f"Using Deepgram TTS with voice: {voice}")
+            encoding = self.config.get("encoding", "linear16")
+            sample_rate = self.config.get("sample_rate", 24000)
+
+            self.tts_service = DeepgramTTSService(
+                api_key=api_key,
+                voice=voice,
+                encoding=encoding,
+                sample_rate=sample_rate
+            )
+            logger.info(f"Using Deepgram TTS - voice: {voice}, encoding: {encoding}, sample_rate: {sample_rate}Hz")
 
         elif self.tts_provider == "elevenlabs":
             api_key = self.config.get("api_key")
@@ -74,11 +82,19 @@ class TextToSpeechService:
                 selected_voice_id = voice_id
                 logger.info(f"Using configured voice for TTS")
 
+            # Get model and latency optimization settings
+            model_id = self.config.get("model_id", "eleven_turbo_v2_5")
+            optimize_latency = self.config.get("optimize_streaming_latency", 4)
+            output_format = self.config.get("output_format", "pcm_16000")
+
             self.tts_service = ElevenLabsTTSService(
                 api_key=api_key,
                 voice_id=selected_voice_id,
-                model="eleven_multilingual_v2",
+                model=model_id,  # Use turbo model for lowest latency
+                optimize_streaming_latency=optimize_latency,  # Maximum optimization
+                output_format=output_format,  # Raw PCM for lowest latency
             )
+            logger.info(f"Using ElevenLabs TTS with model: {model_id}, latency optimization: {optimize_latency}")
 
         elif self.tts_provider == "cartesia":
             api_key = self.config.get("api_key")

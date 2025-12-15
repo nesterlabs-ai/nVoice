@@ -1,7 +1,7 @@
 # Quick Commands for NesterVoiceAI
 # Easy shortcuts for common operations
 
-$SSH_KEY = "LightsailDefaultKey-ap-south-1 (2).pem"
+$SSH_KEY = Join-Path $PSScriptRoot "LightsailDefaultKey-ap-south-1 (2).pem"
 $SSH_USER = "ec2-user"
 $SSH_HOST = "3.6.64.48"
 $PROJECT_DIR = "nester-bot"
