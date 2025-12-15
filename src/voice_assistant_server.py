@@ -1,5 +1,6 @@
 """Voice Assistant Server class for handling WebSocket connections."""
 
+import asyncio
 import os
 from typing import Dict, Any
 
@@ -11,11 +12,14 @@ from pipecat.transports.network.websocket_server import (
     WebsocketServerTransport,
 )
 
-from core.voice_assistant import VoiceAssistant
+from src.core.voice_assistant import VoiceAssistant
 
 
 class VoiceAssistantServer:
-    """Complete Voice Assistant server with FastAPI and WebSocket support."""
+    """Complete Voice Assistant server with FastAPI and WebSocket support.
+    
+    Supports multiple connect/disconnect cycles without server restart.
+    """
 
     def __init__(self, config: Dict[str, Any] = None):
         """Initialize the Voice Assistant server.
@@ -29,6 +33,7 @@ class VoiceAssistantServer:
         self._apply_server_defaults()
         self.voice_assistant = None
         self.websocket_server_transport = None
+        self._running = True
 
         logger.info("Initialized Voice Assistant Server")
 
@@ -65,14 +70,24 @@ class VoiceAssistantServer:
         audio_out_enabled = self.server_config.get("audio_out_enabled", True)
         add_wav_header = self.server_config.get("add_wav_header", False)
 
-        # Create VAD analyzer (enabled by default)
+        # Create VAD analyzer with noise-resistant settings
+        from pipecat.audio.vad.vad_analyzer import VADParams
+        
         vad_config = self.server_config.get("vad", {})
-        vad_analyzer = SileroVADAnalyzer(**vad_config)
+        # Apply noise-resistant defaults for background noise filtering
+        vad_params = VADParams(
+            confidence=vad_config.get("confidence", 0.85),      # Higher = stricter (default: 0.7)
+            start_secs=vad_config.get("start_secs", 0.3),       # Longer speech needed to start
+            stop_secs=vad_config.get("stop_secs", 0.6),         # Faster stop on silence
+            min_volume=vad_config.get("min_volume", 0.75),      # Higher volume threshold
+        )
+        vad_analyzer = SileroVADAnalyzer(params=vad_params)
+        logger.info(f"VAD configured: confidence={vad_params.confidence}, min_volume={vad_params.min_volume}, start_secs={vad_params.start_secs}")
 
         # Create transport parameters
+        # Note: host and port must be passed directly to WebsocketServerTransport constructor,
+        # not via WebsocketServerParams (which doesn't use them)
         transport_params = WebsocketServerParams(
-            host=host,
-            port=port,
             serializer=ProtobufFrameSerializer(),
             audio_in_enabled=audio_in_enabled,
             audio_out_enabled=audio_out_enabled,
@@ -81,47 +96,53 @@ class VoiceAssistantServer:
             session_timeout=session_timeout,
         )
 
-        self.websocket_server_transport = WebsocketServerTransport(params=transport_params)
+        self.websocket_server_transport = WebsocketServerTransport(
+            params=transport_params,
+            host=host,
+            port=port,
+        )
 
         logger.info(f"Created standalone WebSocket transport on {host}:{port}")
         return self.websocket_server_transport
 
     async def run_websocket_server(self) -> None:
-        """Run the standalone WebSocket server."""
+        """Run the standalone WebSocket server with reconnection support.
+        
+        This method runs in a loop to allow multiple client connections
+        without needing to restart the server.
+        """
         logger.info("Starting standalone Voice Assistant WebSocket Server...")
 
-        try:
-            # Create voice assistant
-            voice_assistant = VoiceAssistant(self.config)
+        while self._running:
+            try:
+                # Create fresh voice assistant for each session
+                voice_assistant = VoiceAssistant(self.config)
 
-            # Create transport
-            transport = self.create_websocket_transport()
+                # Create fresh transport for each session
+                transport = self.create_websocket_transport()
 
-            # Set up transport handlers
-            self.setup_websocket_transport_handlers(transport, voice_assistant)
+                # Note: Transport handlers are set up inside voice_assistant.run()
+                # Don't set up duplicate handlers here
 
-            # Run the voice assistant with the transport
-            await voice_assistant.run(transport, handle_sigint=False)
+                logger.info("Voice Assistant ready for new connection...")
+                
+                # Run the voice assistant with the transport
+                await voice_assistant.run(transport, handle_sigint=False)
 
-        except Exception as e:
-            logger.error(f"Error running standalone WebSocket Server: {e}")
-            raise
+            except asyncio.CancelledError:
+                logger.info("WebSocket server task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in WebSocket Server session: {e}")
+                # Small delay before accepting new connections
+                await asyncio.sleep(1)
+                logger.info("Restarting voice assistant for new connections...")
+                continue
+            
+            # Small delay before accepting new connections after clean disconnect
+            logger.info("Session ended, ready for new connection...")
+            await asyncio.sleep(0.5)
 
-    def setup_websocket_transport_handlers(self, transport: WebsocketServerTransport,
-                                           voice_assistant: VoiceAssistant) -> None:
-        """Set up transport event handlers for standalone WebSocket server."""
-
-        @transport.event_handler("on_client_connected")
-        async def on_client_connected(transport, client):
-            logger.info(f"Voice Assistant client connected: {client.remote_address}")
-
-        @transport.event_handler("on_client_disconnected")
-        async def on_client_disconnected(transport, client):
-            logger.info(f"Voice Assistant client disconnected: {client.remote_address}")
-
-        @transport.event_handler("on_session_timeout")
-        async def on_session_timeout(transport, client):
-            logger.info(f"Session timeout for client: {client.remote_address}")
 
     def get_server_status(self) -> Dict[str, Any]:
         """Get the status of the server and voice assistant."""

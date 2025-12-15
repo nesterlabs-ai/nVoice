@@ -8,6 +8,7 @@ from typing import Any, Dict
 from loguru import logger
 from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 
 
@@ -18,11 +19,11 @@ class TextToSpeechService:
     a clean interface for speech synthesis.
     """
 
-    def __init__(self, tts_provider: str = "elevenlabs", **kwargs):
+    def __init__(self, tts_provider: str = "deepgram", **kwargs):
         """Initialize the Text-to-Speech service.
         
         Args:
-            tts_provider: The TTS provider to use ("elevenlabs" or "cartesia")
+            tts_provider: The TTS provider to use ("deepgram", "elevenlabs", or "cartesia")
             **kwargs: Additional configuration parameters for the TTS service
         """
         self.tts_provider = tts_provider
@@ -35,7 +36,22 @@ class TextToSpeechService:
         Returns:
             The initialized TTS service instance
         """
-        if self.tts_provider == "elevenlabs":
+        if self.tts_provider == "deepgram":
+            api_key = self.config.get("api_key")
+            
+            if not api_key:
+                raise ValueError("Deepgram API key is required for deepgram provider")
+            
+            # Deepgram voice options: aura-asteria-en, aura-luna-en, aura-stella-en, aura-athena-en, aura-hera-en, aura-orion-en, aura-arcas-en, aura-perseus-en, aura-angus-en, aura-orpheus-en, aura-helios-en, aura-zeus-en
+            voice = self.config.get("voice", "aura-asteria-en")
+            
+            self.tts_service = DeepgramTTSService(
+                api_key=api_key,
+                voice=voice
+            )
+            logger.info(f"Using Deepgram TTS with voice: {voice}")
+            
+        elif self.tts_provider == "elevenlabs":
             api_key = self.config.get("api_key")
             voice_id = self.config.get("voice_id")
 

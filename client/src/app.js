@@ -28,33 +28,105 @@ class WebsocketClientApp {
     constructor() {
         this.rtviClient = null;
         this.connectBtn = null;
-        this.disconnectBtn = null;
-        this.statusSpan = null;
+        this.statusDot = null;
         this.debugLog = null;
-        console.log("WebsocketClientApp");
+        this.voiceOverlay = null;
+        this.overlayWaveContainer = null;
+        this.logToggle = null;
+        this.isConnected = false;
+        console.log("Voice Chat Initializing...");
         this.botAudio = document.createElement('audio');
         this.botAudio.autoplay = true;
-        //this.botAudio.playsInline = true;
         document.body.appendChild(this.botAudio);
         this.setupDOMElements();
         this.setupEventListeners();
+        this.initializeVisualEffects();
     }
     /**
      * Set up references to DOM elements and create necessary media elements
      */
     setupDOMElements() {
         this.connectBtn = document.getElementById('connect-btn');
-        this.disconnectBtn = document.getElementById('disconnect-btn');
-        this.statusSpan = document.getElementById('connection-status');
+        this.statusDot = document.getElementById('status-dot');
         this.debugLog = document.getElementById('debug-log');
+        this.voiceOverlay = document.getElementById('voice-overlay');
+        this.overlayWaveContainer = document.querySelector('.overlay-wave-container');
+        this.logToggle = document.getElementById('log-toggle');
     }
     /**
-     * Set up event listeners for connect/disconnect buttons
+     * Set up event listeners for interactive elements
      */
     setupEventListeners() {
         var _a, _b;
-        (_a = this.connectBtn) === null || _a === void 0 ? void 0 : _a.addEventListener('click', () => this.connect());
-        (_b = this.disconnectBtn) === null || _b === void 0 ? void 0 : _b.addEventListener('click', () => this.disconnect());
+        (_a = this.connectBtn) === null || _a === void 0 ? void 0 : _a.addEventListener('click', () => this.toggleConnection());
+        (_b = this.logToggle) === null || _b === void 0 ? void 0 : _b.addEventListener('click', () => this.toggleLog());
+    }
+    /**
+     * Initialize visual effects and animations
+     */
+    initializeVisualEffects() {
+        this.updateConnectionVisuals(false);
+    }
+    /**
+     * Toggle connection state
+     */
+    toggleConnection() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.isConnected) {
+                yield this.disconnect();
+            }
+            else {
+                yield this.connect();
+            }
+        });
+    }
+    /**
+     * Toggle log panel visibility
+     */
+    toggleLog() {
+        if (this.debugLog) {
+            this.debugLog.classList.toggle('collapsed');
+        }
+    }
+    /**
+     * Update visual elements based on connection state
+     */
+    updateConnectionVisuals(connected) {
+        this.isConnected = connected;
+        if (this.statusDot) {
+            if (connected) {
+                this.statusDot.classList.add('connected');
+            }
+            else {
+                this.statusDot.classList.remove('connected');
+            }
+        }
+        if (this.connectBtn) {
+            if (connected) {
+                this.connectBtn.classList.add('connected');
+                this.connectBtn.disabled = false;
+            }
+            else {
+                this.connectBtn.classList.remove('connected');
+                this.connectBtn.disabled = false;
+            }
+        }
+        if (this.voiceOverlay) {
+            if (connected) {
+                this.voiceOverlay.classList.add('active');
+            }
+            else {
+                this.voiceOverlay.classList.remove('active');
+            }
+        }
+        if (this.overlayWaveContainer) {
+            if (connected) {
+                this.overlayWaveContainer.classList.add('active');
+            }
+            else {
+                this.overlayWaveContainer.classList.remove('active');
+            }
+        }
     }
     /**
      * Add a timestamped message to the debug log
@@ -78,10 +150,9 @@ class WebsocketClientApp {
      * Update the connection status display
      */
     updateStatus(status) {
-        if (this.statusSpan) {
-            this.statusSpan.textContent = status;
-        }
-        this.log(`Status: ${status}`);
+        const isConnected = status === 'Connected' || status === 'Online';
+        this.updateConnectionVisuals(isConnected);
+        this.log(`Connection Status: ${status}`);
     }
     /**
      * Check for available media tracks and set them up if present
@@ -129,6 +200,24 @@ class WebsocketClientApp {
         this.botAudio.srcObject = new MediaStream([track]);
     }
     /**
+     * Get the backend URL from environment or use default
+     */
+    getBackendUrl() {
+        var _a;
+        // Check for Vite environment variable (build time)
+        // @ts-ignore - Vite injects this at build time
+        if (typeof import.meta !== 'undefined' && ((_a = import.meta.env) === null || _a === void 0 ? void 0 : _a.VITE_BACKEND_URL)) {
+            // @ts-ignore
+            return import.meta.env.VITE_BACKEND_URL;
+        }
+        // Check for window config (runtime injection)
+        if (window.__BACKEND_URL__) {
+            return window.__BACKEND_URL__;
+        }
+        // Default for local development
+        return 'http://localhost:7860';
+    }
+    /**
      * Initialize and connect to the bot
      * This sets up the RTVI client, initializes devices, and establishes the connection
      */
@@ -136,32 +225,33 @@ class WebsocketClientApp {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const startTime = Date.now();
+                const backendUrl = this.getBackendUrl();
+                this.log(`Connecting to backend: ${backendUrl}`);
                 //const transport = new DailyTransport();
                 const transport = new websocket_transport_1.WebSocketTransport();
                 const RTVIConfig = {
                     transport,
                     params: {
                         // The baseURL and endpoint of your bot server that the client will connect to
-                        baseUrl: 'http://localhost:7860',
+                        baseUrl: backendUrl,
                         endpoints: { connect: '/connect' },
                     },
                     enableMic: true,
                     enableCam: false,
+                    // Browser-based noise suppression
+                    customAudioConstraints: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                    },
                     callbacks: {
                         onConnected: () => {
                             this.updateStatus('Connected');
-                            if (this.connectBtn)
-                                this.connectBtn.disabled = true;
-                            if (this.disconnectBtn)
-                                this.disconnectBtn.disabled = false;
+                            this.log('Connection established successfully');
                         },
                         onDisconnected: () => {
                             this.updateStatus('Disconnected');
-                            if (this.connectBtn)
-                                this.connectBtn.disabled = false;
-                            if (this.disconnectBtn)
-                                this.disconnectBtn.disabled = true;
-                            this.log('Client disconnected');
+                            this.log('Connection terminated');
                         },
                         onBotReady: (data) => {
                             this.log(`Bot ready: ${JSON.stringify(data)}`);
@@ -169,7 +259,7 @@ class WebsocketClientApp {
                         },
                         onUserTranscript: (data) => {
                             if (data.final) {
-                                this.log(`User: ${data.text}`);
+                                this.log(`You: ${data.text}`);
                             }
                         },
                         onBotTranscript: (data) => this.log(`Bot: ${data.text}`),
@@ -181,21 +271,20 @@ class WebsocketClientApp {
                 this.setupTrackListeners();
                 this.log('Initializing devices...');
                 yield this.rtviClient.initDevices();
-                this.log('Connecting to bot...');
+                this.log('Connecting to server...');
                 yield this.rtviClient.connect();
                 const timeTaken = Date.now() - startTime;
-                this.log(`Connection complete, timeTaken: ${timeTaken}`);
+                this.log(`Connection established in ${timeTaken}ms`);
             }
             catch (error) {
-                this.log(`Error connecting: ${error.message}`);
+                this.log(`Connection failed: ${error.message}`);
                 this.updateStatus('Error');
-                // Clean up if there's an error
                 if (this.rtviClient) {
                     try {
                         yield this.rtviClient.disconnect();
                     }
                     catch (disconnectError) {
-                        this.log(`Error during disconnect: ${disconnectError}`);
+                        this.log(`Cleanup error: ${disconnectError}`);
                     }
                 }
             }
@@ -208,15 +297,17 @@ class WebsocketClientApp {
         return __awaiter(this, void 0, void 0, function* () {
             if (this.rtviClient) {
                 try {
+                    this.log('Disconnecting...');
                     yield this.rtviClient.disconnect();
                     this.rtviClient = null;
                     if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
                         this.botAudio.srcObject.getAudioTracks().forEach((track) => track.stop());
                         this.botAudio.srcObject = null;
                     }
+                    this.log('Disconnected successfully');
                 }
                 catch (error) {
-                    this.log(`Error disconnecting: ${error.message}`);
+                    this.log(`Disconnect error: ${error.message}`);
                 }
             }
         });

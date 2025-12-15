@@ -18,6 +18,8 @@ from src.services.conversation_manager import ConversationManager
 from src.services.input_analyzer import InputAnalyzer
 from src.services.latency_analyzer import LatencyAnalyzer
 from src.services.rag_service import RAGService
+from src.services.pinecone_rag_service import PineconeRAGService, create_rag_service
+from src.services.lightrag_service import LightRAGService, create_lightrag_service
 from src.services.speech_to_text import SpeechToTextService
 from src.services.text_to_speech import TextToSpeechService
 
@@ -78,11 +80,19 @@ class VoiceAssistant:
             custom_patterns=input_config.get("custom_patterns")
         )
 
-        # Initialize RAG Service
+        # Initialize RAG Service based on type
         rag_config = self.config.get("rag", {})
-        self.rag_service = RAGService(
-            config=rag_config
-        )
+        rag_type = rag_config.get("type", "mock")
+
+        if rag_type == "lightrag":
+            logger.info("Initializing LightRAG Service")
+            self.rag_service = create_lightrag_service(rag_config)
+        elif rag_type == "pinecone":
+            logger.info("Initializing Pinecone RAG Service with LangGraph")
+            self.rag_service = create_rag_service(rag_config)
+        else:
+            logger.info("Using mock RAG Service")
+            self.rag_service = RAGService(config=rag_config)
 
         # Initialize Conversation Manager
         conversation_config = self.config.get("conversation", {})
@@ -177,8 +187,10 @@ class VoiceAssistant:
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
             logger.info(f"Client disconnected: {client}")
-            await self.task.cancel()
-            logger.debug("Task cancelled due to client disconnect")
+            # Cancel task to end this session - server will create new instance for next connection
+            if self.task:
+                await self.task.cancel()
+            logger.debug("Session ended, server will accept new connections")
 
         logger.info("Transport handlers set up successfully")
 

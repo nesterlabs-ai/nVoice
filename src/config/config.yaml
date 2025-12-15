@@ -4,29 +4,28 @@
 
 # Language configuration
 language:
-  primary: "en"  # Primary language (en for English, hi for Hindi)
-  support_hinglish: true  # Enable Hinglish support
-  auto_detect: false  # Auto-detect language from speech
+  primary: "en"  # Primary language (en for English)
+  support_hinglish: false  # Disabled - English only
+  auto_detect: false
 
 stt:
   provider: "deepgram"
   config:
     device: "cpu"
-    model: "small"
-    no_speech_prob: 0.3
+    model: "nova-2"  # Better model for English accent recognition
     api_key: "${DEEPGRAM_API_KEY}"
-    language: "hi"
-    detect_language: False
-    support_hinglish: True
+    language: "en"  # English only for better accent recognition
+    # Noise reduction settings
+    smart_format: true       # Better formatting
+    endpointing: 500         # 500ms silence to end utterance
+    utterance_end_ms: 1200   # Wait before finalizing
+    no_speech_prob: 0.4      # Higher threshold for non-speech
 
 tts:
-  provider: "elevenlabs"
+  provider: "deepgram"
   config:
-    api_key: "${ELEVENLABS_API_KEY}"
-    voice_id: "${ELEVENLABS_VOICE_ID}"
-    language: "hi"  # Language for TTS voice
-    hinglish_voice_id: "${ELEVENLABS_HINGLISH_VOICE_ID}"
-    support_hinglish: True
+    api_key: "${DEEPGRAM_API_KEY}"  # Same API key as STT
+    voice: "aura-asteria-en"  # Female English voice (options: aura-luna-en, aura-stella-en, aura-orion-en, aura-arcas-en, aura-helios-en, aura-zeus-en)
 
 input_analyzer:
   custom_patterns:
@@ -38,10 +37,30 @@ input_analyzer:
       - '\bperfect\b'
 
 rag:
-  type: "mock"  # Replace with actual RAG system type
+  type: "lightrag"  # Using external LightRAG API
   config:
-  # Add your RAG system configuration here
+    api_url: "https://lightragnl.duckdns.org"  # LightRAG server
+    mode: "local"  # Query mode: local is faster than mix
+    top_k: 3  # Reduced for faster response
+    timeout: 20  # API timeout in seconds
+    use_streaming: false  # Disabled - non-streaming is more reliable
 
 conversation:
   llm:
-    api_key: "${GOOGLE_API_KEY}" 
+    provider: "google"  # Using Google Gemini
+    model: "gemini-1.5-flash-latest"  # Gemini 1.5 Flash
+    api_key: "${GOOGLE_API_KEY}"
+
+# Server and VAD (Voice Activity Detection) settings
+server:
+  websocket_host: "0.0.0.0"
+  websocket_port: 8765
+  fastapi_host: "0.0.0.0"
+  fastapi_port: 7860
+  session_timeout: 180
+  # VAD settings for background noise filtering (stricter settings)
+  vad:
+    confidence: 0.88       # Higher = stricter speech detection (default: 0.7, range: 0.5-0.95)
+    start_secs: 0.35       # Seconds of speech needed to start (default: 0.2)
+    stop_secs: 0.5         # Seconds of silence to stop (default: 0.8)
+    min_volume: 0.78       # Minimum volume threshold (default: 0.6, range: 0.5-0.9) 

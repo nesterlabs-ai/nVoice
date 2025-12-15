@@ -12,6 +12,7 @@ from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.services.google.llm import GoogleLLMService
+from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.services.llm_service import FunctionCallParams, LLMService
 
 from src.services.input_analyzer import InputAnalyzer
@@ -24,6 +25,30 @@ class ConversationManager:
     This class coordinates between input analysis, RAG processing, and response generation
     to provide a seamless conversational experience.
     """
+    
+    # 20 different thinking phrases that cycle linearly
+    THINKING_PHRASES = [
+        "Let me look that up.",
+        "Searching my knowledge base.",
+        "One moment please.",
+        "Let me find that for you.",
+        "Checking my sources.",
+        "Looking into that now.",
+        "Give me a second.",
+        "Searching for information.",
+        "Let me see what I can find.",
+        "One sec.",
+        "Checking the database.",
+        "Looking that up.",
+        "Let me research that.",
+        "Searching now.",
+        "Finding the answer.",
+        "Just a moment.",
+        "Let me check.",
+        "Looking for details.",
+        "Searching the knowledge base.",
+        "Finding information for you.",
+    ]
 
     def __init__(self,
                  input_analyzer: InputAnalyzer,
@@ -45,12 +70,13 @@ class ConversationManager:
         self.llm_service = None
         self.tts_service = None
         self.context_aggregator = None
+        self._thinking_phrase_index = 0  # Counter for cycling through phrases
 
         logger.info("Initialized Conversation Manager")
 
     def initialize_llm(self) -> LLMService:
         """Initialize the LLM service.
-        
+
         Returns:
             The initialized LLM service
         """
@@ -58,13 +84,38 @@ class ConversationManager:
         if not api_key:
             raise ValueError("LLM API key is required")
 
-        self.llm_service = GoogleLLMService(api_key=api_key)
+        provider = self.llm_config.get("provider", "google")
+
+        if provider == "openai":
+            model = self.llm_config.get("model", "gpt-4o")
+            self.llm_service = OpenAILLMService(
+                api_key=api_key,
+                model=model
+            )
+            logger.info(f"Initialized OpenAI LLM service with model: {model}")
+        else:
+            # Google Gemini
+            model = self.llm_config.get("model", "gemini-1.5-flash-latest")
+            self.llm_service = GoogleLLMService(
+                api_key=api_key,
+                model=model
+            )
+            logger.info(f"Initialized Google Gemini LLM service with model: {model}")
 
         # Register function handlers
         self.llm_service.register_function("call_rag_system", self._handle_rag_call)
 
-        logger.info("Initialized LLM service")
         return self.llm_service
+
+    def _get_next_thinking_phrase(self) -> str:
+        """Get the next thinking phrase in the cycle.
+        
+        Returns:
+            The next thinking phrase, cycling through the list linearly.
+        """
+        phrase = self.THINKING_PHRASES[self._thinking_phrase_index]
+        self._thinking_phrase_index = (self._thinking_phrase_index + 1) % len(self.THINKING_PHRASES)
+        return phrase
 
     def set_tts_service(self, tts_service: Any) -> None:
         """Set the TTS service for function call feedback.
@@ -79,7 +130,8 @@ class ConversationManager:
             @self.llm_service.event_handler("on_function_calls_started")
             async def on_function_calls_started(service, function_calls):
                 if self.tts_service:
-                    await self.tts_service.queue_frame(TTSSpeakFrame("Let me check on that."))
+                    phrase = self._get_next_thinking_phrase()
+                    await self.tts_service.queue_frame(TTSSpeakFrame(phrase))
 
             @self.llm_service.event_handler("on_function_calls_finished")
             async def on_function_calls_finished(service, function_calls):
@@ -134,48 +186,34 @@ class ConversationManager:
         support_hinglish = self.language_config.get("support_hinglish", False)
         primary_language = self.language_config.get("primary", "en")
 
-        if support_hinglish:
-            system_message = """
-                You are a helpful AI assistant that can understand and respond in both English and Hinglish (Hindi-English mix).
-                RESPOND DIRECTLY for: greetings, how are you, thank you, goodbye (in English or Hinglish)
-                USE call_rag_system for: questions about specific topics, facts, or complex information.
-    
-                CRITICAL: When you receive function results, you MUST use that information as your primary source. 
-                Never ignore function results. Always base your response on the function output.
-                If call_rag_system returns information, use it directly - do not generate your own answer.
+        # English-only concise responses
+        system_message = """
+You are a helpful AI voice assistant. Keep responses SHORT and CONCISE - ideal for voice conversation.
 
-                LANGUAGE GUIDELINES:
-                - You can understand both English and Hinglish inputs
-                - Respond in the same language style the user uses
-                - If user speaks in Hinglish, feel free to respond in Hinglish
-                - Common Hinglish phrases: "weather kaisa h?", "aaj rainy weather h", "Handsome dikh rhe ho", "aaj i am feeling awesome" etc.
-                - Mix Hindi and English naturally when appropriate
+RESPONSE RULES:
+- Keep answers to 1-3 sentences maximum
+- Be direct and to the point
+- Speak naturally in conversational English
+- RESPOND DIRECTLY for: greetings, how are you, thank you, goodbye
+- USE call_rag_system for: questions about specific topics, facts, or information
 
-                HINGLISH to ENGLISH TRANSLATION FOR RAG:
-                - When calling call_rag_system, ALWAYS translate Hinglish questions to clear English first
-                - Examples:
-                  * "weather kaisa h?" → "What is the weather like?"
-                  * "aaj rainy weather h kya?" → "Is it rainy weather today?"
-                  * "mujhe kaam ke baare mein batao" → "Tell me about work"
-                  * "office mein meeting kab h?" → "When is the meeting in the office?"
-                - Ensure the English translation captures the full meaning and context
-                - Use proper English grammar and vocabulary for RAG queries
-                - You can convert RAG response to hinglish if user is communicating in hinglish
-    
-                
-            """
-            initial_prompt = """Be conversational and start with "Hey there! Kya haal hai?" when greeting."""
-        else:
-            system_message = """
-                You are a helpful AI assistant.
-                RESPOND DIRECTLY for: greetings, how are you, thank you, goodbye
-                USE call_rag_system for: questions about specific topics, facts, or complex information.
-    
-                CRITICAL: When you receive function results, you MUST use that information as your primary source. 
-                Never ignore function results. Always base your response on the function output.
-                If call_rag_system returns information, use it directly - do not generate your own answer.
-            """
-            initial_prompt = "Start a conversation with 'Hey there' and be ready to help answer questions."
+CRITICAL RAG RULES:
+- When you receive function results, summarize the key points BRIEFLY
+- Extract only the most relevant information from RAG results
+- Never give long explanations - keep it conversational
+- If RAG returns detailed info, pick the 2-3 most important points only
+
+EXAMPLE GOOD RESPONSES:
+- "Nester Labs is a GenAI studio that helps companies build LLM-powered products, focusing on RAG and agentic AI workflows."
+- "They specialize in end-to-end AI product development, from design to production."
+
+AVOID:
+- Long paragraphs
+- Listing many bullet points
+- Repeating information
+- Overly formal language
+        """
+        initial_prompt = "Start with 'Hey there! How can I help you today?' and be ready to answer questions concisely."
 
         messages = [
             {"role": "system", "content": system_message},

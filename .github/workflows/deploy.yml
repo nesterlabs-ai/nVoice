@@ -1,0 +1,41 @@
+# GitHub Actions - Auto Deploy to Lightsail
+# Triggers on push to main branch
+
+name: Deploy to Lightsail
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Lightsail via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/nester-bot
+            
+            echo "📥 Pulling latest code..."
+            git pull origin main
+            
+            echo "🔨 Rebuilding and restarting containers..."
+            docker-compose down
+            docker-compose up -d --build
+            
+            echo "⏳ Waiting for services to start..."
+            sleep 20
+            
+            echo "✅ Deployment complete!"
+            docker ps
+

@@ -14,9 +14,9 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from config.config import get_assistant_config
-from core.voice_assistant import VoiceAssistant
-from voice_assistant_server import VoiceAssistantServer
+from src.config.config import get_assistant_config
+from src.core.voice_assistant import VoiceAssistant
+from src.voice_assistant_server import VoiceAssistantServer
 
 # Global server instance
 voice_assistant_server = VoiceAssistantServer()
@@ -84,7 +84,15 @@ async def bot_connect(request: Request) -> Dict[Any, Any]:
     """Connect endpoint that returns the appropriate WebSocket URL."""
     server_mode = os.getenv("WEBSOCKET_SERVER", "fast_api")
 
-    if server_mode == "websocket_server":
+    # Check if PUBLIC_URL is set (for production behind reverse proxy)
+    public_url = os.getenv("PUBLIC_URL", "")
+
+    if public_url:
+        # Use the configured public URL for production
+        ws_scheme = "wss" if public_url.startswith("https") else "ws"
+        public_host = public_url.replace("https://", "").replace("http://", "").rstrip("/")
+        ws_url = f"{ws_scheme}://{public_host}/ws"
+    elif server_mode == "websocket_server":
         # Return standalone WebSocket server URL
         host = voice_assistant_server.server_config.get("websocket_host", "localhost")
         port = voice_assistant_server.server_config.get("websocket_port", 8765)

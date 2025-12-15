@@ -206,12 +206,32 @@ class WebsocketClientApp {
   }
 
   /**
+   * Get the backend URL from environment or use default
+   */
+  private getBackendUrl(): string {
+    // Check for Vite environment variable (build time)
+    // @ts-ignore - Vite injects this at build time
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) {
+      // @ts-ignore
+      return import.meta.env.VITE_BACKEND_URL;
+    }
+    // Check for window config (runtime injection)
+    if ((window as any).__BACKEND_URL__) {
+      return (window as any).__BACKEND_URL__;
+    }
+    // Default for local development
+    return 'http://localhost:7860';
+  }
+
+  /**
    * Initialize and connect to the bot
    * This sets up the RTVI client, initializes devices, and establishes the connection
    */
   public async connect(): Promise<void> {
     try {
       const startTime = Date.now();
+      const backendUrl = this.getBackendUrl();
+      this.log(`Connecting to backend: ${backendUrl}`);
 
       //const transport = new DailyTransport();
       const transport = new WebSocketTransport();
@@ -219,7 +239,7 @@ class WebsocketClientApp {
         transport,
         params: {
           // The baseURL and endpoint of your bot server that the client will connect to
-          baseUrl: 'http://localhost:7860',
+          baseUrl: backendUrl,
           endpoints: { connect: '/connect' },
         },
         enableMic: true,

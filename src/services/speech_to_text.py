@@ -99,9 +99,19 @@ class SpeechToTextService:
             language = self.config.get("language", "en")
             detect_language = self.config.get("detect_language", False)
 
-            # Configure LiveOptions for Deepgram
+            # Configure LiveOptions for Deepgram with noise filtering
+            model = self.config.get("model", "nova-2")
             live_options_config = {
-                "model": "nova-3"
+                "model": model,
+                # Smart formatting and noise features
+                "smart_format": self.config.get("smart_format", True),
+                "filler_words": self.config.get("filler_words", False),  # Filter out "um", "uh"
+                "punctuate": self.config.get("punctuate", True),
+                # Endpointing for better noise handling
+                "endpointing": self.config.get("endpointing", 500),  # 500ms silence to end
+                "utterance_end_ms": self.config.get("utterance_end_ms", 1200),  # Wait before finalizing
+                "interim_results": self.config.get("interim_results", True),
+                "vad_events": self.config.get("vad_events", True),  # Enable VAD events
             }
             if detect_language:
                 live_options_config["detect_language"] = True
@@ -114,8 +124,9 @@ class SpeechToTextService:
                         "hi": Language.HI
                     }
                     live_options_config["language"] = language_mapping.get(language, Language.EN)
+            
             live_options = LiveOptions(**live_options_config)
-            print(live_options)
+            logger.info(f"Deepgram LiveOptions: smart_format={live_options_config['smart_format']}, endpointing={live_options_config['endpointing']}ms")
 
             # Create normalized Deepgram STT service
             self.stt_service = TextNormalizedDeepgramSTTService(

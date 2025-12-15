@@ -93,9 +93,16 @@ def get_assistant_config() -> Dict[str, Any]:
     # Validate that required API keys are set
     required_keys = [
         ("tts.config.api_key", config.get("tts", {}).get("config", {}).get("api_key")),
-        ("tts.config.voice_id", config.get("tts", {}).get("config", {}).get("voice_id")),
         ("conversation.llm.api_key", config.get("conversation", {}).get("llm", {}).get("api_key"))
     ]
+    
+    # Check for voice config based on TTS provider
+    tts_provider = config.get("tts", {}).get("provider", "deepgram")
+    if tts_provider == "elevenlabs":
+        required_keys.append(("tts.config.voice_id", config.get("tts", {}).get("config", {}).get("voice_id")))
+    elif tts_provider == "deepgram":
+        # Deepgram uses 'voice' instead of 'voice_id', and has a default
+        pass  # voice has a default value in config
 
     missing_keys = []
     for key_path, value in required_keys:
