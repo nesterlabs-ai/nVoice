@@ -213,14 +213,10 @@ AVOID:
 - Repeating information
 - Overly formal language
         """
-        initial_prompt = "Start with 'Hey there! How can I help you today?' and be ready to answer questions concisely."
-
+        # No initial user prompt - greeting is handled via direct TTS
+        # This prevents the LLM from generating a multi-sentence greeting
         messages = [
             {"role": "system", "content": system_message},
-            {
-                "role": "user",
-                "content": initial_prompt
-            }
         ]
 
         context = OpenAILLMContext(messages, tools)
