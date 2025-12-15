@@ -2,8 +2,6 @@
 # Fetch secrets from AWS Parameter Store and create .env file
 # Run this on the Lightsail server during deployment
 
-set -e
-
 ENV_FILE="${1:-/home/ec2-user/nester-bot/.env}"
 REGION="ap-south-1"
 
@@ -15,28 +13,17 @@ if ! command -v aws &> /dev/null; then
     exit 1
 fi
 
-# Function to get a parameter
-get_param() {
-    local name=$1
-    aws ssm get-parameter \
-        --name "/nester/$name" \
-        --with-decryption \
-        --region $REGION \
-        --query "Parameter.Value" \
-        --output text 2>/dev/null || echo ""
-}
-
 echo "📥 Downloading secrets..."
 
-# Fetch all parameters
-DEEPGRAM_API_KEY=$(get_param "DEEPGRAM_API_KEY")
-OPENAI_API_KEY=$(get_param "OPENAI_API_KEY")
-GOOGLE_API_KEY=$(get_param "GOOGLE_API_KEY")
-ELEVENLABS_API_KEY=$(get_param "ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID=$(get_param "ELEVENLABS_VOICE_ID")
-PINECONE_API_KEY=$(get_param "PINECONE_API_KEY")
-PINECONE_INDEX=$(get_param "PINECONE_INDEX")
-PUBLIC_URL=$(get_param "PUBLIC_URL")
+# Fetch all parameters directly (more reliable)
+DEEPGRAM_API_KEY=$(aws ssm get-parameter --name "/nester/DEEPGRAM_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
+OPENAI_API_KEY=$(aws ssm get-parameter --name "/nester/OPENAI_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
+GOOGLE_API_KEY=$(aws ssm get-parameter --name "/nester/GOOGLE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
+ELEVENLABS_API_KEY=$(aws ssm get-parameter --name "/nester/ELEVENLABS_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
+ELEVENLABS_VOICE_ID=$(aws ssm get-parameter --name "/nester/ELEVENLABS_VOICE_ID" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
+PINECONE_API_KEY=$(aws ssm get-parameter --name "/nester/PINECONE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
+PINECONE_INDEX=$(aws ssm get-parameter --name "/nester/PINECONE_INDEX" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
+PUBLIC_URL=$(aws ssm get-parameter --name "/nester/PUBLIC_URL" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
 
 # Create .env file
 echo "📝 Creating $ENV_FILE..."
