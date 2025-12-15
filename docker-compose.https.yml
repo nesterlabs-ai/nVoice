@@ -8,7 +8,7 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: nester-caddy
-    restart: unless-stopped
+    restart: always
     ports:
       - "80:80"      # HTTP (redirects to HTTPS)
       - "443:443"    # HTTPS
@@ -18,6 +18,12 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data        # SSL certificates
       - caddy_config:/config    # Caddy config
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+        reservations:
+          memory: 20M
     depends_on:
       backend:
         condition: service_healthy
@@ -52,13 +58,19 @@ services:
       - LOG_LEVEL=INFO
     volumes:
       - ./data:/app/data
-    restart: unless-stopped
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 400M
+        reservations:
+          memory: 200M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 10s
+      retries: 5
+      start_period: 40s
     networks:
       - nester-network
 
@@ -73,10 +85,16 @@ services:
       - "80"
     environment:
       - BACKEND_URL=${PUBLIC_URL}
+    deploy:
+      resources:
+        limits:
+          memory: 50M
+        reservations:
+          memory: 10M
     depends_on:
       backend:
         condition: service_healthy
-    restart: unless-stopped
+    restart: always
     networks:
       - nester-network
 
