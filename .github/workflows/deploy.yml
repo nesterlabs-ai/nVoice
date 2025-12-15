@@ -81,25 +81,26 @@ jobs:
             PUBLIC=$(aws ssm get-parameter --name "/nester/PUBLIC_URL" --with-decryption --region $REGION --query "Parameter.Value" --output text)
             DOMAIN_VAL=$(aws ssm get-parameter --name "/nester/DOMAIN" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "localhost")
 
-            cat > .env <<ENVEOF
-DEEPGRAM_API_KEY=$DEEPGRAM
-OPENAI_API_KEY=$OPENAI
-GOOGLE_API_KEY=$GOOGLE
-ELEVENLABS_API_KEY=$ELEVENLABS
-ELEVENLABS_VOICE_ID=$ELEVENLABS_VOICE
-PINECONE_API_KEY=$PINECONE
-PINECONE_INDEX=$PINECONE_IDX
-PUBLIC_URL=$PUBLIC
-DOMAIN=$DOMAIN_VAL
-FASTAPI_HOST=0.0.0.0
-FASTAPI_PORT=7860
-WEBSOCKET_HOST=0.0.0.0
-WEBSOCKET_PORT=8765
-WEBSOCKET_SERVER=websocket_server
-SESSION_TIMEOUT=180
-LOG_LEVEL=INFO
-ENVEOF
+            echo "DEEPGRAM_API_KEY=$DEEPGRAM" > .env
+            echo "OPENAI_API_KEY=$OPENAI" >> .env
+            echo "GOOGLE_API_KEY=$GOOGLE" >> .env
+            echo "ELEVENLABS_API_KEY=$ELEVENLABS" >> .env
+            echo "ELEVENLABS_VOICE_ID=$ELEVENLABS_VOICE" >> .env
+            echo "PINECONE_API_KEY=$PINECONE" >> .env
+            echo "PINECONE_INDEX=$PINECONE_IDX" >> .env
+            echo "PUBLIC_URL=$PUBLIC" >> .env
+            echo "DOMAIN=$DOMAIN_VAL" >> .env
+            echo "FASTAPI_HOST=0.0.0.0" >> .env
+            echo "FASTAPI_PORT=7860" >> .env
+            echo "WEBSOCKET_HOST=0.0.0.0" >> .env
+            echo "WEBSOCKET_PORT=8765" >> .env
+            echo "WEBSOCKET_SERVER=websocket_server" >> .env
+            echo "SESSION_TIMEOUT=180" >> .env
+            echo "LOG_LEVEL=INFO" >> .env
             chmod 600 .env
+
+            echo "Created .env with DOMAIN=$DOMAIN_VAL"
+            cat .env | grep DOMAIN
 
             echo "Pulling latest images..."
             docker-compose -f docker-compose.https.yml pull || true
