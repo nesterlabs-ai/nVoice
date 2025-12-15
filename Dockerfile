@@ -26,8 +26,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code (new industry-standard structure)
+# Copy application code
+# Include both app/ (new structure) and src/ (legacy) for compatibility
 COPY app/ ./app/
+COPY src/ ./src/
 COPY data/ ./data/
 COPY scripts/ ./scripts/
 
