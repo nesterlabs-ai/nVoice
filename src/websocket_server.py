@@ -113,6 +113,12 @@ async def get_status() -> Dict[str, Any]:
     return voice_assistant_server.get_server_status()
 
 
+@app.get("/health")
+async def health_check() -> Dict[str, str]:
+    """Health check endpoint for load balancers and monitoring."""
+    return {"status": "healthy"}
+
+
 async def main():
     """Main function to run the appropriate server mode."""
     server_mode = os.getenv("WEBSOCKET_SERVER", "fast_api")
