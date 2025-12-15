@@ -21,9 +21,9 @@
         reverse_proxy backend:7860
     }
 
-    # WebSocket endpoint - with proper upgrade headers
+    # WebSocket endpoint - route to Pipecat WebSocket server (port 8765)
     handle /ws* {
-        reverse_proxy backend:7860 {
+        reverse_proxy backend:8765 {
             header_up Connection {header.Connection}
             header_up Upgrade {header.Upgrade}
         }
