@@ -1,17 +1,82 @@
-# GitHub Actions - Auto Deploy to Lightsail
-# Triggers on push to main branch
+# GitHub Actions - Build on GitHub, Deploy to Lightsail
+# Uses GitHub Container Registry (GHCR) for Docker images
 
-name: Deploy to Lightsail
+name: Build & Deploy
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:  # Manual trigger
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  deploy:
+  build:
+    name: Build Docker Images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      # Build Backend Image
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build Frontend Image
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client
+          file: ./client/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Lightsail
+    runs-on: ubuntu-latest
+    needs: build
     
     steps:
       - name: Checkout code
@@ -29,13 +94,19 @@ jobs:
             echo "📥 Pulling latest code..."
             git pull origin main
             
-            echo "🔨 Rebuilding and restarting containers..."
-            docker-compose down
-            docker-compose up -d --build
+            echo "🔐 Logging into GitHub Container Registry..."
+            echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u akkupratap323 --password-stdin
             
-            echo "⏳ Waiting for services to start..."
-            sleep 20
+            echo "📦 Pulling pre-built images..."
+            docker pull ghcr.io/${{ github.repository }}-backend:latest
+            docker pull ghcr.io/${{ github.repository }}-frontend:latest
+            
+            echo "🔄 Updating containers..."
+            docker-compose -f docker-compose.ghcr.yml down
+            docker-compose -f docker-compose.ghcr.yml up -d
+            
+            echo "⏳ Waiting for services..."
+            sleep 15
             
             echo "✅ Deployment complete!"
             docker ps
-
