@@ -28,11 +28,11 @@ tts:
   config:
     api_key: "${DEEPGRAM_API_KEY}"
     # Aura 2 voices - Latest generation with better quality
-    # Female: aura-asteria-en, aura-luna-en, aura-stella-en, aura-athena-en, aura-hera-en
-    # Male: aura-orion-en, aura-arcas-en, aura-perseus-en, aura-angus-en, aura-orpheus-en, aura-helios-en, aura-zeus-en
-    voice: "aura-asteria-en"    # Warm, natural female voice
-    encoding: "linear16"         # High quality audio (16-bit PCM, L16 format)
-    sample_rate: 24000           # 24kHz sample rate for better quality
+    # Female: aura-2-athena-en (natural), aura-2-hera-en (expressive), aura-2-stella-en (friendly)
+    # Male: aura-2-zeus-en (authoritative), aura-2-orion-en (deep), aura-2-arcas-en (calm)
+    voice: "aura-2-athena-en"    # Aura 2.0 - Natural, clear female voice
+    encoding: "linear16"          # High quality audio (16-bit PCM, L16 format)
+    sample_rate: 24000            # 24kHz sample rate for better quality
 
 input_analyzer:
   custom_patterns:
