@@ -27,9 +27,10 @@ tts:
   provider: "deepgram"  # Using Deepgram for cost-effectiveness
   config:
     api_key: "${DEEPGRAM_API_KEY}"
-    # Nova 3 TTS - Latest and most natural-sounding model
-    # Available voices: https://developers.deepgram.com/docs/tts-models#nova-3
-    model: "aura-nova-3-en"     # Nova 3: Most advanced, human-like voice
+    # Aura 2 voices - Latest generation with better quality
+    # Female: aura-asteria-en, aura-luna-en, aura-stella-en, aura-athena-en, aura-hera-en
+    # Male: aura-orion-en, aura-arcas-en, aura-perseus-en, aura-angus-en, aura-orpheus-en, aura-helios-en, aura-zeus-en
+    voice: "aura-asteria-en"    # Warm, natural female voice
     encoding: "linear16"         # High quality audio (16-bit PCM, L16 format)
     sample_rate: 24000           # 24kHz sample rate for better quality
 
