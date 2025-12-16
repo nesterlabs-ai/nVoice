@@ -78,6 +78,7 @@ jobs:
             ELEVENLABS_VOICE=$(aws ssm get-parameter --name "/nester/ELEVENLABS_VOICE_ID" --with-decryption --region $REGION --query "Parameter.Value" --output text)
             PINECONE=$(aws ssm get-parameter --name "/nester/PINECONE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
             PINECONE_IDX=$(aws ssm get-parameter --name "/nester/PINECONE_INDEX" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            LIGHTRAG=$(aws ssm get-parameter --name "/nester/LIGHTRAG_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
             PUBLIC=$(aws ssm get-parameter --name "/nester/PUBLIC_URL" --with-decryption --region $REGION --query "Parameter.Value" --output text)
             DOMAIN_VAL=$(aws ssm get-parameter --name "/nester/DOMAIN" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "localhost")
 
@@ -88,6 +89,7 @@ jobs:
             echo "ELEVENLABS_VOICE_ID=$ELEVENLABS_VOICE" >> .env
             echo "PINECONE_API_KEY=$PINECONE" >> .env
             echo "PINECONE_INDEX=$PINECONE_IDX" >> .env
+            echo "LIGHTRAG_API_KEY=$LIGHTRAG" >> .env
             echo "PUBLIC_URL=$PUBLIC" >> .env
             echo "DOMAIN=$DOMAIN_VAL" >> .env
             echo "FASTAPI_HOST=0.0.0.0" >> .env
