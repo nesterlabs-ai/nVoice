@@ -104,6 +104,7 @@ class LightRAGService(BaseRAGService):
         """
         self.config = config or {}
         self.api_url = self.config.get("api_url", "http://localhost:9621")
+        self.api_key = self.config.get("api_key", "")
         self.mode = self.config.get("mode", "mix")
         self.top_k = self.config.get("top_k", 5)
         self.timeout = self.config.get("timeout", 30)
@@ -124,14 +125,18 @@ class LightRAGService(BaseRAGService):
 
             payload = {"query": query, "mode": self.mode}
 
+            headers = {
+                "Content-Type": "application/json",
+                "ngrok-skip-browser-warning": "true",
+            }
+            if self.api_key:
+                headers["X-API-Key"] = self.api_key
+
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
                     f"{self.api_url}/query",
                     json=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "ngrok-skip-browser-warning": "true",
-                    },
+                    headers=headers,
                 )
                 response.raise_for_status()
                 result = response.json()
