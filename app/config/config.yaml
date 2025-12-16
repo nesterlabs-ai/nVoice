@@ -56,7 +56,7 @@ rag:
 conversation:
   llm:
     provider: "google"  # Using Google Gemini
-    model: "gemini-2.0-flash-exp"  # Gemini 2.0 Flash Experimental
+    model: "gemini-2.5-flash"  # Gemini 2.5 Flash - working with API key
     api_key: "${GOOGLE_API_KEY}"
 
 # Server and VAD (Voice Activity Detection) settings
