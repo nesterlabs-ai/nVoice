@@ -12,7 +12,7 @@ stt:
   provider: "deepgram"
   config:
     device: "cpu"
-    model: "nova-2"  # Best Deepgram model for accuracy
+    model: "nova-3"  # Nova 3 - Latest and most accurate Deepgram STT model
     api_key: "${DEEPGRAM_API_KEY}"
     language: "en"
     # Optimized for low latency
