@@ -70,6 +70,9 @@ class VoiceAssistant:
         self.rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
         self.latency_analyzer = LatencyAnalyzer()
 
+        # Track if greeting has been sent
+        self._greeting_sent = False
+
         logger.info("Initialized Voice Assistant")
 
     def initialize_services(self) -> None:
@@ -196,12 +199,19 @@ class VoiceAssistant:
         async def on_client_connected(transport, client):
             logger.info(f"Client connected: {client}")
             # Send a single greeting directly via TTS (not via LLM to avoid multi-sentence responses)
-            await self.task.queue_frames([TTSSpeakFrame("Hey there! How can I help you today?")])
-            logger.debug("Queued greeting frame")
+            # Only send greeting once per session
+            if not self._greeting_sent:
+                await self.task.queue_frames([TTSSpeakFrame("Hey there! How can I help you today?")])
+                self._greeting_sent = True
+                logger.debug("Queued greeting frame")
+            else:
+                logger.debug("Greeting already sent, skipping")
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
             logger.info(f"Client disconnected: {client}")
+            # Reset greeting flag for next client
+            self._greeting_sent = False
             # Don't cancel task immediately - the server loop will handle cleanup
             # and restart for new connections. Cancelling here causes issues when
             # a replacement connection arrives (Pipecat closes old connection first)
