@@ -204,9 +204,14 @@ class VoiceAssistant:
             current_time = time.time()
             if current_time - self._greeting_sent_at > 5:
                 self._greeting_sent_at = current_time
-                # Queue greeting
-                await self.task.queue_frames([TTSSpeakFrame("Hey there! How can I help you today?")])
-                logger.debug("Queued greeting frame")
+                # Queue greeting with StartInterruptionFrame to prevent reprocessing
+                from pipecat.frames.frames import StartInterruptionFrame, EndInterruptionFrame
+                await self.task.queue_frames([
+                    StartInterruptionFrame(),
+                    TTSSpeakFrame("Hey there! How can I help you today?"),
+                    EndInterruptionFrame()
+                ])
+                logger.debug("Queued greeting frame with interruption markers")
             else:
                 logger.debug("Greeting already sent recently, skipping")
 
