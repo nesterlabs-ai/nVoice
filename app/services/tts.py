@@ -51,17 +51,22 @@ class TextToSpeechService:
             if not api_key:
                 raise ValueError("Deepgram API key is required")
 
+            # Support both 'model' (Nova 3) and 'voice' (Aura) parameters
+            model = self.config.get("model")
             voice = self.config.get("voice", "aura-asteria-en")
             encoding = self.config.get("encoding", "linear16")
             sample_rate = self.config.get("sample_rate", 24000)
 
+            # Use model if provided, otherwise use voice
+            voice_or_model = model if model else voice
+
             self.tts_service = DeepgramTTSService(
                 api_key=api_key,
-                voice=voice,
+                voice=voice_or_model,
                 encoding=encoding,
                 sample_rate=sample_rate
             )
-            logger.info(f"Using Deepgram TTS - voice: {voice}, encoding: {encoding}, sample_rate: {sample_rate}Hz")
+            logger.info(f"Using Deepgram TTS - model: {voice_or_model}, encoding: {encoding}, sample_rate: {sample_rate}Hz")
 
         elif self.tts_provider == "elevenlabs":
             api_key = self.config.get("api_key")
