@@ -27,12 +27,13 @@ tts:
   provider: "deepgram"  # Using Deepgram for cost-effectiveness
   config:
     api_key: "${DEEPGRAM_API_KEY}"
-    # Aura voice options for better quality:
-    # Female: aura-asteria-en (warm), aura-luna-en (expressive), aura-stella-en (friendly)
-    # Male: aura-orion-en (deep), aura-arcas-en (calm), aura-perseus-en (authoritative)
-    voice: "aura-asteria-en"  # Warm, natural female voice
-    encoding: "linear16"      # High quality audio (16-bit PCM)
-    sample_rate: 24000        # Higher sample rate for better quality (24kHz)
+    # Aura 2.0 voices (newer generation, better quality):
+    # Female: aura-2-athena-en (natural), aura-2-hera-en (expressive), aura-2-stella-en (friendly)
+    # Male: aura-2-zeus-en (authoritative), aura-2-orion-en (deep), aura-2-arcas-en (calm)
+    # Legacy Aura 1.0: aura-asteria-en, aura-luna-en, aura-orion-en
+    voice: "aura-2-athena-en"  # Aura 2.0: Natural, clear female voice
+    encoding: "linear16"        # High quality audio (16-bit PCM, L16 format)
+    sample_rate: 24000          # 24kHz sample rate for better quality
 
 input_analyzer:
   custom_patterns:
