@@ -46,7 +46,8 @@ input_analyzer:
 rag:
   type: "lightrag"  # Using external LightRAG API
   config:
-    api_url: "https://lightragnl.duckdns.org"  # LightRAG server
+    api_url: "http://16.170.172.18"  # LightRAG server
+    api_key: "${LIGHTRAG_API_KEY}"  # API key for authentication
     mode: "local"  # Query mode: local is faster than mix
     top_k: 3  # Reduced for faster response
     timeout: 20  # API timeout in seconds
@@ -55,7 +56,7 @@ rag:
 conversation:
   llm:
     provider: "google"  # Using Google Gemini
-    model: "gemini-1.5-flash-latest"  # Gemini 1.5 Flash - 1500 requests/day free tier
+    model: "gemini-2.0-flash-exp"  # Gemini 2.0 Flash Experimental
     api_key: "${GOOGLE_API_KEY}"
 
 # Server and VAD (Voice Activity Detection) settings
