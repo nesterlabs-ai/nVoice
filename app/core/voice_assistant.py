@@ -70,8 +70,8 @@ class VoiceAssistant:
         self.rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
         self.latency_analyzer = LatencyAnalyzer()
 
-        # Track if greeting has been sent
-        self._greeting_sent = False
+        # Track if greeting has been sent (with timestamp to prevent duplicates within 5 seconds)
+        self._greeting_sent_at = 0
 
         logger.info("Initialized Voice Assistant")
 
@@ -197,21 +197,23 @@ class VoiceAssistant:
 
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
+            import time
             logger.info(f"Client connected: {client}")
             # Send a single greeting directly via TTS (not via LLM to avoid multi-sentence responses)
-            # Only send greeting once per session
-            if not self._greeting_sent:
+            # Only send greeting if not sent within last 5 seconds (prevents duplicates from pipeline reprocessing)
+            current_time = time.time()
+            if current_time - self._greeting_sent_at > 5:
+                self._greeting_sent_at = current_time
+                # Queue greeting
                 await self.task.queue_frames([TTSSpeakFrame("Hey there! How can I help you today?")])
-                self._greeting_sent = True
                 logger.debug("Queued greeting frame")
             else:
-                logger.debug("Greeting already sent, skipping")
+                logger.debug("Greeting already sent recently, skipping")
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
             logger.info(f"Client disconnected: {client}")
-            # Reset greeting flag for next client
-            self._greeting_sent = False
+            # Don't reset greeting time here - let it expire naturally after 5 seconds
             # Don't cancel task immediately - the server loop will handle cleanup
             # and restart for new connections. Cancelling here causes issues when
             # a replacement connection arrives (Pipecat closes old connection first)
