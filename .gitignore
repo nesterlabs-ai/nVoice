@@ -83,6 +83,15 @@ check_*.sh
 PROJECT_OVERVIEW.md
 RAG_VERIFICATION_REPORT.md
 SSH_COMMANDS_REFERENCE.sh
+MONITORING.md
+MONITORING-MAC.md
+MULTI_USER_DEPLOYMENT.md
+DeploementAwsLightSail.txt
+
+# SSH keys and sensitive files
+*.pem
+*key*.pem
+LightsailDefaultKey*
 
 # Docker data volumes
 data/
