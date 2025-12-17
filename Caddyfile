@@ -21,9 +21,9 @@
         reverse_proxy backend:7860
     }
 
-    # WebSocket endpoint - route to Pipecat WebSocket server (port 8765)
+    # WebSocket endpoint - route to FastAPI server (port 7860) for FastAPI mode
     handle /ws* {
-        reverse_proxy backend:8765 {
+        reverse_proxy backend:7860 {
             header_up Connection {header.Connection}
             header_up Upgrade {header.Upgrade}
             # Disable buffering for real-time streaming
