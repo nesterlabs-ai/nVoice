@@ -2,26 +2,36 @@
 WebSocket endpoint handler for FastAPI.
 
 This module provides the WebSocket endpoint for real-time voice communication
-supporting multiple concurrent user connections.
+supporting multiple concurrent user connections with capacity management.
 """
 
 import uuid
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
 
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """FastAPI WebSocket endpoint for Voice Assistant with concurrent connection support.
 
-    This endpoint handles multiple WebSocket connections simultaneously.
-    Each connection gets its own VoiceAssistant instance and pipeline.
+    This endpoint handles multiple WebSocket connections simultaneously with:
+    - Connection capacity limits (20 max for Lightsail)
+    - Session tracking and management
+    - Heartbeat monitoring for stale connections
+    - Isolated VoiceAssistant instance per connection
 
     Args:
         websocket: FastAPI WebSocket connection
     """
     session_id = str(uuid.uuid4())[:8]
-    logger.info(f"[Session {session_id}] New WebSocket connection")
+    logger.info(f"[Session {session_id}] New WebSocket connection attempt")
 
+    # Import connection manager
+    from app.core.connection_manager import connection_manager
+
+    # Try to accept connection (may reject if at capacity)
+    await connection_manager.connect(websocket, session_id)
+
+    # If we reach here, connection was accepted
     try:
         # Import here to avoid circular imports
         from app.core.server import voice_assistant_server
@@ -77,7 +87,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
         logger.info(f"[Session {session_id}] Session completed normally")
 
+    except WebSocketDisconnect:
+        logger.info(f"[Session {session_id}] Client disconnected")
     except Exception as e:
         logger.error(f"[Session {session_id}] Exception in WebSocket endpoint: {e}")
     finally:
-        logger.info(f"[Session {session_id}] Connection closed")
+        # Clean up connection in manager
+        connection_manager.disconnect(session_id)
+        logger.info(
+            f"[Session {session_id}] Connection closed. "
+            f"Active sessions: {connection_manager.get_active_session_count()}"
+        )
