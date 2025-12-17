@@ -32,6 +32,7 @@ class WebsocketClientApp {
   private logToggle: HTMLElement | null = null;
   private botAudio: HTMLAudioElement;
   private isConnected: boolean = false;
+  private isConnecting: boolean = false;
 
   constructor() {
     console.log("Voice Chat Initializing...");
@@ -228,15 +229,22 @@ class WebsocketClientApp {
    * This sets up the RTVI client, initializes devices, and establishes the connection
    */
   public async connect(): Promise<void> {
-    // Prevent multiple connection attempts
-    if (this.isConnected || this.rtviClient) {
-      this.log('Already connected or connection in progress');
+    // Prevent multiple connection attempts with proper state checking
+    if (this.isConnecting) {
+      this.log('Connection already in progress, please wait...');
       return;
     }
 
-    // Disable button during connection attempt
+    if (this.isConnected || this.rtviClient) {
+      this.log('Already connected. Disconnect first to reconnect.');
+      return;
+    }
+
+    // Set connecting state and disable button immediately
+    this.isConnecting = true;
     if (this.connectBtn) {
       this.connectBtn.disabled = true;
+      this.connectBtn.textContent = 'Connecting...';
     }
 
     try {
@@ -257,12 +265,21 @@ class WebsocketClientApp {
         enableCam: false,
         callbacks: {
           onConnected: () => {
+            this.isConnecting = false;
             this.updateStatus('Connected');
             this.log('Connection established successfully');
+            if (this.connectBtn) {
+              this.connectBtn.textContent = 'Disconnect';
+            }
           },
           onDisconnected: () => {
+            this.isConnecting = false;
             this.updateStatus('Disconnected');
             this.log('Connection terminated');
+            this.rtviClient = null;
+            if (this.connectBtn) {
+              this.connectBtn.textContent = 'Connect';
+            }
           },
           onBotReady: (data) => {
             this.log(`Bot ready: ${JSON.stringify(data)}`);
@@ -275,7 +292,10 @@ class WebsocketClientApp {
           },
           onBotTranscript: (data) => this.log(`Bot: ${data.text}`),
           onMessageError: (error) => console.error('Message error:', error),
-          onError: (error) => console.error('Error:', error),
+          onError: (error) => {
+            console.error('Error:', error);
+            this.log(`Error: ${error}`);
+          },
         },
       }
       this.rtviClient = new RTVIClient(RTVIConfig);
@@ -290,8 +310,11 @@ class WebsocketClientApp {
       const timeTaken = Date.now() - startTime;
       this.log(`Connection established in ${timeTaken}ms`);
     } catch (error) {
+      this.isConnecting = false;
       this.log(`Connection failed: ${(error as Error).message}`);
       this.updateStatus('Error');
+
+      // Clean up on error
       if (this.rtviClient) {
         try {
           await this.rtviClient.disconnect();
@@ -300,9 +323,11 @@ class WebsocketClientApp {
         }
         this.rtviClient = null;
       }
+
       // Re-enable button on error
       if (this.connectBtn) {
         this.connectBtn.disabled = false;
+        this.connectBtn.textContent = 'Connect';
       }
     }
   }
@@ -311,18 +336,47 @@ class WebsocketClientApp {
    * Disconnect from the bot and clean up media resources
    */
   public async disconnect(): Promise<void> {
-    if (this.rtviClient) {
-      try {
-        this.log('Disconnecting...');
+    if (!this.rtviClient && !this.isConnecting) {
+      this.log('Not connected');
+      return;
+    }
+
+    // Disable button during disconnect
+    if (this.connectBtn) {
+      this.connectBtn.disabled = true;
+      this.connectBtn.textContent = 'Disconnecting...';
+    }
+
+    try {
+      this.log('Disconnecting...');
+      if (this.rtviClient) {
         await this.rtviClient.disconnect();
         this.rtviClient = null;
-        if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
-          this.botAudio.srcObject.getAudioTracks().forEach((track) => track.stop());
-          this.botAudio.srcObject = null;
-        }
-        this.log('Disconnected successfully');
-      } catch (error) {
-        this.log(`Disconnect error: ${(error as Error).message}`);
+      }
+
+      // Clean up audio tracks
+      if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
+        this.botAudio.srcObject.getAudioTracks().forEach((track) => track.stop());
+        this.botAudio.srcObject = null;
+      }
+
+      // Reset states
+      this.isConnecting = false;
+      this.updateStatus('Disconnected');
+      this.log('Disconnected successfully');
+
+      // Re-enable button
+      if (this.connectBtn) {
+        this.connectBtn.disabled = false;
+        this.connectBtn.textContent = 'Connect';
+      }
+    } catch (error) {
+      this.log(`Disconnect error: ${(error as Error).message}`);
+      // Ensure button is re-enabled even on error
+      this.isConnecting = false;
+      if (this.connectBtn) {
+        this.connectBtn.disabled = false;
+        this.connectBtn.textContent = 'Connect';
       }
     }
   }
