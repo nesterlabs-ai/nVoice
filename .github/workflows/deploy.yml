@@ -37,7 +37,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/akkupratap323/nestervoiceai-backend:latest
+          tags: ghcr.io/terrorizer-ai/nestervoiceai-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -47,7 +47,7 @@ jobs:
           context: ./client
           file: ./client/Dockerfile
           push: true
-          tags: ghcr.io/akkupratap323/nestervoiceai-frontend:latest
+          tags: ghcr.io/terrorizer-ai/nestervoiceai-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
