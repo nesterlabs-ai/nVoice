@@ -177,7 +177,7 @@ class ConversationManager:
 
     def create_context(self) -> OpenAILLMContext:
         """Create the LLM context with system messages and tools.
-        
+
         Returns:
             OpenAILLMContext for the conversation
         """
@@ -186,8 +186,26 @@ class ConversationManager:
         support_hinglish = self.language_config.get("support_hinglish", False)
         primary_language = self.language_config.get("primary", "en")
 
-        # English-only concise responses
-        system_message = """
+        # Get custom system prompt from config, or use default
+        custom_system_prompt = self.llm_config.get("system_prompt", "")
+
+        if custom_system_prompt:
+            # Use custom system prompt from config
+            system_message = custom_system_prompt + """
+
+TOOL USAGE:
+- RESPOND DIRECTLY for: greetings, how are you, thank you, goodbye, simple questions
+- USE call_rag_system for: questions about Nesterlabs, company info, projects, services, or specific facts
+
+CRITICAL RAG RULES:
+- When you receive function results, summarize the key points BRIEFLY
+- Extract only the most relevant information from RAG results
+- Never give long explanations - keep it conversational
+- If RAG returns detailed info, pick the 2-3 most important points only
+"""
+        else:
+            # Default system prompt
+            system_message = """
 You are a helpful AI voice assistant. Keep responses SHORT and CONCISE - ideal for voice conversation.
 
 RESPONSE RULES:
@@ -202,17 +220,7 @@ CRITICAL RAG RULES:
 - Extract only the most relevant information from RAG results
 - Never give long explanations - keep it conversational
 - If RAG returns detailed info, pick the 2-3 most important points only
-
-EXAMPLE GOOD RESPONSES:
-- "Nester Labs is a GenAI studio that helps companies build LLM-powered products, focusing on RAG and agentic AI workflows."
-- "They specialize in end-to-end AI product development, from design to production."
-
-AVOID:
-- Long paragraphs
-- Listing many bullet points
-- Repeating information
-- Overly formal language
-        """
+"""
         # No initial user prompt - greeting is handled via direct TTS
         # This prevents the LLM from generating a multi-sentence greeting
         messages = [
