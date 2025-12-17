@@ -396,5 +396,4 @@ For questions and support:
 
 ---
 
-**Note**: This is a development framework. For production use, implement proper security measures, error handling, and scalability considerations. 
-# GHCR Deployment Test
+**Note**: This is a development framework. For production use, implement proper security measures, error handling, and scalability considerations.
