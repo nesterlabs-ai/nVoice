@@ -73,3 +73,26 @@ logs/
 # OS generated files
 Thumbs.db
 ehthumbs.db
+
+# Test scripts and temporary files
+test_*.sh
+check_*.sh
+*_test.sh
+
+# Documentation and reports (exclude from repo)
+PROJECT_OVERVIEW.md
+RAG_VERIFICATION_REPORT.md
+SSH_COMMANDS_REFERENCE.sh
+
+# Docker data volumes
+data/
+caddy_data/
+caddy_config/
+
+# Node modules
+node_modules/
+client/node_modules/
+
+# Build artifacts
+client/dist/
+client/build/
