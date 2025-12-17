@@ -19,12 +19,14 @@ class LightRAGService:
         Args:
             config: Configuration dictionary containing:
                 - api_url: Base URL of the LightRAG API
+                - api_key: API key for authentication (optional)
                 - mode: Query mode (mix, local, global, hybrid)
                 - top_k: Number of results to retrieve
                 - use_streaming: Whether to use streaming (default: True)
         """
         self.config = config or {}
         self.api_url = self.config.get("api_url", "http://localhost:9621")
+        self.api_key = self.config.get("api_key", "")
         self.mode = self.config.get("mode", "mix")
         self.top_k = self.config.get("top_k", 5)
         self.timeout = self.config.get("timeout", 30)
@@ -69,15 +71,19 @@ class LightRAGService:
         """Get response using streaming API for faster first-token."""
         full_response = ""
         
+        headers = {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true"
+        }
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream(
                 "POST",
                 f"{self.api_url}/query/stream",
                 json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "true"
-                }
+                headers=headers
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
@@ -107,14 +113,18 @@ class LightRAGService:
 
     async def _get_non_streaming_response(self, payload: Dict[str, Any]) -> str:
         """Get response using non-streaming API."""
+        headers = {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true"
+        }
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.api_url}/query",
                 json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "ngrok-skip-browser-warning": "true"
-                }
+                headers=headers
             )
             response.raise_for_status()
             result = response.json()
@@ -136,10 +146,14 @@ class LightRAGService:
             Health status dictionary
         """
         try:
+            headers = {"ngrok-skip-browser-warning": "true"}
+            if self.api_key:
+                headers["X-API-Key"] = self.api_key
+            
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.get(
                     f"{self.api_url}/health",
-                    headers={"ngrok-skip-browser-warning": "true"}
+                    headers=headers
                 )
                 response.raise_for_status()
                 return response.json()
@@ -169,6 +183,8 @@ class LightRAGService:
         self.config.update(config)
         if "api_url" in config:
             self.api_url = config["api_url"]
+        if "api_key" in config:
+            self.api_key = config["api_key"]
         if "mode" in config:
             self.mode = config["mode"]
         if "top_k" in config:
