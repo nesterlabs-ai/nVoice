@@ -53,7 +53,7 @@ services:
       - FASTAPI_PORT=7860
       - WEBSOCKET_HOST=0.0.0.0
       - WEBSOCKET_PORT=8765
-      - WEBSOCKET_SERVER=websocket_server
+      - WEBSOCKET_SERVER=fast_api
       - SESSION_TIMEOUT=180
       - LOG_LEVEL=INFO
     volumes:

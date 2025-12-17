@@ -96,7 +96,7 @@ jobs:
             echo "FASTAPI_PORT=7860" >> .env
             echo "WEBSOCKET_HOST=0.0.0.0" >> .env
             echo "WEBSOCKET_PORT=8765" >> .env
-            echo "WEBSOCKET_SERVER=websocket_server" >> .env
+            echo "WEBSOCKET_SERVER=fast_api" >> .env
             echo "SESSION_TIMEOUT=180" >> .env
             echo "LOG_LEVEL=INFO" >> .env
             chmod 600 .env
