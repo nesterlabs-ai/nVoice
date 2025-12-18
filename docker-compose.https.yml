@@ -38,6 +38,8 @@ services:
     expose:
       - "7860"
       - "8765"
+    env_file:
+      - .env
     environment:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
