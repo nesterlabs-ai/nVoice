@@ -162,11 +162,11 @@ class ConversationManager:
         """
         rag_function = FunctionSchema(
             name="call_rag_system",
-            description="MANDATORY: Use this function for ANY question about Nesterlabs, the company, what you are, who you are, services, projects, team, clients, location, or contact information. ALWAYS use this for questions like 'what are you', 'who are you', 'tell me about you', 'what does Nesterlabs do', etc.",
+            description="Use this function ONLY for specific or detailed questions that go beyond basic Nesterlabs information. Use for: detailed project case studies, specific technical implementations, detailed client information, or any information not covered in your basic knowledge. DO NOT use for basic questions about what Nesterlabs does, services, location, contact info, or team - answer those directly from your built-in knowledge.",
             properties={
                 "question": {
                     "type": "string",
-                    "description": "The user's question about Nesterlabs, the company, services, or any factual information",
+                    "description": "The user's specific or detailed question that requires searching the knowledge base for information beyond basic facts",
                 },
             },
             required=["question"],
