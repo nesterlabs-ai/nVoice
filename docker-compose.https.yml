@@ -32,9 +32,7 @@ services:
 
   # Backend - Python FastAPI + Pipecat Voice Assistant
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/nesterlabs-ai/nesteraibot-backend:latest
     container_name: nester-backend
     # Ports NOT exposed externally - only through Caddy
     expose:
@@ -77,9 +75,7 @@ services:
 
   # Frontend - Nginx serving static files
   frontend:
-    build:
-      context: ./client
-      dockerfile: Dockerfile
+    image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:latest
     container_name: nester-frontend
     # Port NOT exposed externally - only through Caddy
     expose:
