@@ -6,7 +6,7 @@ version: '3.8'
 services:
   # Backend - Pre-built image from GHCR
   backend:
-    image: ghcr.io/akkupratap323/nestervoiceai-backend:latest
+    image: ghcr.io/nesterlabs-ai/nesteraibot-backend:latest
     container_name: nester-backend
     restart: unless-stopped
     ports:
@@ -44,7 +44,7 @@ services:
 
   # Frontend - Pre-built image from GHCR
   frontend:
-    image: ghcr.io/akkupratap323/nestervoiceai-frontend:latest
+    image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:latest
     container_name: nester-frontend
     restart: unless-stopped
     ports:
