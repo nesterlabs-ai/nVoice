@@ -4,6 +4,8 @@ A real-time voice conversational assistant that combines speech-to-text, text-to
 
 **Developed and open-sourced by [NesterLabs](https://nesterlabs.com)**
 
+> **Latest Update**: Deployed with automated CI/CD pipeline using GitHub Container Registry (GHCR) for containerized deployments.
+
 Optimized for ultra-low latency with response times of 1-1.5 seconds for seamless real-time conversations.
 
 ## 🎯 Features
