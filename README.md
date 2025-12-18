@@ -46,6 +46,15 @@ Optimized for ultra-low latency with response times of 1-1.5 seconds for seamles
 └─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
 ```
 
+## 🔄 CI/CD Pipeline
+
+This project includes automated CI/CD pipelines for:
+- **Automated Docker Image Building**: Container images are built automatically on every push
+- **Automated Deployment**: Changes are automatically deployed to AWS Lightsail
+- **GitHub Actions**: Workflows handle building and deployment processes
+
+The CI/CD pipeline is configured in `.github/workflows/deploy.yml` and automatically triggers on pushes to the main branch.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
