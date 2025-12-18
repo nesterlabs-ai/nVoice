@@ -109,6 +109,25 @@ jobs:
             echo "Logging into GitHub Container Registry..."
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin || echo "GHCR login failed"
             
+            echo "Updating docker-compose.https.yml to use GHCR images..."
+            # Update backend to use GHCR image
+            sed -i 's|build:.*|image: ghcr.io/${{ github.repository_owner }}/nesteraibot-backend:latest|' docker-compose.https.yml
+            sed -i '/context: \./d' docker-compose.https.yml
+            sed -i '/dockerfile: Dockerfile/d' docker-compose.https.yml
+            # Update frontend to use GHCR image  
+            sed -i '/frontend:/,/container_name: nester-frontend/ {
+              /build:/ {
+                N
+                s|build:.*\n.*context:.*\n.*dockerfile:.*|image: ghcr.io/${{ github.repository_owner }}/nesteraibot-frontend:latest|
+              }
+            }' docker-compose.https.yml || sed -i '/frontend:/,/container_name: nester-frontend/ {
+              /build:/d
+              /context:/d
+              /dockerfile:/d
+              /frontend:/a\
+    image: ghcr.io/${{ github.repository_owner }}/nesteraibot-frontend:latest
+            }' docker-compose.https.yml
+            
             echo "Pulling latest images..."
             docker-compose -f docker-compose.https.yml pull || true
 
