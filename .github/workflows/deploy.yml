@@ -109,26 +109,48 @@ jobs:
             echo "Logging into GitHub Container Registry..."
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin || echo "GHCR login failed"
             
+            echo "Updating docker-compose.https.yml to use GHCR images..."
+            # The file in repo already has GHCR images, but server might have old version
+            # Use Python to properly update the YAML file
+            python3 << 'PYTHON_SCRIPT'
+import yaml
+import sys
+
+try:
+    with open('docker-compose.https.yml', 'r') as f:
+        compose = yaml.safe_load(f)
+    
+    # Update backend
+    if 'services' in compose and 'backend' in compose['services']:
+        if 'build' in compose['services']['backend']:
+            del compose['services']['backend']['build']
+        compose['services']['backend']['image'] = 'ghcr.io/nesterlabs-ai/nesteraibot-backend:latest'
+    
+    # Update frontend
+    if 'services' in compose and 'frontend' in compose['services']:
+        if 'build' in compose['services']['frontend']:
+            del compose['services']['frontend']['build']
+        compose['services']['frontend']['image'] = 'ghcr.io/nesterlabs-ai/nesteraibot-frontend:latest'
+    
+    with open('docker-compose.https.yml', 'w') as f:
+        yaml.dump(compose, f, default_flow_style=False, sort_keys=False)
+    
+    print("✅ Updated docker-compose.https.yml to use GHCR images")
+except Exception as e:
+    print(f"⚠️  Python update failed: {e}")
+    print("Falling back to sed method...")
+    # Fallback to sed if Python fails
+    import subprocess
+    subprocess.run(['sed', '-i', 's|build:.*|image: ghcr.io/nesterlabs-ai/nesteraibot-backend:latest|g', 'docker-compose.https.yml'], check=False)
+    subprocess.run(['sed', '-i', '/context: \./d', 'docker-compose.https.yml'], check=False)
+    subprocess.run(['sed', '-i', '/dockerfile: Dockerfile/d', 'docker-compose.https.yml'], check=False)
+PYTHON_SCRIPT
+            
             echo "Verifying docker-compose.https.yml uses GHCR images..."
-            if ! grep -q "image: ghcr.io" docker-compose.https.yml; then
-              echo "Updating docker-compose.https.yml to use GHCR images..."
-              # Backup old file
-              cp docker-compose.https.yml docker-compose.https.yml.backup
-              # Replace build sections with image references
-              sed -i 's|build:.*|image: ghcr.io/${{ github.repository_owner }}/nesteraibot-backend:latest|g' docker-compose.https.yml
-              sed -i '/context: \./d' docker-compose.https.yml
-              sed -i '/dockerfile: Dockerfile/d' docker-compose.https.yml
-              # Fix frontend
-              sed -i '/frontend:/,/container_name: nester-frontend/ {
-                /build:/c\
-    image: ghcr.io/${{ github.repository_owner }}/nesteraibot-frontend:latest
-                /context:/d
-                /dockerfile:/d
-              }' docker-compose.https.yml
-            fi
+            grep -E "image: ghcr.io" docker-compose.https.yml || echo "⚠️  Warning: GHCR images not found in file"
             
             echo "Pulling latest images..."
-            docker-compose -f docker-compose.https.yml pull || true
+            docker-compose -f docker-compose.https.yml pull || echo "⚠️  Image pull failed - may need authentication"
 
             echo "Restarting containers with HTTPS..."
             docker-compose -f docker-compose.https.yml down || true
