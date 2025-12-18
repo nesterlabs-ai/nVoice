@@ -1,0 +1,17 @@
+fastapi~=0.115.14
+uvicorn~=0.35.0
+python-dotenv~=1.1.1
+PyYAML~=6.0.2
+loguru~=0.7.3
+pipecat-ai[daily,deepgram,cartesia,silero,websocket,google,openai]
+pipecat-ai-small-webrtc-prebuilt
+
+# RAG dependencies - Pinecone + LangGraph
+pinecone-client>=3.0.0
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langchain-pinecone>=0.2.0
+langchain-text-splitters>=0.3.0
+tiktoken>=0.7.0
+httpx>=0.27.0

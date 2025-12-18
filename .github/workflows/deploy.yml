@@ -1,0 +1,123 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ghcr.io/terrorizer-ai/nestervoiceai-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client
+          file: ./client/Dockerfile
+          push: true
+          tags: ghcr.io/terrorizer-ai/nestervoiceai-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Lightsail
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy to Lightsail via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/nester-bot
+            
+            echo "Pulling latest code..."
+            git pull origin main
+            
+            echo "Fetching secrets from AWS Parameter Store..."
+            REGION="ap-south-1"
+            DEEPGRAM=$(aws ssm get-parameter --name "/nester/DEEPGRAM_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            OPENAI=$(aws ssm get-parameter --name "/nester/OPENAI_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            GOOGLE=$(aws ssm get-parameter --name "/nester/GOOGLE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            ELEVENLABS=$(aws ssm get-parameter --name "/nester/ELEVENLABS_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            ELEVENLABS_VOICE=$(aws ssm get-parameter --name "/nester/ELEVENLABS_VOICE_ID" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            PINECONE=$(aws ssm get-parameter --name "/nester/PINECONE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            PINECONE_IDX=$(aws ssm get-parameter --name "/nester/PINECONE_INDEX" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            LIGHTRAG=$(aws ssm get-parameter --name "/nester/LIGHTRAG_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            PUBLIC=$(aws ssm get-parameter --name "/nester/PUBLIC_URL" --with-decryption --region $REGION --query "Parameter.Value" --output text)
+            DOMAIN_VAL=$(aws ssm get-parameter --name "/nester/DOMAIN" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "localhost")
+
+            echo "DEEPGRAM_API_KEY=$DEEPGRAM" > .env
+            echo "OPENAI_API_KEY=$OPENAI" >> .env
+            echo "GOOGLE_API_KEY=$GOOGLE" >> .env
+            echo "ELEVENLABS_API_KEY=$ELEVENLABS" >> .env
+            echo "ELEVENLABS_VOICE_ID=$ELEVENLABS_VOICE" >> .env
+            echo "PINECONE_API_KEY=$PINECONE" >> .env
+            echo "PINECONE_INDEX=$PINECONE_IDX" >> .env
+            echo "LIGHTRAG_API_KEY=$LIGHTRAG" >> .env
+            echo "PUBLIC_URL=$PUBLIC" >> .env
+            echo "DOMAIN=$DOMAIN_VAL" >> .env
+            echo "FASTAPI_HOST=0.0.0.0" >> .env
+            echo "FASTAPI_PORT=7860" >> .env
+            echo "WEBSOCKET_HOST=0.0.0.0" >> .env
+            echo "WEBSOCKET_PORT=8765" >> .env
+            echo "WEBSOCKET_SERVER=fast_api" >> .env
+            echo "SESSION_TIMEOUT=180" >> .env
+            echo "LOG_LEVEL=INFO" >> .env
+            chmod 600 .env
+
+            echo "Created .env with DOMAIN=$DOMAIN_VAL"
+            cat .env | grep DOMAIN
+
+            echo "Pulling latest images..."
+            docker-compose -f docker-compose.https.yml pull || true
+
+            echo "Restarting containers with HTTPS..."
+            docker-compose -f docker-compose.https.yml down || true
+            docker-compose -f docker-compose.https.yml up -d --build
+
+            echo "Waiting for services to start..."
+            sleep 30
+
+            echo "Reloading Caddy configuration..."
+            docker exec nester-caddy caddy reload --config /etc/caddy/Caddyfile || echo "Caddy reload not needed"
+
+            echo "Checking service health..."
+            docker-compose -f docker-compose.https.yml ps
+
+            echo "Deployment complete!"
