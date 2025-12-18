@@ -162,11 +162,11 @@ class ConversationManager:
         """
         rag_function = FunctionSchema(
             name="call_rag_system",
-            description="Search knowledge base for questions requiring specific information",
+            description="MANDATORY: Use this function for ANY question about Nesterlabs, the company, what you are, who you are, services, projects, team, clients, location, or contact information. ALWAYS use this for questions like 'what are you', 'who are you', 'tell me about you', 'what does Nesterlabs do', etc.",
             properties={
                 "question": {
                     "type": "string",
-                    "description": "The user's question to search for",
+                    "description": "The user's question about Nesterlabs, the company, services, or any factual information",
                 },
             },
             required=["question"],
