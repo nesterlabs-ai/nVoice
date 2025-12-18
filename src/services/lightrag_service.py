@@ -55,7 +55,7 @@ class LightRAGService:
             }
             
             # Always use non-streaming for reliability
-            return await self._get_non_streaming_response(payload)
+                return await self._get_non_streaming_response(payload)
             
         except httpx.TimeoutException:
             logger.error("LightRAG API timeout")
