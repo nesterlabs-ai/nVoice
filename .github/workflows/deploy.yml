@@ -30,8 +30,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build and push Backend
         uses: docker/build-push-action@v5
@@ -116,7 +116,7 @@ jobs:
             cat .env | grep DOMAIN
 
             echo "Logging into GitHub Container Registry..."
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin || echo "GHCR login failed"
+            echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin || echo "GHCR login failed"
             
             echo "Verifying docker-compose.https.yml uses GHCR images (from git pull)..."
             if grep -q "image: ghcr.io" docker-compose.https.yml; then
