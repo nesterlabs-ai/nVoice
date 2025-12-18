@@ -68,8 +68,17 @@ jobs:
           script: |
             cd ~/nester-bot
             
-            echo "Pulling latest code..."
-            git pull origin main
+            echo "Checking git remote..."
+            git remote -v
+            
+            echo "Pulling latest code from correct repository..."
+            # Ensure we're pulling from the right repo
+            git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git || echo "Remote already set"
+            git fetch origin
+            git pull origin main || echo "Pull failed - may need to reset"
+            
+            echo "Verifying latest commit..."
+            git log -1 --oneline
             
             echo "Fetching secrets from AWS Parameter Store..."
             REGION="ap-south-1"
