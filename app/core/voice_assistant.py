@@ -106,10 +106,13 @@ class VoiceAssistant:
         # Initialize Conversation Manager
         conversation_config = self.config.get("conversation", {})
         language_config = self.config.get("language", {})
+        # Include system_prompt in llm_config so ConversationManager can access it
+        llm_config = conversation_config.get("llm", {}).copy()
+        llm_config["system_prompt"] = conversation_config.get("system_prompt", "")
         self.conversation_manager = ConversationManager(
             input_analyzer=self.input_analyzer,
             rag_service=self.rag_service,
-            llm_config=conversation_config.get("llm", {}),
+            llm_config=llm_config,
             language_config=language_config,
         )
 

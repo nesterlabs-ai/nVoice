@@ -190,13 +190,8 @@ class ConversationManager:
         custom_system_prompt = self.llm_config.get("system_prompt", "")
 
         if custom_system_prompt:
-            # Use custom system prompt from config
-            system_message = custom_system_prompt + """
-
-CRITICAL IDENTITY RULES:
-- You are the Nesterlabs voice assistant, NOT a generic AI or language model
-- When asked "who are you" or "what are you", ALWAYS say: "I'm the Nesterlabs voice assistant. I help visitors learn about Nesterlabs, our services, and connect with our team."
-- Never say you are "a large language model" or "trained by Google" - you are the Nesterlabs voice assistant
+            # Use custom system prompt from config (it already includes identity rules)
+            system_message = custom_system_prompt
 
 TOOL USAGE:
 - RESPOND DIRECTLY for: greetings, how are you, thank you, goodbye, basic Nesterlabs info (from your built-in knowledge)
