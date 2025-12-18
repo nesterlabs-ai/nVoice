@@ -125,4 +125,24 @@ jobs:
             echo "Checking service health..."
             docker-compose -f docker-compose.https.yml ps
 
+            echo "Setting up CloudWatch Agent for log collection..."
+            if [ ! -f "/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent" ]; then
+                echo "Installing CloudWatch Agent..."
+                cd /tmp
+                wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+                sudo dpkg -i -E ./amazon-cloudwatch-agent.deb || echo "CloudWatch agent installation failed or already installed"
+                
+                # Create log groups
+                aws logs create-log-group --log-group-name "/lightsail/nester-docker" --region ap-south-1 2>/dev/null || true
+                aws logs create-log-group --log-group-name "/lightsail/nester-system" --region ap-south-1 2>/dev/null || true
+                
+                # Copy config if it exists
+                if [ -f ~/nester-bot/scripts/cloudwatch-agent-config.json ]; then
+                    sudo cp ~/nester-bot/scripts/cloudwatch-agent-config.json /opt/aws/amazon-cloudwatch-agent/bin/config.json
+                    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s || echo "CloudWatch agent start failed"
+                fi
+            else
+                echo "CloudWatch Agent already installed"
+            fi
+
             echo "Deployment complete!"
