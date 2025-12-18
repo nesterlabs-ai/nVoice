@@ -192,17 +192,6 @@ class ConversationManager:
         if custom_system_prompt:
             # Use custom system prompt from config (it already includes identity rules)
             system_message = custom_system_prompt
-
-TOOL USAGE:
-- RESPOND DIRECTLY for: greetings, how are you, thank you, goodbye, basic Nesterlabs info (from your built-in knowledge)
-- USE call_rag_system ONLY for: specific detailed questions beyond basic facts
-
-CRITICAL RAG RULES:
-- When you receive function results, summarize the key points BRIEFLY
-- Extract only the most relevant information from RAG results
-- Never give long explanations - keep it conversational
-- If RAG returns detailed info, pick the 2-3 most important points only
-"""
         else:
             # Default system prompt
             system_message = """
