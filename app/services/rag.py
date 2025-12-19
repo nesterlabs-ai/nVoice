@@ -132,7 +132,7 @@ class LightRAGService(BaseRAGService):
             if self.api_key:
                 headers["X-API-Key"] = self.api_key
 
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
                 response = await client.post(
                     f"{self.api_url}/query",
                     json=payload,
@@ -167,10 +167,14 @@ class LightRAGService(BaseRAGService):
             Health status dictionary
         """
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            headers = {"ngrok-skip-browser-warning": "true"}
+            if self.api_key:
+                headers["X-API-Key"] = self.api_key
+            
+            async with httpx.AsyncClient(timeout=10, verify=False) as client:
                 response = await client.get(
                     f"{self.api_url}/health",
-                    headers={"ngrok-skip-browser-warning": "true"},
+                    headers=headers,
                 )
                 response.raise_for_status()
                 return response.json()
