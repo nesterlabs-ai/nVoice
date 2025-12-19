@@ -162,7 +162,7 @@ class ConversationManager:
         """
         rag_function = FunctionSchema(
             name="call_rag_system",
-            description="Use this function ONLY for specific or detailed questions that go beyond basic Nesterlabs information. Use for: detailed project case studies, specific technical implementations, detailed client information, or any information not covered in your basic knowledge. DO NOT use for basic questions about what Nesterlabs does, services, location, contact info, or team - answer those directly from your built-in knowledge.",
+            description="MANDATORY: Use this function for ANY question about specific projects, case studies, detailed work examples, or when the user asks to 'know more' or 'learn more' about something. ALWAYS use this function when the user asks about: 'specific projects', 'project details', 'case studies', 'examples of work', 'what projects you work on', 'tell me more about your projects', or any variation asking for detailed project information. This function searches the knowledge base for comprehensive information. DO NOT skip this function for project-related questions.",
             properties={
                 "question": {
                     "type": "string",
