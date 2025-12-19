@@ -73,13 +73,19 @@ else
     echo "📝 Creating $ENV_FILE..."
     
     # Convert JSON to .env format using Python
-    python3 << PYTHON_SCRIPT > "$ENV_FILE"
+    # Write JSON to temp file first to avoid escaping issues
+    TEMP_JSON=$(mktemp)
+    echo "$SECRET_JSON" > "$TEMP_JSON"
+    
+    python3 << 'PYTHON_SCRIPT' > "$ENV_FILE"
 import json
 import sys
 from datetime import datetime
 
 try:
-    secret_data = json.loads('''$SECRET_JSON''')
+    # Read JSON from file
+    with open(sys.argv[1], 'r') as f:
+        secret_data = json.load(f)
     
     # Write header
     print("# Auto-generated from AWS Secrets Manager")
@@ -90,15 +96,17 @@ try:
     # Write all key-value pairs
     for key, value in sorted(secret_data.items()):
         if value:  # Only write non-empty values
-            # Escape special characters in value
-            value = str(value).replace('\\', '\\\\').replace('$', '\\$').replace('`', '\\`')
-            print(f"{key}={value}")
+            # Escape special characters in value for shell
+            value_str = str(value).replace('\\', '\\\\').replace('$', '\\$').replace('`', '\\`').replace('"', '\\"')
+            print(f"{key}={value_str}")
     
     sys.exit(0)
 except Exception as e:
     print(f"# Error parsing secret: {e}", file=sys.stderr)
     sys.exit(1)
-PYTHON_SCRIPT
+PYTHON_SCRIPT "$TEMP_JSON"
+    
+    rm -f "$TEMP_JSON"
     
     if [ $? -ne 0 ]; then
         echo "❌ Failed to parse secret JSON"
