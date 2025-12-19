@@ -4,6 +4,7 @@ This module orchestrates the conversation flow and manages LLM interactions,
 coordinating between input analysis, RAG processing, and response generation.
 """
 
+import re
 from typing import Dict, Any
 
 from loguru import logger
@@ -137,6 +138,39 @@ class ConversationManager:
             async def on_function_calls_finished(service, function_calls):
                 logger.info(f"Function calls finished: {function_calls}")
 
+    def _strip_markdown(self, text: str) -> str:
+        """Strip markdown formatting from text for voice output.
+        
+        Args:
+            text: Text with markdown formatting
+            
+        Returns:
+            Plain text without markdown
+        """
+        # Remove markdown bold/italic (**text**, *text*)
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        
+        # Remove markdown headers (# Header, ## Header, etc.)
+        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove markdown links [text](url) -> text
+        text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+        
+        # Remove markdown code blocks ```code``` and `code`
+        text = re.sub(r'```[^`]*```', '', text, flags=re.DOTALL)
+        text = re.sub(r'`([^`]+)`', r'\1', text)
+        
+        # Remove markdown lists (- item, * item, 1. item)
+        text = re.sub(r'^[\s]*[-*]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove extra whitespace
+        text = re.sub(r'\n\s*\n', '\n', text)
+        text = text.strip()
+        
+        return text
+
     async def _handle_rag_call(self, params: FunctionCallParams) -> None:
         """Handle RAG system function calls.
         
@@ -148,7 +182,9 @@ class ConversationManager:
         try:
             logger.info(f"Processing RAG call for: {question}")
             response = await self.rag_service.get_response(question)
-            await params.result_callback(response)
+            # Strip markdown formatting for voice output
+            cleaned_response = self._strip_markdown(response)
+            await params.result_callback(cleaned_response)
         except Exception as e:
             logger.error(f"Error in RAG call: {e}")
             error_response = f"I apologize, but I encountered an error while processing your question: {str(e)}"
