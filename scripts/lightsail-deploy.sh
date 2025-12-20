@@ -114,21 +114,44 @@ docker-compose -f docker-compose.https.yml pull || {
 
 # Step 5: Deploy containers
 log_info "Step 5: Deploying containers..."
+
+# First, stop any containers using port 80 (Caddy, nginx, etc.)
+log_info "Checking for containers using port 80..."
+PORT_80_CONTAINERS=$(docker ps --filter "publish=80" --format "{{.Names}}" 2>/dev/null || true)
+if [ -n "$PORT_80_CONTAINERS" ]; then
+    log_info "Stopping containers using port 80: $PORT_80_CONTAINERS"
+    echo "$PORT_80_CONTAINERS" | xargs -r docker stop 2>/dev/null || true
+    echo "$PORT_80_CONTAINERS" | xargs -r docker rm 2>/dev/null || true
+fi
+
 # Stop all containers including orphans (like old Caddy)
+log_info "Stopping existing containers..."
 docker-compose -f docker-compose.https.yml down --remove-orphans || {
     log_warn "Some containers may not have been running (this is OK)"
 }
 
 # Also stop any standalone Caddy container that might be using port 80
-if docker ps --format '{{.Names}}' | grep -q '^nester-caddy$'; then
+if docker ps -a --format '{{.Names}}' | grep -q '^nester-caddy$'; then
     log_info "Stopping standalone Caddy container..."
     docker stop nester-caddy 2>/dev/null || true
     docker rm nester-caddy 2>/dev/null || true
 fi
 
+# Verify port 80 is free
+if lsof -i :80 >/dev/null 2>&1 || netstat -tuln 2>/dev/null | grep -q ':80 '; then
+    log_warn "Port 80 is still in use, attempting to free it..."
+    # Try to kill any process using port 80
+    fuser -k 80/tcp 2>/dev/null || true
+    sleep 2
+fi
+
 # Start containers
+log_info "Starting containers..."
 docker-compose -f docker-compose.https.yml up -d || {
     log_error "Failed to start containers"
+    log_error "Checking what's using port 80..."
+    docker ps --filter "publish=80" || true
+    lsof -i :80 2>/dev/null || netstat -tuln 2>/dev/null | grep ':80 ' || true
     exit 1
 }
 
