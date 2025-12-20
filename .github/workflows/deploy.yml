@@ -96,164 +96,56 @@ jobs:
 
       - name: Deploy to Lightsail
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          IMAGE_TAG: ${{ github.sha }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.repository_owner }}
+          PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: AWS_REGION,IMAGE_TAG,GHCR_TOKEN,GHCR_USER,PUBLIC_URL
           script: |
-            export AWS_REGION="${{ env.AWS_REGION }}"
-            export IMAGE_TAG="${{ github.sha }}"
-            export GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
-            export GHCR_USER="${{ github.repository_owner }}"
-            export PUBLIC_URL="${{ secrets.PUBLIC_URL }}"
-            
             cd ~/nester-bot
             
-            # Robust git normalization - ensures clean state regardless of prior state
-            echo "=== Git Repository Normalization ==="
+            # === PORT 80 CLEANUP FIRST ===
+            echo "🧹 Cleaning port 80 conflicts..."
+            sudo fuser -k 80/tcp 2>/dev/null || true
+            docker ps -q --filter "publish=80" | xargs -r docker rm -f 2>/dev/null || true
+            docker-compose -f docker-compose.https.yml down --remove-orphans --rmi all -t 10 2>/dev/null || true
             
-            # Initialize git if no repo exists
+            # === FORCE GIT SYNC ===
+            echo "🔄 Force syncing git repository..."
             if [ ! -d .git ]; then
-              echo "📦 Initializing git repository..."
               git init
-            fi
-            
-            # Set origin with token authentication (if repo is private)
-            echo "🔗 Setting remote origin..."
-            git remote remove origin 2>/dev/null || true
-            
-            # Use token in URL if available, otherwise use public URL
-            # Note: GITHUB_TOKEN is automatically available in GitHub Actions
-            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-            if [ -n "$GITHUB_TOKEN" ]; then
-              GIT_REPO_URL="https://${GITHUB_TOKEN}@github.com/nesterlabs-ai/NesterAIBot.git"
-              echo "Using authenticated URL for private repo"
+              git remote add origin https://github.com/nesterlabs-ai/NesterAIBot.git || git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
             else
-              GIT_REPO_URL="https://github.com/nesterlabs-ai/NesterAIBot.git"
-              echo "Using public URL"
+              git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
             fi
             
-            git remote add origin "$GIT_REPO_URL"
-            
-            # Configure git to avoid prompts
             export GIT_TERMINAL_PROMPT=0
-            export GIT_ASKPASS=echo
-            git config --global credential.helper store || true
+            git fetch origin main || git fetch origin main
+            git reset --hard origin/main
+            git checkout main
             
-            # Fetch with prune to clean up old refs and get latest
-            echo "📥 Fetching latest code (pruning old refs)..."
-            FETCH_SUCCESS=false
+            # === REMOVE OLD ROOT SCRIPT ===
+            echo "🗑️  Removing old root lightsail-deploy.sh if exists..."
+            rm -f lightsail-deploy.sh
             
-            # Try fetch with authenticated URL
-            if git fetch --prune origin main 2>&1; then
-              FETCH_SUCCESS=true
-              echo "✅ Fetch successful"
-            else
-              echo "⚠️  Fetch with prune failed, trying without prune..."
-              if git fetch origin main 2>&1; then
-                FETCH_SUCCESS=true
-                echo "✅ Fetch successful (without prune)"
-              else
-                echo "⚠️  Standard fetch failed, trying with full URL..."
-                if git fetch --prune "$GIT_REPO_URL" main 2>&1; then
-                  FETCH_SUCCESS=true
-                  echo "✅ Fetch successful (with full URL)"
-                else
-                  echo "❌ All fetch attempts failed"
-                fi
-              fi
+            # === VERIFY CORRECT SCRIPT ===
+            if [ ! -f "scripts/lightsail-deploy.sh" ]; then
+              echo "❌ scripts/lightsail-deploy.sh missing after git sync!"
+              echo "Current commit: $(git log -1 --oneline)"
+              ls -la *.sh scripts/*.sh 2>/dev/null || true
+              git log --oneline -5
+              exit 1
             fi
             
-            # If fetch failed, try to get latest commit SHA from GitHub API
-            if [ "$FETCH_SUCCESS" = false ]; then
-              echo "⚠️  Fetch failed, attempting to get latest commit via GitHub API..."
-              LATEST_SHA=$(curl -s -H "Accept: application/vnd.github.v3+json" \
-                https://api.github.com/repos/nesterlabs-ai/NesterAIBot/commits/main \
-                | grep -o '"sha":"[^"]*' | head -1 | cut -d'"' -f4) || LATEST_SHA=""
-              
-              if [ -n "$LATEST_SHA" ]; then
-                echo "📌 Latest commit SHA: ${LATEST_SHA:0:7}"
-                # Try to fetch specific commit
-                git fetch "$GIT_REPO_URL" "$LATEST_SHA" 2>&1 || true
-              fi
-            fi
-            
-            # Also fetch all refs to ensure we have latest
-            echo "📥 Fetching all refs..."
-            git fetch --prune --all 2>/dev/null || true
-            
-            # Verify we have the latest refs
-            echo "📋 Remote refs after fetch:"
-            git ls-remote origin main 2>/dev/null | head -1 || echo "  Could not list remote refs"
-            
-            # Force checkout/create main branch tracking origin/main
-            # -B creates branch if it doesn't exist, or resets if it does
-            echo "🌿 Checking out main branch (force create/reset)..."
-            if git show-ref --verify --quiet refs/remotes/origin/main; then
-              git checkout -B main origin/main || {
-                echo "⚠️  Checkout failed, trying alternative approach..."
-                git branch -D main 2>/dev/null || true
-                git checkout -b main origin/main
-              }
-            else
-              echo "⚠️  origin/main ref not found, checking out latest commit..."
-              # If origin/main doesn't exist, try to checkout the latest commit we have
-              LATEST_LOCAL=$(git log --all --format="%H" | head -1)
-              if [ -n "$LATEST_LOCAL" ]; then
-                git checkout -B main "$LATEST_LOCAL" || git checkout -b main "$LATEST_LOCAL"
-              else
-                echo "❌ No commits found locally"
-              fi
-            fi
-            
-            # Hard reset to ensure clean state matching origin/main exactly
-            if git show-ref --verify --quiet refs/remotes/origin/main; then
-              echo "🔄 Resetting to origin/main (hard reset)..."
-              git reset --hard origin/main
-            else
-              echo "⚠️  origin/main not available, resetting to current HEAD..."
-              git reset --hard HEAD
-            fi
-            
-            # Diagnostic information (keep for troubleshooting)
-            echo ""
-            echo "=== Git State Diagnostics ==="
-            CURRENT_COMMIT=$(git rev-parse HEAD)
-            CURRENT_COMMIT_SHORT=$(git log -1 --oneline)
-            CURRENT_BRANCH=$(git branch --show-current)
-            REMOTE_TRACKING=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "none")
-            
-            echo "📍 Current directory: $(pwd)"
-            echo "🌿 Current branch: ${CURRENT_BRANCH}"
-            echo "🔗 Remote tracking: ${REMOTE_TRACKING}"
-            echo "📌 Current commit (full): ${CURRENT_COMMIT}"
-            echo "📌 Current commit (short): ${CURRENT_COMMIT_SHORT}"
-            echo "🔀 Branch status:"
-            git status --short --branch | head -3
-            echo ""
-            
-            # Verify script exists (check both locations)
-            echo "=== Deployment Script Verification ==="
-            SCRIPT_PATH=""
-            if [ -f scripts/lightsail-deploy.sh ]; then
-              SCRIPT_PATH="scripts/lightsail-deploy.sh"
-            elif [ -f lightsail-deploy.sh ]; then
-              SCRIPT_PATH="lightsail-deploy.sh"
-              echo "⚠️  Found script in root, should be in scripts/ directory"
-            fi
-            
-            if [ -n "$SCRIPT_PATH" ]; then
-              chmod +x "$SCRIPT_PATH"
-              SCRIPT_LINES=$(wc -l < "$SCRIPT_PATH")
-              SCRIPT_SIZE=$(wc -c < "$SCRIPT_PATH")
-              echo "✅ Found $SCRIPT_PATH"
-              echo "   Lines: ${SCRIPT_LINES}"
-              echo "   Size: ${SCRIPT_SIZE} bytes"
-              echo ""
-              echo "=== Starting Deployment ==="
-              bash "$SCRIPT_PATH"
-            else
+            # === EXECUTE ONLY CORRECT SCRIPT ===
+            echo "✅ Executing scripts/lightsail-deploy.sh"
+            chmod +x scripts/lightsail-deploy.sh
+            bash scripts/lightsail-deploy.sh
               echo "❌ Error: lightsail-deploy.sh not found in scripts/ or root"
               echo ""
               echo "=== Diagnostic Information ==="

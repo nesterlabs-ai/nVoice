@@ -1,14 +1,12 @@
 #!/bin/bash
-# Lightsail deployment script
-# This script handles git sync, secret fetching, and container deployment
+# Lightsail deployment script - GHCR pull only
+# This script handles secret fetching and container deployment
 # Designed to be idempotent and fail-fast
 
 set -euo pipefail
 
 # Configuration
 DEPLOY_DIR="${DEPLOY_DIR:-/home/ec2-user/nester-bot}"
-GIT_REPO="${GIT_REPO:-https://github.com/nesterlabs-ai/NesterAIBot.git}"
-GIT_BRANCH="${GIT_BRANCH:-main}"
 AWS_REGION="${AWS_REGION:-ap-south-1}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 GHCR_TOKEN="${GHCR_TOKEN:-}"
@@ -39,48 +37,19 @@ cd "$DEPLOY_DIR" || {
     exit 1
 }
 
+log_info "=== NesterAIBot GHCR Deploy ==="
 log_info "Starting deployment in: $DEPLOY_DIR"
 
-# Step 1: Git synchronization
-log_info "Step 1: Synchronizing code repository..."
-if [ ! -d .git ]; then
-    log_warn ".git directory not found, initializing repository..."
-    git init
-    git remote add origin "$GIT_REPO" || git remote set-url origin "$GIT_REPO"
+# Port verification
+log_info "🔍 Checking port 80..."
+if sudo netstat -tlnp 2>/dev/null | grep -q ':80 ' || lsof -i :80 >/dev/null 2>&1; then
+    log_warn "Port 80 in use, force killing..."
+    sudo fuser -k 80/tcp 2>/dev/null || true
+    sleep 2
 fi
 
-# Ensure we're on the correct remote
-git remote set-url origin "$GIT_REPO"
-
-# Fetch and reset to ensure clean state (deployment target only)
-log_info "Fetching latest changes from $GIT_BRANCH..."
-git fetch origin "$GIT_BRANCH" || {
-    log_error "Failed to fetch from origin"
-    exit 1
-}
-
-log_info "Resetting to origin/$GIT_BRANCH (deployment target - no local changes preserved)..."
-git reset --hard "origin/$GIT_BRANCH" || {
-    log_error "Failed to reset to origin/$GIT_BRANCH"
-    exit 1
-}
-
-log_info "Current commit: $(git log -1 --oneline)"
-
-# Step 2: Fetch secrets
-log_info "Step 2: Fetching secrets from AWS Secrets Manager..."
-if [ -f scripts/fetch-secrets.sh ]; then
-    bash scripts/fetch-secrets.sh .env || {
-        log_error "Failed to fetch secrets"
-        exit 1
-    }
-else
-    log_error "fetch-secrets.sh not found in repository"
-    exit 1
-fi
-
-# Step 3: Docker login
-log_info "Step 3: Authenticating with GitHub Container Registry..."
+# Step 1: Docker login
+log_info "Step 1: Authenticating with GitHub Container Registry..."
 if [ -z "$GHCR_TOKEN" ] || [ -z "$GHCR_USER" ]; then
     log_error "GHCR_TOKEN or GHCR_USER not set"
     exit 1
@@ -91,8 +60,53 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin || {
     exit 1
 }
 
-# Step 4: Pull latest images
-log_info "Step 4: Pulling latest Docker images..."
+# Step 2: Fetch secrets
+log_info "Step 2: Fetching secrets from AWS Secrets Manager..."
+if [ -f scripts/fetch-secrets.sh ]; then
+    bash scripts/fetch-secrets.sh .env || {
+        log_error "Failed to fetch secrets"
+        exit 1
+    }
+else
+    log_warn "fetch-secrets.sh not found, fetching directly..."
+    SECRET_JSON=$(aws secretsmanager get-secret-value \
+        --secret-id "nester/voice-bot/secrets" \
+        --region "$AWS_REGION" \
+        --query SecretString \
+        --output text 2>/dev/null || echo "")
+    
+    if [ -n "$SECRET_JSON" ]; then
+        # Create .env from JSON using jq if available, otherwise Python
+        if command -v jq &> /dev/null; then
+            echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
+        else
+            TEMP_JSON=$(mktemp)
+            echo "$SECRET_JSON" > "$TEMP_JSON"
+            python3 -c "import json; data = json.load(open('$TEMP_JSON')); [print(f'{k}={v}') for k, v in sorted(data.items()) if v]" > .env
+            rm -f "$TEMP_JSON"
+        fi
+        chmod 600 .env
+        log_info "✅ Secrets fetched directly"
+    else
+        log_error "Could not fetch secrets"
+        exit 1
+    fi
+fi
+
+# Step 3: Update image tags in compose file
+log_info "Step 3: Updating image tags..."
+if [ "$IMAGE_TAG" != "latest" ]; then
+    IMAGE_TAG_SHORT=$(echo "$IMAGE_TAG" | cut -c1-7)
+    log_info "Using image tag: $IMAGE_TAG_SHORT"
+    sed -i "s|:latest|:$IMAGE_TAG_SHORT|g" docker-compose.https.yml || {
+        log_warn "Could not update image tags, using latest"
+    }
+else
+    log_info "Using latest image tag"
+fi
+
+# Step 4: Pull images
+log_info "Step 4: Pulling latest Docker images from GHCR..."
 if [ ! -f docker-compose.https.yml ]; then
     log_error "docker-compose.https.yml not found"
     exit 1
@@ -104,9 +118,7 @@ if grep -q "build:" docker-compose.https.yml; then
     exit 1
 fi
 
-# Export IMAGE_TAG for docker-compose to use
 export IMAGE_TAG
-
 docker-compose -f docker-compose.https.yml pull || {
     log_error "Failed to pull Docker images"
     exit 1
@@ -115,47 +127,28 @@ docker-compose -f docker-compose.https.yml pull || {
 # Step 5: Deploy containers
 log_info "Step 5: Deploying containers..."
 
-# First, stop any containers using port 80 (Caddy, nginx, etc.)
-log_info "Checking for containers using port 80..."
-PORT_80_CONTAINERS=$(docker ps --filter "publish=80" --format "{{.Names}}" 2>/dev/null || true)
-if [ -n "$PORT_80_CONTAINERS" ]; then
-    log_info "Stopping containers using port 80: $PORT_80_CONTAINERS"
-    echo "$PORT_80_CONTAINERS" | xargs -r docker stop 2>/dev/null || true
-    echo "$PORT_80_CONTAINERS" | xargs -r docker rm 2>/dev/null || true
-fi
+# Final port 80 cleanup
+log_info "Final port 80 cleanup..."
+sudo fuser -k 80/tcp 2>/dev/null || true
+docker ps -q --filter "publish=80" | xargs -r docker rm -f 2>/dev/null || true
 
-# Stop all containers including orphans (like old Caddy)
+# Stop all containers including orphans
 log_info "Stopping existing containers..."
 docker-compose -f docker-compose.https.yml down --remove-orphans || {
     log_warn "Some containers may not have been running (this is OK)"
 }
 
-# Also stop any standalone Caddy container that might be using port 80
-if docker ps -a --format '{{.Names}}' | grep -q '^nester-caddy$'; then
-    log_info "Stopping standalone Caddy container..."
-    docker stop nester-caddy 2>/dev/null || true
-    docker rm nester-caddy 2>/dev/null || true
-fi
-
-# Verify port 80 is free
-if lsof -i :80 >/dev/null 2>&1 || netstat -tuln 2>/dev/null | grep -q ':80 '; then
-    log_warn "Port 80 is still in use, attempting to free it..."
-    # Try to kill any process using port 80
-    fuser -k 80/tcp 2>/dev/null || true
-    sleep 2
-fi
-
 # Start containers
 log_info "Starting containers..."
-docker-compose -f docker-compose.https.yml up -d || {
+docker-compose -f docker-compose.https.yml up -d --remove-orphans || {
     log_error "Failed to start containers"
     log_error "Checking what's using port 80..."
     docker ps --filter "publish=80" || true
-    lsof -i :80 2>/dev/null || netstat -tuln 2>/dev/null | grep ':80 ' || true
+    sudo netstat -tlnp 2>/dev/null | grep ':80 ' || true
     exit 1
 }
 
-# Step 6: Wait for services to be healthy
+# Step 6: Wait for services
 log_info "Step 6: Waiting for services to become healthy..."
 sleep 15
 
@@ -167,20 +160,5 @@ docker-compose -f docker-compose.https.yml ps
 log_info "Step 7: Recent backend logs:"
 docker logs --tail 50 nester-backend 2>&1 || log_warn "Could not fetch backend logs"
 
-# Step 8: Setup CloudWatch Agent (idempotent - only runs if not installed)
-log_info "Step 8: Checking CloudWatch Agent..."
-if [ ! -f "/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent" ]; then
-    log_info "CloudWatch Agent not found, installing..."
-    if [ -f scripts/install-cloudwatch-agent.sh ]; then
-        sudo bash scripts/install-cloudwatch-agent.sh || {
-            log_warn "CloudWatch Agent installation failed (non-critical)"
-        }
-    else
-        log_warn "install-cloudwatch-agent.sh not found, skipping CloudWatch setup"
-    fi
-else
-    log_info "CloudWatch Agent already installed, skipping setup"
-fi
-
-log_info "Deployment script completed successfully"
-
+log_info "✅ Deploy complete - port 80 free"
+docker ps
