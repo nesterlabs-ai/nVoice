@@ -2,8 +2,10 @@
 # Fetch secrets from AWS Secrets Manager and create .env file
 # Run this on the Lightsail server during deployment
 
+set -euo pipefail
+
 ENV_FILE="${1:-/home/ec2-user/nester-bot/.env}"
-REGION="ap-south-1"
+AWS_REGION="${AWS_REGION:-ap-south-1}"
 SECRET_NAME="nester/voice-bot/secrets"
 
 echo "🔐 Fetching secrets from AWS Secrets Manager..."
@@ -19,7 +21,7 @@ echo "📥 Downloading secrets from: $SECRET_NAME..."
 # Fetch secret from Secrets Manager
 SECRET_JSON=$(aws secretsmanager get-secret-value \
     --secret-id "$SECRET_NAME" \
-    --region "$REGION" \
+    --region "$AWS_REGION" \
     --query SecretString \
     --output text 2>/dev/null)
 
@@ -28,15 +30,38 @@ if [ -z "$SECRET_JSON" ]; then
     echo "   Falling back to Parameter Store..."
     
     # Fallback to Parameter Store for backward compatibility
-    DEEPGRAM_API_KEY=$(aws ssm get-parameter --name "/nester/DEEPGRAM_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
-    OPENAI_API_KEY=$(aws ssm get-parameter --name "/nester/OPENAI_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
-    GOOGLE_API_KEY=$(aws ssm get-parameter --name "/nester/GOOGLE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
-    ELEVENLABS_API_KEY=$(aws ssm get-parameter --name "/nester/ELEVENLABS_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
-    ELEVENLABS_VOICE_ID=$(aws ssm get-parameter --name "/nester/ELEVENLABS_VOICE_ID" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
-    PINECONE_API_KEY=$(aws ssm get-parameter --name "/nester/PINECONE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
-    PINECONE_INDEX=$(aws ssm get-parameter --name "/nester/PINECONE_INDEX" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
-    PUBLIC_URL=$(aws ssm get-parameter --name "/nester/PUBLIC_URL" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
-    LIGHTRAG_API_KEY=$(aws ssm get-parameter --name "/nester/LIGHTRAG_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "")
+    # Use parameter prefix to fetch all at once (more efficient)
+    echo "⚠️  Fetching from Parameter Store (fallback mode)..."
+    PARAMS=$(aws ssm get-parameters \
+        --names \
+            "/nester/DEEPGRAM_API_KEY" \
+            "/nester/OPENAI_API_KEY" \
+            "/nester/GOOGLE_API_KEY" \
+            "/nester/ELEVENLABS_API_KEY" \
+            "/nester/ELEVENLABS_VOICE_ID" \
+            "/nester/PINECONE_API_KEY" \
+            "/nester/PINECONE_INDEX" \
+            "/nester/PUBLIC_URL" \
+            "/nester/LIGHTRAG_API_KEY" \
+        --with-decryption \
+        --region "$AWS_REGION" \
+        --query 'Parameters[*].[Name,Value]' \
+        --output text 2>/dev/null || echo "")
+    
+    # Parse parameters into variables
+    while IFS=$'\t' read -r name value; do
+        case "$name" in
+            "/nester/DEEPGRAM_API_KEY") DEEPGRAM_API_KEY="$value" ;;
+            "/nester/OPENAI_API_KEY") OPENAI_API_KEY="$value" ;;
+            "/nester/GOOGLE_API_KEY") GOOGLE_API_KEY="$value" ;;
+            "/nester/ELEVENLABS_API_KEY") ELEVENLABS_API_KEY="$value" ;;
+            "/nester/ELEVENLABS_VOICE_ID") ELEVENLABS_VOICE_ID="$value" ;;
+            "/nester/PINECONE_API_KEY") PINECONE_API_KEY="$value" ;;
+            "/nester/PINECONE_INDEX") PINECONE_INDEX="$value" ;;
+            "/nester/PUBLIC_URL") PUBLIC_URL="$value" ;;
+            "/nester/LIGHTRAG_API_KEY") LIGHTRAG_API_KEY="$value" ;;
+        esac
+    done <<< "$PARAMS"
     
     cat > "$ENV_FILE" << EOF
 # Auto-generated from AWS Parameter Store (fallback)

@@ -6,7 +6,7 @@
 # and configures it to collect Docker container logs
 # =============================================================================
 
-set -e
+set -euo pipefail
 
 REGION="${AWS_REGION:-ap-south-1}"
 INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "lightsail-instance")

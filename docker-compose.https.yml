@@ -32,7 +32,7 @@ services:
 
   # Backend - Python FastAPI + Pipecat Voice Assistant
   backend:
-    image: ghcr.io/nesterlabs-ai/nesteraibot-backend:latest
+    image: ghcr.io/nesterlabs-ai/nesteraibot-backend:${IMAGE_TAG:-latest}
     container_name: nester-backend
     # Ports NOT exposed externally - only through Caddy
     expose:
@@ -77,7 +77,7 @@ services:
 
   # Frontend - Nginx serving static files
   frontend:
-    image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:latest
+    image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:${IMAGE_TAG:-latest}
     container_name: nester-frontend
     # Port NOT exposed externally - only through Caddy
     expose:

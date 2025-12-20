@@ -8,6 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  AWS_REGION: ap-south-1
+  IMAGE_NAME: nesteraibot
 
 jobs:
   build:
@@ -16,7 +18,12 @@ jobs:
     permissions:
       contents: read
       packages: write
-
+    
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      backend_image: ${{ steps.meta.outputs.backend_image }}
+      frontend_image: ${{ steps.meta.outputs.frontend_image }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,9 +36,20 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}-backend
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}-frontend
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=latest
 
       - name: Build and push Backend
         uses: docker/build-push-action@v5
@@ -39,7 +57,9 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nesteraibot-backend:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -49,129 +69,103 @@ jobs:
           context: ./client
           file: ./client/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nesteraibot-frontend:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Set image outputs
+        id: image_outputs
+        run: |
+          echo "backend_image=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "frontend_image=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}" >> $GITHUB_OUTPUT
 
   deploy:
     name: Deploy to Lightsail
     runs-on: ubuntu-latest
     needs: build
-
+    environment:
+      name: production
+    
     steps:
-      - name: Deploy to Lightsail via SSH
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Deploy to Lightsail
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: AWS_REGION,IMAGE_TAG,GHCR_TOKEN,GHCR_USER,PUBLIC_URL
+          script: |
+            export AWS_REGION="${{ env.AWS_REGION }}"
+            export IMAGE_TAG="${{ github.sha }}"
+            export GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
+            export GHCR_USER="${{ github.repository_owner }}"
+            export PUBLIC_URL="${{ secrets.PUBLIC_URL }}"
+            
+            cd ~/nester-bot
+            
+            # Execute deployment script
+            bash scripts/lightsail-deploy.sh
+
+  post-deploy:
+    name: Post-Deployment Verification
+    runs-on: ubuntu-latest
+    needs: [build, deploy]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Health Check
+        run: |
+          PUBLIC_URL="${{ secrets.PUBLIC_URL }}"
+          MAX_RETRIES=5
+          RETRY_DELAY=15
+          
+          echo "🔍 Performing health check on: ${PUBLIC_URL}/health"
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i/$MAX_RETRIES..."
+            
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --insecure "${PUBLIC_URL}/health" || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Health check passed (HTTP $HTTP_CODE)"
+              exit 0
+            else
+              echo "⚠️  Health check failed (HTTP $HTTP_CODE)"
+              if [ $i -lt $MAX_RETRIES ]; then
+                echo "Retrying in ${RETRY_DELAY}s..."
+                sleep $RETRY_DELAY
+              fi
+            fi
+          done
+          
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          exit 1
+
+      - name: Fetch Container Logs
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script: |
-            cd ~/nester-bot
+            echo "=== Backend Container Logs (last 50 lines) ==="
+            docker logs --tail 50 nester-backend 2>&1 || echo "Could not fetch backend logs"
             
-            echo "Checking git remote..."
-            git remote -v
+            echo ""
+            echo "=== Container Status ==="
+            docker ps --format 'table {{.Names}}\t{{.Status}}'
             
-            echo "Pulling latest code from correct repository..."
-            # Ensure we're pulling from the right repo
-            git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git || echo "Remote already set"
-            git fetch origin
-            git pull origin main || echo "Pull failed - may need to reset"
-            
-            echo "Verifying latest commit..."
-            git log -1 --oneline
-            
-            echo "Fetching secrets from AWS Parameter Store..."
-            REGION="ap-south-1"
-            DEEPGRAM=$(aws ssm get-parameter --name "/nester/DEEPGRAM_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            OPENAI=$(aws ssm get-parameter --name "/nester/OPENAI_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            GOOGLE=$(aws ssm get-parameter --name "/nester/GOOGLE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            ELEVENLABS=$(aws ssm get-parameter --name "/nester/ELEVENLABS_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            ELEVENLABS_VOICE=$(aws ssm get-parameter --name "/nester/ELEVENLABS_VOICE_ID" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            PINECONE=$(aws ssm get-parameter --name "/nester/PINECONE_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            PINECONE_IDX=$(aws ssm get-parameter --name "/nester/PINECONE_INDEX" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            LIGHTRAG=$(aws ssm get-parameter --name "/nester/LIGHTRAG_API_KEY" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            PUBLIC=$(aws ssm get-parameter --name "/nester/PUBLIC_URL" --with-decryption --region $REGION --query "Parameter.Value" --output text)
-            DOMAIN_VAL=$(aws ssm get-parameter --name "/nester/DOMAIN" --with-decryption --region $REGION --query "Parameter.Value" --output text 2>/dev/null || echo "localhost")
-
-            echo "DEEPGRAM_API_KEY=$DEEPGRAM" > .env
-            echo "OPENAI_API_KEY=$OPENAI" >> .env
-            echo "GOOGLE_API_KEY=$GOOGLE" >> .env
-            echo "ELEVENLABS_API_KEY=$ELEVENLABS" >> .env
-            echo "ELEVENLABS_VOICE_ID=$ELEVENLABS_VOICE" >> .env
-            echo "PINECONE_API_KEY=$PINECONE" >> .env
-            echo "PINECONE_INDEX=$PINECONE_IDX" >> .env
-            echo "LIGHTRAG_API_KEY=$LIGHTRAG" >> .env
-            echo "PUBLIC_URL=$PUBLIC" >> .env
-            echo "DOMAIN=$DOMAIN_VAL" >> .env
-            echo "FASTAPI_HOST=0.0.0.0" >> .env
-            echo "FASTAPI_PORT=7860" >> .env
-            echo "WEBSOCKET_HOST=0.0.0.0" >> .env
-            echo "WEBSOCKET_PORT=8765" >> .env
-            echo "WEBSOCKET_SERVER=fast_api" >> .env
-            echo "SESSION_TIMEOUT=180" >> .env
-            echo "LOG_LEVEL=INFO" >> .env
-            chmod 600 .env
-
-            echo "Created .env with DOMAIN=$DOMAIN_VAL"
-            cat .env | grep DOMAIN
-
-            echo "Logging into GitHub Container Registry..."
-            echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin || echo "GHCR login failed"
-            
-            echo "Verifying docker-compose.https.yml uses GHCR images (from git pull)..."
-            if grep -q "image: ghcr.io" docker-compose.https.yml; then
-              echo "✅ docker-compose.https.yml already uses GHCR images"
-            else
-              echo "⚠️  File still has build: sections, updating..."
-              # Simple sed replacement
-              sed -i 's|build:.*|image: ghcr.io/nesterlabs-ai/nesteraibot-backend:latest|' docker-compose.https.yml
-              sed -i '/context: \./d' docker-compose.https.yml
-              sed -i '/dockerfile: Dockerfile/d' docker-compose.https.yml
-              # Fix frontend - find the build line and replace
-              sed -i '/frontend:/,/container_name: nester-frontend/ {
-                /build:/ {
-                  N
-                  N
-                  s|build:.*\n.*context:.*\n.*dockerfile:.*|image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:latest|
-                }
-              }' docker-compose.https.yml
-              echo "✅ Updated to use GHCR images"
-            fi
-            
-            echo "Pulling latest images from GHCR..."
-            docker-compose -f docker-compose.https.yml pull
-
-            echo "Restarting containers with HTTPS..."
-            docker-compose -f docker-compose.https.yml down || true
-            docker-compose -f docker-compose.https.yml up -d
-
-            echo "Waiting for services to start..."
-            sleep 30
-
-            echo "Reloading Caddy configuration..."
-            docker exec nester-caddy caddy reload --config /etc/caddy/Caddyfile || echo "Caddy reload not needed"
-
-            echo "Checking service health..."
-            docker-compose -f docker-compose.https.yml ps
-
-            echo "Setting up CloudWatch Agent for log collection..."
-            if [ ! -f "/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent" ]; then
-                echo "Installing CloudWatch Agent..."
-                cd /tmp
-                wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
-                sudo dpkg -i -E ./amazon-cloudwatch-agent.deb || echo "CloudWatch agent installation failed or already installed"
-                
-                # Create log groups
-                aws logs create-log-group --log-group-name "/lightsail/nester-docker" --region ap-south-1 2>/dev/null || true
-                aws logs create-log-group --log-group-name "/lightsail/nester-system" --region ap-south-1 2>/dev/null || true
-                
-                # Copy config if it exists
-                if [ -f ~/nester-bot/scripts/cloudwatch-agent-config.json ]; then
-                    sudo cp ~/nester-bot/scripts/cloudwatch-agent-config.json /opt/aws/amazon-cloudwatch-agent/bin/config.json
-                    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s || echo "CloudWatch agent start failed"
-                fi
-            else
-                echo "CloudWatch Agent already installed"
-            fi
-
-            echo "Deployment complete!"
+            echo ""
+            echo "=== Recent Errors (if any) ==="
+            docker logs --tail 100 nester-backend 2>&1 | grep -i error | tail -10 || echo "No errors found"
