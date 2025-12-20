@@ -110,64 +110,92 @@ jobs:
             
             cd ~/nester-bot
             
-            # Ensure we have the latest code (including the deployment script)
-            echo "=== Git Repository Setup ==="
+            # Robust git normalization - ensures clean state regardless of prior state
+            echo "=== Git Repository Normalization ==="
+            
+            # Initialize git if no repo exists
             if [ ! -d .git ]; then
-              echo "Initializing git repository..."
+              echo "📦 Initializing git repository..."
               git init
-              git remote add origin https://github.com/nesterlabs-ai/NesterAIBot.git || git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
             fi
             
-            # Set correct remote
-            git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
-            echo "Remote URL: $(git remote get-url origin)"
+            # Set origin (add if missing, update if exists)
+            echo "🔗 Setting remote origin..."
+            git remote remove origin 2>/dev/null || true
+            git remote add origin https://github.com/nesterlabs-ai/NesterAIBot.git
             
-            # Fetch all branches and tags
-            echo "Fetching latest code..."
-            git fetch origin --prune --force || git fetch origin
-            
-            # Ensure we're on main branch (create if needed)
-            if git show-ref --verify --quiet refs/heads/main; then
-              git checkout main
-            else
-              git checkout -b main origin/main 2>/dev/null || git checkout -b main
-            fi
-            
-            # Reset to latest origin/main
-            echo "Resetting to origin/main..."
-            git reset --hard origin/main || {
-              echo "⚠️  Hard reset failed, trying soft reset..."
-              git reset --soft origin/main
-              git checkout -- .
+            # Fetch with prune to clean up old refs and get latest
+            echo "📥 Fetching latest code (pruning old refs)..."
+            git fetch --prune origin || {
+              echo "⚠️  Fetch with prune failed, trying without prune..."
+              git fetch origin
             }
             
-            # Verify we have the latest commit
-            CURRENT_COMMIT=$(git log -1 --oneline)
-            echo "Current commit: $CURRENT_COMMIT"
-            echo "Expected commit should contain: lightsail-deploy"
+            # Force checkout/create main branch tracking origin/main
+            # -B creates branch if it doesn't exist, or resets if it does
+            echo "🌿 Checking out main branch (force create/reset)..."
+            git checkout -B main origin/main || {
+              echo "⚠️  Checkout failed, trying alternative approach..."
+              git branch -D main 2>/dev/null || true
+              git checkout -b main origin/main
+            }
             
-            # Ensure script is executable
+            # Hard reset to ensure clean state matching origin/main exactly
+            echo "🔄 Resetting to origin/main (hard reset)..."
+            git reset --hard origin/main
+            
+            # Diagnostic information (keep for troubleshooting)
+            echo ""
+            echo "=== Git State Diagnostics ==="
+            CURRENT_COMMIT=$(git rev-parse HEAD)
+            CURRENT_COMMIT_SHORT=$(git log -1 --oneline)
+            CURRENT_BRANCH=$(git branch --show-current)
+            REMOTE_TRACKING=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "none")
+            
+            echo "📍 Current directory: $(pwd)"
+            echo "🌿 Current branch: ${CURRENT_BRANCH}"
+            echo "🔗 Remote tracking: ${REMOTE_TRACKING}"
+            echo "📌 Current commit (full): ${CURRENT_COMMIT}"
+            echo "📌 Current commit (short): ${CURRENT_COMMIT_SHORT}"
+            echo "🔀 Branch status:"
+            git status --short --branch | head -3
+            echo ""
+            
+            # Verify script exists
+            echo "=== Deployment Script Verification ==="
             if [ -f scripts/lightsail-deploy.sh ]; then
               chmod +x scripts/lightsail-deploy.sh
+              SCRIPT_LINES=$(wc -l < scripts/lightsail-deploy.sh)
+              SCRIPT_SIZE=$(wc -c < scripts/lightsail-deploy.sh)
               echo "✅ Found scripts/lightsail-deploy.sh"
-              echo "Script size: $(wc -l < scripts/lightsail-deploy.sh) lines"
+              echo "   Lines: ${SCRIPT_LINES}"
+              echo "   Size: ${SCRIPT_SIZE} bytes"
+              echo ""
+              echo "=== Starting Deployment ==="
               bash scripts/lightsail-deploy.sh
             else
               echo "❌ Error: scripts/lightsail-deploy.sh not found"
+              echo ""
+              echo "=== Diagnostic Information ==="
               echo "Current directory: $(pwd)"
-              echo "Current commit: $CURRENT_COMMIT"
-              echo "Branch: $(git branch --show-current)"
+              echo "Current branch: ${CURRENT_BRANCH}"
+              echo "Current commit: ${CURRENT_COMMIT_SHORT}"
+              echo "Remote URL: $(git remote get-url origin)"
+              echo ""
               echo "Remote branches:"
               git branch -r | head -5
               echo ""
-              echo "Files in scripts/:"
-              ls -la scripts/ || echo "scripts/ directory not found"
+              echo "Files in scripts/ directory:"
+              ls -la scripts/ 2>/dev/null || echo "  scripts/ directory not found"
               echo ""
-              echo "All .sh files in repo:"
-              find . -name "*.sh" -type f 2>/dev/null | head -10
+              echo "All .sh files in repository:"
+              find . -name "*.sh" -type f 2>/dev/null | head -10 || echo "  No .sh files found"
               echo ""
-              echo "Recent commits:"
+              echo "Recent commits (last 5):"
               git log --oneline -5
+              echo ""
+              echo "Files changed in current commit:"
+              git diff-tree --no-commit-id --name-only -r HEAD | head -10
               exit 1
             fi
 
