@@ -327,6 +327,51 @@ jobs:
           echo "⚠️  Check container logs manually: docker logs nester-backend"
           exit 0  # Don't fail workflow - deployment may still be successful
 
+      - name: Verify Code Version and Fix if Needed
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          GITHUB_REPO: https://github.com/${{ github.repository }}.git
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.repository_owner }}
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/nester-bot || exit 1
+            
+            # Run verification and fix script if it exists
+            if [ -f scripts/verify-and-fix-code-version.sh ]; then
+              chmod +x scripts/verify-and-fix-code-version.sh
+              bash scripts/verify-and-fix-code-version.sh
+            else
+              echo "⚠️  Verification script not found, running manual check..."
+              
+              # Manual version check
+              echo "=== Code Version Check ==="
+              echo "Expected commit SHA: ${{ github.sha }}"
+              EXPECTED_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+              echo "Expected short SHA: $EXPECTED_SHA"
+              echo ""
+              
+              CURRENT_IMAGE=$(docker inspect nester-backend 2>/dev/null | grep -oP '"Image":\s*"\K[^"]+' | head -1 || echo "")
+              echo "Current image: $CURRENT_IMAGE"
+              
+              if echo "$CURRENT_IMAGE" | grep -q "$EXPECTED_SHA"; then
+                echo "✅ Container is using latest code (commit $EXPECTED_SHA)"
+              elif echo "$CURRENT_IMAGE" | grep -q "latest"; then
+                echo "⚠️  Container is using 'latest' tag - recreating with specific SHA..."
+                docker-compose -f docker-compose.https.yml pull || true
+                docker-compose -f docker-compose.https.yml up -d --force-recreate --no-deps backend
+                sleep 15
+              else
+                echo "⚠️  Version mismatch detected - recreating container..."
+                docker-compose -f docker-compose.https.yml pull || true
+                docker-compose -f docker-compose.https.yml up -d --force-recreate --no-deps backend
+                sleep 15
+              fi
+            fi
+
       - name: Fetch Container Logs
         uses: appleboy/ssh-action@v1.0.3
         with:
