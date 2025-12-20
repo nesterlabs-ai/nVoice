@@ -473,3 +473,22 @@ jobs:
             echo "=========================================="
             echo "✅ Diagnostic complete"
             echo "=========================================="
+            
+            echo ""
+            echo "=== GHCR Verification (Enforcement) ==="
+            LOCAL_IMAGES=$(docker images "nester*" --format "{{.Repository}}" 2>/dev/null | grep -v "ghcr.io/nesterlabs-ai" || true)
+            if [ -n "$LOCAL_IMAGES" ]; then
+              echo "❌ CRITICAL: Local nester images found on server!"
+              echo "   Images: $LOCAL_IMAGES"
+              echo "   This violates GHCR-only policy"
+              echo "   Run: docker images | grep nester"
+              exit 1
+            else
+              echo "✅ GHCR-only enforcement verified - no local images"
+            fi
+            
+            GHCR_CONTAINERS=$(docker ps --format "{{.Image}}" | grep -c "ghcr.io" || echo "0")
+            echo "GHCR containers running: $GHCR_CONTAINERS"
+            if [ "$GHCR_CONTAINERS" -lt 2 ]; then
+              echo "⚠️  Warning: Expected at least 2 GHCR containers"
+            fi
