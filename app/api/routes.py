@@ -38,9 +38,11 @@ async def connect(request: Request) -> Dict[str, Any]:
 
     if public_url:
         # Production: Use configured public URL
+        # Always use wss if public_url is https (required for browser security)
         ws_scheme = "wss" if public_url.startswith("https") else "ws"
         public_host = public_url.replace("https://", "").replace("http://", "").rstrip("/")
         ws_url = f"{ws_scheme}://{public_host}/ws"
+        logger.info(f"Public URL detected: {public_url}, using WebSocket scheme: {ws_scheme}")
     elif server_mode == "websocket_server":
         # Development: Standalone WebSocket server
         host = server.server_config.get("websocket_host", "localhost")
