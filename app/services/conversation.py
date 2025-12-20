@@ -228,8 +228,10 @@ class ConversationManager:
         if custom_system_prompt:
             # Use custom system prompt from config (it already includes identity rules)
             system_message = custom_system_prompt
+            logger.info(f"Using custom system prompt (length: {len(system_message)} chars)")
         else:
-            # Default system prompt
+            # Default system prompt (fallback only)
+            logger.warning("No custom system prompt found in config, using default")
             system_message = """
 You are a helpful AI voice assistant. Keep responses SHORT and CONCISE - ideal for voice conversation.
 
@@ -246,6 +248,19 @@ CRITICAL RAG RULES:
 - Never give long explanations - keep it conversational
 - If RAG returns detailed info, pick the 2-3 most important points only
 """
+        
+        # CRITICAL: Add explicit identity enforcement at the start
+        # This ensures the bot NEVER identifies as a generic LLM
+        identity_enforcement = """
+CRITICAL IDENTITY RULES - YOU MUST FOLLOW THESE:
+- You are the Nesterlabs voice assistant, NOT a generic AI or language model
+- When asked "who are you" or "what are you", you MUST respond: "I'm the Nesterlabs voice assistant. I help visitors learn about Nesterlabs, our services, and connect with our team."
+- NEVER say you are "a large language model" or "trained by Google" or "trained by OpenAI"
+- NEVER identify as a generic AI - you are specifically the Nesterlabs voice assistant
+- If asked about your identity, always say you are the Nesterlabs voice assistant
+
+"""
+        system_message = identity_enforcement + system_message
         # No initial user prompt - greeting is handled via direct TTS
         # This prevents the LLM from generating a multi-sentence greeting
         messages = [
