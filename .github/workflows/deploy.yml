@@ -124,8 +124,10 @@ jobs:
             git remote remove origin 2>/dev/null || true
             
             # Use token in URL if available, otherwise use public URL
-            if [ -n "${{ secrets.GITHUB_TOKEN }}" ]; then
-              GIT_REPO_URL="https://${{ secrets.GITHUB_TOKEN }}@github.com/nesterlabs-ai/NesterAIBot.git"
+            # Note: GITHUB_TOKEN is automatically available in GitHub Actions
+            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            if [ -n "$GITHUB_TOKEN" ]; then
+              GIT_REPO_URL="https://${GITHUB_TOKEN}@github.com/nesterlabs-ai/NesterAIBot.git"
               echo "Using authenticated URL for private repo"
             else
               GIT_REPO_URL="https://github.com/nesterlabs-ai/NesterAIBot.git"
@@ -279,39 +281,101 @@ jobs:
               echo "Checking if script exists in latest commit on GitHub:"
               git ls-tree -r HEAD --name-only | grep -i lightsail || echo "  Not found in current HEAD"
               echo ""
+              echo ""
               echo "=== Attempting inline deployment as fallback ==="
               echo "Since script not found, running deployment steps inline..."
               
-              # Inline deployment as fallback
-              set -euo pipefail
+              # Inline deployment as fallback (same logic as lightsail-deploy.sh)
+              set +e  # Allow errors for fallback
               
-              # Step 1: Git sync (already done above)
-              echo "Step 1: Git sync complete"
+              # Step 1: Git sync (already done above, but verify)
+              echo "Step 1: Verifying git sync..."
+              echo "Current commit: $(git log -1 --oneline 2>/dev/null || echo 'unknown')"
               
               # Step 2: Fetch secrets
-              echo "Step 2: Fetching secrets..."
+              echo ""
+              echo "Step 2: Fetching secrets from AWS Secrets Manager..."
               if [ -f scripts/fetch-secrets.sh ]; then
-                bash scripts/fetch-secrets.sh .env
+                bash scripts/fetch-secrets.sh .env || {
+                  echo "⚠️  fetch-secrets.sh failed, but continuing..."
+                }
               else
-                echo "⚠️  fetch-secrets.sh not found, skipping..."
+                echo "⚠️  fetch-secrets.sh not found"
+                echo "Attempting to fetch secrets directly..."
+                # Direct secret fetching as fallback
+                SECRET_NAME="nester/voice-bot/secrets"
+                SECRET_JSON=$(aws secretsmanager get-secret-value \
+                  --secret-id "$SECRET_NAME" \
+                  --region "$AWS_REGION" \
+                  --query SecretString \
+                  --output text 2>/dev/null || echo "")
+                
+                if [ -n "$SECRET_JSON" ]; then
+                  echo "✅ Fetched secrets directly"
+                  # Create .env from JSON (simplified)
+                  python3 << 'PYEOF' > .env
+import json
+import sys
+secret_data = json.loads('''$SECRET_JSON''')
+for key, value in sorted(secret_data.items()):
+    if value:
+        print(f"{key}={value}")
+PYEOF
+                  chmod 600 .env
+                else
+                  echo "⚠️  Could not fetch secrets, using existing .env if present"
+                fi
               fi
               
               # Step 3: Docker login
-              echo "Step 3: Docker login..."
-              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+              echo ""
+              echo "Step 3: Authenticating with GitHub Container Registry..."
+              if [ -z "$GHCR_TOKEN" ] || [ -z "$GHCR_USER" ]; then
+                echo "❌ GHCR_TOKEN or GHCR_USER not set"
+                exit 1
+              fi
+              
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin || {
+                echo "❌ Failed to login to GHCR"
+                exit 1
+              }
               
               # Step 4: Pull images
-              echo "Step 4: Pulling images..."
-              if [ -f docker-compose.https.yml ]; then
-                export IMAGE_TAG
-                docker-compose -f docker-compose.https.yml pull
-                docker-compose -f docker-compose.https.yml down || true
-                docker-compose -f docker-compose.https.yml up -d
-                echo "✅ Deployment complete (inline fallback)"
-              else
+              echo ""
+              echo "Step 4: Pulling latest Docker images..."
+              if [ ! -f docker-compose.https.yml ]; then
                 echo "❌ docker-compose.https.yml not found"
                 exit 1
               fi
+              
+              # Update IMAGE_TAG in compose file if needed
+              export IMAGE_TAG
+              if [ "$IMAGE_TAG" != "latest" ]; then
+                echo "Updating image tags to: $IMAGE_TAG"
+                sed -i "s|:latest|:$IMAGE_TAG|g" docker-compose.https.yml || true
+              fi
+              
+              docker-compose -f docker-compose.https.yml pull || {
+                echo "⚠️  Pull failed, but continuing..."
+              }
+              
+              # Step 5: Deploy containers
+              echo ""
+              echo "Step 5: Deploying containers..."
+              docker-compose -f docker-compose.https.yml down || true
+              docker-compose -f docker-compose.https.yml up -d || {
+                echo "❌ Failed to start containers"
+                exit 1
+              }
+              
+              # Step 6: Wait and check status
+              echo ""
+              echo "Step 6: Waiting for services..."
+              sleep 20
+              docker-compose -f docker-compose.https.yml ps
+              
+              echo ""
+              echo "✅ Deployment complete (inline fallback)"
             fi
 
   post-deploy:
