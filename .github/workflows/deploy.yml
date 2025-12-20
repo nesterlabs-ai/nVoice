@@ -312,15 +312,15 @@ jobs:
                 
                 if [ -n "$SECRET_JSON" ]; then
                   echo "✅ Fetched secrets directly"
-                  # Create .env from JSON (simplified)
-                  python3 << 'PYEOF' > .env
+                  # Create .env from JSON using Python
+                  python3 -c "
 import json
 import sys
 secret_data = json.loads('''$SECRET_JSON''')
 for key, value in sorted(secret_data.items()):
     if value:
-        print(f"{key}={value}")
-PYEOF
+        print(f'{key}={value}')
+" > .env
                   chmod 600 .env
                 else
                   echo "⚠️  Could not fetch secrets, using existing .env if present"
