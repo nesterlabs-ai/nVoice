@@ -125,11 +125,19 @@ jobs:
             git remote add origin https://github.com/nesterlabs-ai/NesterAIBot.git
             
             # Fetch with prune to clean up old refs and get latest
+            # Use GIT_TERMINAL_PROMPT=0 to avoid interactive prompts
             echo "📥 Fetching latest code (pruning old refs)..."
-            git fetch --prune origin || {
+            GIT_TERMINAL_PROMPT=0 git fetch --prune origin main || {
               echo "⚠️  Fetch with prune failed, trying without prune..."
-              git fetch origin
+              GIT_TERMINAL_PROMPT=0 git fetch origin main || {
+                echo "⚠️  Fetch failed, trying with full URL..."
+                GIT_TERMINAL_PROMPT=0 git fetch https://github.com/nesterlabs-ai/NesterAIBot.git main
+              }
             }
+            
+            # Also fetch all refs to ensure we have latest
+            echo "📥 Fetching all refs..."
+            GIT_TERMINAL_PROMPT=0 git fetch --prune --all 2>/dev/null || true
             
             # Force checkout/create main branch tracking origin/main
             # -B creates branch if it doesn't exist, or resets if it does
@@ -161,26 +169,35 @@ jobs:
             git status --short --branch | head -3
             echo ""
             
-            # Verify script exists
+            # Verify script exists (check both locations)
             echo "=== Deployment Script Verification ==="
+            SCRIPT_PATH=""
             if [ -f scripts/lightsail-deploy.sh ]; then
-              chmod +x scripts/lightsail-deploy.sh
-              SCRIPT_LINES=$(wc -l < scripts/lightsail-deploy.sh)
-              SCRIPT_SIZE=$(wc -c < scripts/lightsail-deploy.sh)
-              echo "✅ Found scripts/lightsail-deploy.sh"
+              SCRIPT_PATH="scripts/lightsail-deploy.sh"
+            elif [ -f lightsail-deploy.sh ]; then
+              SCRIPT_PATH="lightsail-deploy.sh"
+              echo "⚠️  Found script in root, should be in scripts/ directory"
+            fi
+            
+            if [ -n "$SCRIPT_PATH" ]; then
+              chmod +x "$SCRIPT_PATH"
+              SCRIPT_LINES=$(wc -l < "$SCRIPT_PATH")
+              SCRIPT_SIZE=$(wc -c < "$SCRIPT_PATH")
+              echo "✅ Found $SCRIPT_PATH"
               echo "   Lines: ${SCRIPT_LINES}"
               echo "   Size: ${SCRIPT_SIZE} bytes"
               echo ""
               echo "=== Starting Deployment ==="
-              bash scripts/lightsail-deploy.sh
+              bash "$SCRIPT_PATH"
             else
-              echo "❌ Error: scripts/lightsail-deploy.sh not found"
+              echo "❌ Error: lightsail-deploy.sh not found in scripts/ or root"
               echo ""
               echo "=== Diagnostic Information ==="
               echo "Current directory: $(pwd)"
               echo "Current branch: ${CURRENT_BRANCH}"
               echo "Current commit: ${CURRENT_COMMIT_SHORT}"
               echo "Remote URL: $(git remote get-url origin)"
+              echo "Origin/main commit: $(git rev-parse origin/main 2>/dev/null || echo 'not found')"
               echo ""
               echo "Remote branches:"
               git branch -r | head -5
@@ -189,13 +206,16 @@ jobs:
               ls -la scripts/ 2>/dev/null || echo "  scripts/ directory not found"
               echo ""
               echo "All .sh files in repository:"
-              find . -name "*.sh" -type f 2>/dev/null | head -10 || echo "  No .sh files found"
+              find . -name "*.sh" -type f 2>/dev/null | head -15 || echo "  No .sh files found"
               echo ""
-              echo "Recent commits (last 5):"
-              git log --oneline -5
+              echo "Recent commits (last 10):"
+              git log --oneline -10
               echo ""
               echo "Files changed in current commit:"
               git diff-tree --no-commit-id --name-only -r HEAD | head -10
+              echo ""
+              echo "Checking if script exists in latest commit on GitHub:"
+              git ls-tree -r HEAD --name-only | grep -i lightsail || echo "  Not found in current HEAD"
               exit 1
             fi
 
