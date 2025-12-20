@@ -22,6 +22,7 @@ stt:
     interim_results: true    # Enable streaming for lower latency
     punctuate: true          # Better text formatting
     filler_words: false      # Remove "um", "uh" for cleaner transcripts
+    
 
 tts:
   provider: "deepgram"  # Using Deepgram for cost-effectiveness
@@ -48,8 +49,8 @@ rag:
   config:
     api_url: "https://lightrag-alb-599477844.eu-north-1.elb.amazonaws.com:8443"  # LightRAG server
     api_key: "${LIGHTRAG_API_KEY}"  # API key for authentication
-    mode: "local"  # Query mode: "local" is fastest (entity-focused), "global" is slower but more comprehensive
-    top_k: 3  # Reduced for faster response (optimal balance)
+    mode: "mix"  # Query mode: "mix" balances entity-focused and pattern analysis for better accuracy
+    top_k: 8  # Increased for better accuracy - retrieves more context chunks (was 3)
     timeout: 20  # API timeout in seconds
     use_streaming: true  # Enabled - streaming for faster retrieval
     use_connection_pooling: true  # Use shared HTTP client for connection reuse (faster)
