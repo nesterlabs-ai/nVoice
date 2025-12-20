@@ -111,40 +111,63 @@ jobs:
             cd ~/nester-bot
             
             # Ensure we have the latest code (including the deployment script)
+            echo "=== Git Repository Setup ==="
             if [ ! -d .git ]; then
               echo "Initializing git repository..."
               git init
               git remote add origin https://github.com/nesterlabs-ai/NesterAIBot.git || git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
             fi
             
-            # Set correct remote and fetch latest
+            # Set correct remote
             git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
-            echo "Fetching latest code from main branch..."
-            git fetch origin main --force || {
-              echo "⚠️  Fetch failed, trying without force..."
-              git fetch origin main
+            echo "Remote URL: $(git remote get-url origin)"
+            
+            # Fetch all branches and tags
+            echo "Fetching latest code..."
+            git fetch origin --prune --force || git fetch origin
+            
+            # Ensure we're on main branch (create if needed)
+            if git show-ref --verify --quiet refs/heads/main; then
+              git checkout main
+            else
+              git checkout -b main origin/main 2>/dev/null || git checkout -b main
+            fi
+            
+            # Reset to latest origin/main
+            echo "Resetting to origin/main..."
+            git reset --hard origin/main || {
+              echo "⚠️  Hard reset failed, trying soft reset..."
+              git reset --soft origin/main
+              git checkout -- .
             }
             
-            # Checkout main branch explicitly
-            git checkout main 2>/dev/null || git checkout -b main
-            git reset --hard origin/main
-            
-            echo "Current commit: $(git log -1 --oneline)"
-            echo "Verifying scripts/lightsail-deploy.sh exists..."
+            # Verify we have the latest commit
+            CURRENT_COMMIT=$(git log -1 --oneline)
+            echo "Current commit: $CURRENT_COMMIT"
+            echo "Expected commit should contain: lightsail-deploy"
             
             # Ensure script is executable
             if [ -f scripts/lightsail-deploy.sh ]; then
               chmod +x scripts/lightsail-deploy.sh
               echo "✅ Found scripts/lightsail-deploy.sh"
+              echo "Script size: $(wc -l < scripts/lightsail-deploy.sh) lines"
               bash scripts/lightsail-deploy.sh
             else
-              echo "❌ Error: scripts/lightsail-deploy.sh not found after git pull"
+              echo "❌ Error: scripts/lightsail-deploy.sh not found"
               echo "Current directory: $(pwd)"
-              echo "Current commit: $(git log -1 --oneline)"
+              echo "Current commit: $CURRENT_COMMIT"
+              echo "Branch: $(git branch --show-current)"
+              echo "Remote branches:"
+              git branch -r | head -5
+              echo ""
               echo "Files in scripts/:"
               ls -la scripts/ || echo "scripts/ directory not found"
-              echo "All files in repo:"
-              find . -name "*.sh" -type f | head -10
+              echo ""
+              echo "All .sh files in repo:"
+              find . -name "*.sh" -type f 2>/dev/null | head -10
+              echo ""
+              echo "Recent commits:"
+              git log --oneline -5
               exit 1
             fi
 
