@@ -107,228 +107,164 @@ jobs:
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script: |
-            cd ~/nester-bot
+            cd ~/nester-bot || mkdir -p ~/nester-bot && cd ~/nester-bot
             
-            # === PORT 80 CLEANUP FIRST ===
-            echo "🧹 Cleaning port 80 conflicts..."
+            # === PORT 80 CLEANUP FIRST (CRITICAL) ===
+            echo "🧹 Step 1: Cleaning port 80 conflicts..."
             sudo fuser -k 80/tcp 2>/dev/null || true
             docker ps -q --filter "publish=80" | xargs -r docker rm -f 2>/dev/null || true
-            docker-compose -f docker-compose.https.yml down --remove-orphans --rmi all -t 10 2>/dev/null || true
+            docker-compose -f docker-compose.https.yml down --remove-orphans 2>/dev/null || true
+            sleep 2
             
-            # === SETUP SSH FOR GIT ===
-            echo "🔑 Setting up SSH for git operations..."
-            mkdir -p ~/.ssh && chmod 700 ~/.ssh
+            # === CREATE DEPLOYMENT SCRIPT (ALWAYS - NO GIT DEPENDENCY) ===
+            echo "📝 Step 2: Creating deployment script (no git needed)..."
+            mkdir -p scripts
+            rm -f lightsail-deploy.sh  # Remove old root script
             
-            # Setup SSH config for GitHub
-            cat > ~/.ssh/config << 'SSH_CONFIG_EOF'
-            Host github.com
-              HostName github.com
-              User git
-              StrictHostKeyChecking no
-              BatchMode yes
-            SSH_CONFIG_EOF
-            chmod 600 ~/.ssh/config
-            
-            # Write SSH key from workflow secret
-            echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail_key
-            chmod 600 ~/.ssh/lightsail_key
-            
-            # Configure git to use SSH
-            export GIT_SSH_COMMAND="ssh -i ~/.ssh/lightsail_key -o StrictHostKeyChecking=no -o BatchMode=yes -F ~/.ssh/config"
-            
-            # === FORCE GIT SYNC VIA SSH ===
-            echo "🔄 Force syncing git repository via SSH..."
-            if [ ! -d .git ]; then
-              git init
-              git remote add origin git@github.com:nesterlabs-ai/NesterAIBot.git || git remote set-url origin git@github.com:nesterlabs-ai/NesterAIBot.git
-            else
-              git remote set-url origin git@github.com:nesterlabs-ai/NesterAIBot.git
-            fi
-            
-            # Fetch and reset
-            git fetch origin main || {
-              echo "⚠️  Git fetch failed, trying HTTPS fallback..."
-              git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
-              export GIT_TERMINAL_PROMPT=0
-              git fetch origin main || exit 1
-            }
-            
-            git checkout main origin/main -f || git checkout -B main origin/main
-            git reset --hard origin/main
-            
-            # === REMOVE OLD ROOT SCRIPT ===
-            echo "🗑️  Removing old root lightsail-deploy.sh if exists..."
-            rm -f lightsail-deploy.sh
-            
-            # === FORCE CREATE SCRIPT IF MISSING ===
-            if [ ! -f "scripts/lightsail-deploy.sh" ]; then
-              echo "⚠️  Creating missing deploy script..."
-              mkdir -p scripts
-              cat > scripts/lightsail-deploy.sh << 'SCRIPT_EOF'
+            cat > scripts/lightsail-deploy.sh << 'DEPLOY_SCRIPT_EOF'
             #!/bin/bash
-            set -e
+            set -euo pipefail
+            
             echo "=== NesterAIBot GHCR Deploy ==="
             
+            cd ~/nester-bot || exit 1
+            
             # Port cleanup
+            echo "🔍 Cleaning port 80..."
             sudo fuser -k 80/tcp 2>/dev/null || true
             docker ps -q --filter "publish=80" | xargs -r docker rm -f 2>/dev/null || true
+            sleep 2
             
             # Docker login
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            echo "🔑 Logging into GHCR..."
+            if [ -z "$GHCR_TOKEN" ] || [ -z "$GHCR_USER" ]; then
+              echo "❌ GHCR_TOKEN or GHCR_USER not set"
+              exit 1
+            fi
+            
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin || {
+              echo "❌ Failed to login to GHCR"
+              exit 1
+            }
             
             # Fetch secrets
-            if command -v jq &> /dev/null; then
-              aws secretsmanager get-secret-value --secret-id "nester/voice-bot/secrets" --region "$AWS_REGION" --query SecretString --output text | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
-            else
-              python3 -c "
-            import json, sys
-            secret = json.loads(sys.stdin.read())
-            for k, v in sorted(secret.items()):
-                if v: print(f'{k}={v}')
-            " < <(aws secretsmanager get-secret-value --secret-id "nester/voice-bot/secrets" --region "$AWS_REGION" --query SecretString --output text) > .env
-            fi
-            chmod 600 .env
+            echo "🔐 Fetching secrets..."
+            SECRET_NAME="nester/voice-bot/secrets"
+            SECRET_JSON=$(aws secretsmanager get-secret-value \
+              --secret-id "$SECRET_NAME" \
+              --region "${AWS_REGION:-ap-south-1}" \
+              --query SecretString \
+              --output text 2>/dev/null || echo "")
             
-            # Update image tags
-            if [ "$IMAGE_TAG" != "latest" ]; then
+            if [ -n "$SECRET_JSON" ]; then
+              echo "✅ Fetched secrets"
+              # Create .env from JSON
+              if command -v jq &> /dev/null; then
+                echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
+              else
+                TEMP_JSON=$(mktemp)
+                echo "$SECRET_JSON" > "$TEMP_JSON"
+                python3 -c "import json; d=json.load(open('$TEMP_JSON')); [print(f'{k}={v}') for k,v in sorted(d.items()) if v]" > .env
+                rm -f "$TEMP_JSON"
+              fi
+              chmod 600 .env
+            else
+              echo "⚠️  Could not fetch secrets, checking for existing .env..."
+              if [ ! -f .env ]; then
+                echo "❌ No .env file and secrets fetch failed"
+                exit 1
+              fi
+            fi
+            
+            # Ensure docker-compose.https.yml exists (create minimal if missing)
+            if [ ! -f docker-compose.https.yml ]; then
+              echo "⚠️  docker-compose.https.yml not found, creating minimal version..."
+              cat > docker-compose.https.yml << 'COMPOSE_EOF'
+            services:
+              caddy:
+                image: caddy:2-alpine
+                container_name: nester-caddy
+                restart: always
+                ports:
+                  - "80:80"
+                  - "443:443"
+                volumes:
+                  - ./Caddyfile:/etc/caddy/Caddyfile:ro
+                  - caddy_data:/data
+                  - caddy_config:/config
+                networks:
+                  - nester-network
+              
+              backend:
+                image: ghcr.io/nesterlabs-ai/nesteraibot-backend:${IMAGE_TAG:-latest}
+                container_name: nester-backend
+                restart: always
+                env_file:
+                  - .env
+                expose:
+                  - "7860"
+                  - "8765"
+                networks:
+                  - nester-network
+              
+              frontend:
+                image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:${IMAGE_TAG:-latest}
+                container_name: nester-frontend
+                restart: always
+                expose:
+                  - "80"
+                networks:
+                  - nester-network
+                depends_on:
+                  - backend
+            
+            networks:
+              nester-network:
+                driver: bridge
+            
+            volumes:
+              caddy_data:
+              caddy_config:
+            COMPOSE_EOF
+            fi
+            
+            # Update image tags if needed
+            if [ -n "$IMAGE_TAG" ] && [ "$IMAGE_TAG" != "latest" ]; then
               IMAGE_TAG_SHORT=$(echo "$IMAGE_TAG" | cut -c1-7)
+              echo "📌 Using image tag: $IMAGE_TAG_SHORT"
               sed -i "s|:latest|:$IMAGE_TAG_SHORT|g" docker-compose.https.yml || true
             fi
             
-            # Deploy
-            docker-compose -f docker-compose.https.yml pull
+            # Pull and deploy
+            echo "📥 Pulling images..."
+            export IMAGE_TAG
+            docker-compose -f docker-compose.https.yml pull || {
+              echo "⚠️  Pull failed, but continuing..."
+            }
+            
+            echo "🚀 Deploying containers..."
             docker-compose -f docker-compose.https.yml down --remove-orphans || true
-            docker-compose -f docker-compose.https.yml up -d --remove-orphans
+            docker-compose -f docker-compose.https.yml up -d --remove-orphans || {
+              echo "❌ Failed to start containers"
+              echo "Checking port 80..."
+              docker ps --filter "publish=80" || true
+              sudo netstat -tlnp 2>/dev/null | grep ':80 ' || true
+              exit 1
+            }
             
-            echo "✅ Deployed - port 80 free"
+            echo "⏳ Waiting for services..."
+            sleep 20
+            
+            echo "✅ Deploy complete"
             docker ps
-            SCRIPT_EOF
-              chmod +x scripts/lightsail-deploy.sh
-            fi
+            DEPLOY_SCRIPT_EOF
             
-            # === VERIFY AND EXECUTE ===
-            echo "✅ Current commit: $(git rev-parse HEAD | cut -c1-7)"
-            echo "✅ Executing scripts/lightsail-deploy.sh"
+            chmod +x scripts/lightsail-deploy.sh
+            echo "✅ Deployment script created"
+            
+            # === EXECUTE DEPLOYMENT (NO GIT DEPENDENCY) ===
+            echo "🚀 Step 3: Executing deployment..."
             bash scripts/lightsail-deploy.sh
-              echo "❌ Error: lightsail-deploy.sh not found in scripts/ or root"
-              echo ""
-              echo "=== Diagnostic Information ==="
-              echo "Current directory: $(pwd)"
-              echo "Current branch: ${CURRENT_BRANCH}"
-              echo "Current commit: ${CURRENT_COMMIT_SHORT}"
-              echo "Remote URL: $(git remote get-url origin | sed 's/\/\/.*@/\/\/***@/')"
-              echo "Origin/main commit: $(git rev-parse origin/main 2>/dev/null || echo 'not found')"
-              echo ""
-              echo "Remote branches:"
-              git branch -r | head -5
-              echo ""
-              echo "Files in scripts/ directory:"
-              ls -la scripts/ 2>/dev/null || echo "  scripts/ directory not found"
-              echo ""
-              echo "All .sh files in repository:"
-              find . -name "*.sh" -type f 2>/dev/null | head -15 || echo "  No .sh files found"
-              echo ""
-              echo "Recent commits (last 10):"
-              git log --oneline -10
-              echo ""
-              echo "Files changed in current commit:"
-              git diff-tree --no-commit-id --name-only -r HEAD | head -10
-              echo ""
-              echo "Checking if script exists in latest commit on GitHub:"
-              git ls-tree -r HEAD --name-only | grep -i lightsail || echo "  Not found in current HEAD"
-              echo ""
-              echo ""
-              echo "=== Attempting inline deployment as fallback ==="
-              echo "Since script not found, running deployment steps inline..."
-              
-              # Inline deployment as fallback (same logic as lightsail-deploy.sh)
-              set +e  # Allow errors for fallback
-              
-              # Step 1: Git sync (already done above, but verify)
-              echo "Step 1: Verifying git sync..."
-              echo "Current commit: $(git log -1 --oneline 2>/dev/null || echo 'unknown')"
-              
-              # Step 2: Fetch secrets
-              echo ""
-              echo "Step 2: Fetching secrets from AWS Secrets Manager..."
-              if [ -f scripts/fetch-secrets.sh ]; then
-                bash scripts/fetch-secrets.sh .env || {
-                  echo "⚠️  fetch-secrets.sh failed, but continuing..."
-                }
-              else
-                echo "⚠️  fetch-secrets.sh not found"
-                echo "Attempting to fetch secrets directly..."
-                # Direct secret fetching as fallback
-                SECRET_NAME="nester/voice-bot/secrets"
-                SECRET_JSON=$(aws secretsmanager get-secret-value \
-                  --secret-id "$SECRET_NAME" \
-                  --region "$AWS_REGION" \
-                  --query SecretString \
-                  --output text 2>/dev/null || echo "")
-                
-                if [ -n "$SECRET_JSON" ]; then
-                  echo "✅ Fetched secrets directly"
-                  # Create .env from JSON using Python (write to temp file first)
-                  TEMP_JSON=$(mktemp)
-                  echo "$SECRET_JSON" > "$TEMP_JSON"
-                  python3 -c "import json; import sys; data = json.load(open('$TEMP_JSON')); [print(f'{k}={v}') for k, v in sorted(data.items()) if v]" > .env
-                  rm -f "$TEMP_JSON"
-                  chmod 600 .env
-                else
-                  echo "⚠️  Could not fetch secrets, using existing .env if present"
-                fi
-              fi
-              
-              # Step 3: Docker login
-              echo ""
-              echo "Step 3: Authenticating with GitHub Container Registry..."
-              if [ -z "$GHCR_TOKEN" ] || [ -z "$GHCR_USER" ]; then
-                echo "❌ GHCR_TOKEN or GHCR_USER not set"
-                exit 1
-              fi
-              
-              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin || {
-                echo "❌ Failed to login to GHCR"
-                exit 1
-              }
-              
-              # Step 4: Pull images
-              echo ""
-              echo "Step 4: Pulling latest Docker images..."
-              if [ ! -f docker-compose.https.yml ]; then
-                echo "❌ docker-compose.https.yml not found"
-                exit 1
-              fi
-              
-              # Update IMAGE_TAG in compose file if needed
-              export IMAGE_TAG
-              if [ "$IMAGE_TAG" != "latest" ]; then
-                echo "Updating image tags to: $IMAGE_TAG"
-                sed -i "s|:latest|:$IMAGE_TAG|g" docker-compose.https.yml || true
-              fi
-              
-              docker-compose -f docker-compose.https.yml pull || {
-                echo "⚠️  Pull failed, but continuing..."
-              }
-              
-              # Step 5: Deploy containers
-              echo ""
-              echo "Step 5: Deploying containers..."
-              docker-compose -f docker-compose.https.yml down || true
-              docker-compose -f docker-compose.https.yml up -d || {
-                echo "❌ Failed to start containers"
-                exit 1
-              }
-              
-              # Step 6: Wait and check status
-              echo ""
-              echo "Step 6: Waiting for services..."
-              sleep 20
-              docker-compose -f docker-compose.https.yml ps
-              
-              echo ""
-              echo "✅ Deployment complete (inline fallback)"
-            fi
 
   post-deploy:
     name: Post-Deployment Verification
