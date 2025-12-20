@@ -9,10 +9,41 @@ This module provides RAG functionality using different backends:
 
 import json
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
 from loguru import logger
+
+# Shared HTTP client for connection pooling and reuse
+_shared_client: Optional[httpx.AsyncClient] = None
+
+
+def get_shared_client(timeout: float = 30.0, verify: bool = False) -> httpx.AsyncClient:
+    """Get or create a shared HTTP client with connection pooling.
+    
+    Args:
+        timeout: Request timeout in seconds
+        verify: Whether to verify SSL certificates
+        
+    Returns:
+        Shared httpx.AsyncClient instance
+    """
+    global _shared_client
+    
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout, connect=5.0, read=timeout),
+            verify=verify,
+            limits=httpx.Limits(
+                max_connections=10,
+                max_keepalive_connections=5,
+                keepalive_expiry=30.0,
+            ),
+            http2=True,  # Use HTTP/2 for better performance
+        )
+        logger.debug("Created shared HTTP client with connection pooling")
+    
+    return _shared_client
 
 
 class BaseRAGService(ABC):
@@ -98,21 +129,39 @@ class LightRAGService(BaseRAGService):
         Args:
             config: Configuration dictionary containing:
                 - api_url: Base URL of the LightRAG API
-                - mode: Query mode (mix, local, global, hybrid)
-                - top_k: Number of results to retrieve
+                - mode: Query mode (mix, local, global, hybrid, naive)
+                    - "local": Fastest, entity-focused (recommended for speed)
+                    - "naive": Vector search only (fastest but less accurate)
+                    - "global": Slower, pattern analysis
+                    - "mix": Balanced but slower
+                - top_k: Number of results to retrieve (lower = faster)
                 - timeout: API timeout in seconds
+                - use_connection_pooling: Use shared HTTP client (default: True)
         """
         self.config = config or {}
         self.api_url = self.config.get("api_url", "http://localhost:9621")
         self.api_key = self.config.get("api_key", "")
-        self.mode = self.config.get("mode", "mix")
-        self.top_k = self.config.get("top_k", 5)
-        self.timeout = self.config.get("timeout", 30)
+        # Use "local" mode for faster responses (entity-focused retrieval)
+        self.mode = self.config.get("mode", "local")
+        # Lower top_k for faster retrieval (3 is optimal balance)
+        self.top_k = self.config.get("top_k", 3)
+        # Reduced timeout for faster failure detection
+        self.timeout = self.config.get("timeout", 20)
+        self.use_connection_pooling = self.config.get("use_connection_pooling", True)
 
-        logger.info(f"Initialized LightRAG Service with API URL: {self.api_url}")
+        logger.info(
+            f"Initialized LightRAG Service: {self.api_url}, "
+            f"mode={self.mode}, top_k={self.top_k}, timeout={self.timeout}s"
+        )
 
     async def get_response(self, query: str) -> str:
-        """Query the LightRAG API and get a response.
+        """Query the LightRAG API and get a response using streaming for faster first-token.
+        
+        Optimizations applied:
+        - Connection pooling for reduced latency
+        - Streaming for faster first-token response
+        - Optimized payload (top_k, mode)
+        - Early error detection
 
         Args:
             query: The user's question
@@ -121,34 +170,74 @@ class LightRAGService(BaseRAGService):
             The RAG response string
         """
         try:
-            logger.info(f"LightRAG query: {query}")
+            logger.debug(f"LightRAG query: {query}")
 
-            payload = {"query": query, "mode": self.mode}
+            # Optimized payload: include top_k for faster retrieval
+            payload = {
+                "query": query,
+                "mode": self.mode,
+                "stream": True,
+                "top_k": self.top_k,  # Limit results for faster processing
+            }
 
             headers = {
                 "Content-Type": "application/json",
+                "Accept": "application/x-ndjson",
                 "ngrok-skip-browser-warning": "true",
+                "Connection": "keep-alive",  # Reuse connections
             }
             if self.api_key:
                 headers["X-API-Key"] = self.api_key
 
-            async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
-                response = await client.post(
-                    f"{self.api_url}/query",
+            # Use shared client for connection pooling (faster subsequent requests)
+            if self.use_connection_pooling:
+                client = get_shared_client(timeout=self.timeout, verify=False)
+            else:
+                client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(self.timeout, connect=5.0),
+                    verify=False,
+                    limits=httpx.Limits(max_connections=1),
+                )
+
+            # Use streaming endpoint for faster first-token response
+            full_response = ""
+            try:
+                async with client.stream(
+                    "POST",
+                    f"{self.api_url}/query/stream",
                     json=payload,
                     headers=headers,
-                )
-                response.raise_for_status()
-                result = response.json()
+                ) as response:
+                    response.raise_for_status()
+                    
+                    # Parse NDJSON streaming response
+                    async for line in response.aiter_lines():
+                        if line.strip():
+                            try:
+                                # Parse each JSON line (NDJSON format)
+                                data = json.loads(line)
+                                
+                                # Skip references line, get response chunks
+                                if "response" in data:
+                                    chunk = data.get("response", "")
+                                    full_response += chunk
+                                elif "error" in data:
+                                    logger.error(f"LightRAG streaming error: {data.get('error')}")
+                                    return "I encountered an error while searching the knowledge base."
+                            except json.JSONDecodeError:
+                                # Skip non-JSON lines (like empty lines)
+                                continue
+            finally:
+                # Only close if we created a new client (not shared)
+                if not self.use_connection_pooling:
+                    await client.aclose()
 
-            answer = result.get("response", "")
-
-            if "[no-context]" in answer:
+            if "[no-context]" in full_response:
                 logger.warning("LightRAG: No context found for query")
                 return "I don't have specific information about that in my knowledge base."
 
-            logger.info(f"LightRAG response: {answer[:100]}...")
-            return answer
+            logger.debug(f"LightRAG response length: {len(full_response)} chars")
+            return full_response
 
         except httpx.TimeoutException:
             logger.error("LightRAG API timeout")
@@ -167,17 +256,21 @@ class LightRAGService(BaseRAGService):
             Health status dictionary
         """
         try:
-            headers = {"ngrok-skip-browser-warning": "true"}
+            headers = {
+                "ngrok-skip-browser-warning": "true",
+                "Connection": "keep-alive",
+            }
             if self.api_key:
                 headers["X-API-Key"] = self.api_key
             
-            async with httpx.AsyncClient(timeout=10, verify=False) as client:
-                response = await client.get(
-                    f"{self.api_url}/health",
-                    headers=headers,
-                )
-                response.raise_for_status()
-                return response.json()
+            # Use shared client for faster health checks
+            client = get_shared_client(timeout=10.0, verify=False)
+            response = await client.get(
+                f"{self.api_url}/health",
+                headers=headers,
+            )
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             logger.error(f"LightRAG health check failed: {e}")
             return {"status": "unhealthy", "error": str(e)}
