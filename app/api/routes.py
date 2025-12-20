@@ -36,13 +36,17 @@ async def connect(request: Request) -> Dict[str, Any]:
     server_mode = os.getenv("WEBSOCKET_SERVER", "fast_api")
     public_url = os.getenv("PUBLIC_URL", "")
 
+    # Check if request came over HTTPS (from reverse proxy headers)
+    request_scheme = request.headers.get("X-Forwarded-Proto", "").lower()
+    is_https = request_scheme == "https" or (public_url and public_url.startswith("https"))
+
     if public_url:
         # Production: Use configured public URL
-        # Always use wss if public_url is https (required for browser security)
-        ws_scheme = "wss" if public_url.startswith("https") else "ws"
+        # Always use wss if public_url is https OR request came over HTTPS (required for browser security)
+        ws_scheme = "wss" if (public_url.startswith("https") or is_https) else "ws"
         public_host = public_url.replace("https://", "").replace("http://", "").rstrip("/")
         ws_url = f"{ws_scheme}://{public_host}/ws"
-        logger.info(f"Public URL detected: {public_url}, using WebSocket scheme: {ws_scheme}")
+        logger.info(f"Public URL: {public_url}, Request scheme: {request_scheme}, Using WebSocket: {ws_url}")
     elif server_mode == "websocket_server":
         # Development: Standalone WebSocket server
         host = server.server_config.get("websocket_host", "localhost")
