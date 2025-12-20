@@ -127,17 +127,27 @@ jobs:
             # Fetch with prune to clean up old refs and get latest
             # Use GIT_TERMINAL_PROMPT=0 to avoid interactive prompts
             echo "📥 Fetching latest code (pruning old refs)..."
-            GIT_TERMINAL_PROMPT=0 git fetch --prune origin main || {
+            export GIT_TERMINAL_PROMPT=0
+            export GIT_ASKPASS=echo
+            
+            # Try multiple fetch strategies
+            if ! git fetch --prune origin main 2>&1; then
               echo "⚠️  Fetch with prune failed, trying without prune..."
-              GIT_TERMINAL_PROMPT=0 git fetch origin main || {
+              if ! git fetch origin main 2>&1; then
                 echo "⚠️  Fetch failed, trying with full URL..."
-                GIT_TERMINAL_PROMPT=0 git fetch https://github.com/nesterlabs-ai/NesterAIBot.git main
-              }
-            }
+                git fetch https://github.com/nesterlabs-ai/NesterAIBot.git main 2>&1 || {
+                  echo "⚠️  All fetch attempts failed, but continuing..."
+                }
+              fi
+            fi
             
             # Also fetch all refs to ensure we have latest
             echo "📥 Fetching all refs..."
-            GIT_TERMINAL_PROMPT=0 git fetch --prune --all 2>/dev/null || true
+            git fetch --prune --all 2>/dev/null || true
+            
+            # Verify we have the latest refs
+            echo "📋 Remote refs after fetch:"
+            git ls-remote origin main | head -1 || echo "  Could not list remote refs"
             
             # Force checkout/create main branch tracking origin/main
             # -B creates branch if it doesn't exist, or resets if it does
