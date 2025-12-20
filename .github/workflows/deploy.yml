@@ -109,6 +109,13 @@ jobs:
           script: |
             cd ~/nester-bot || mkdir -p ~/nester-bot && cd ~/nester-bot
             
+            # === EXPORT ENVIRONMENT VARIABLES ===
+            export AWS_REGION="${{ env.AWS_REGION }}"
+            export IMAGE_TAG="${{ github.sha }}"
+            export GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
+            export GHCR_USER="${{ github.repository_owner }}"
+            export PUBLIC_URL="${{ secrets.PUBLIC_URL }}"
+            
             # === PORT 80 CLEANUP FIRST (CRITICAL) ===
             echo "🧹 Step 1: Cleaning port 80 conflicts..."
             sudo fuser -k 80/tcp 2>/dev/null || true
@@ -123,7 +130,7 @@ jobs:
             
             cat > scripts/lightsail-deploy.sh << 'DEPLOY_SCRIPT_EOF'
             #!/bin/bash
-            set -euo pipefail
+            set -eo pipefail  # Removed -u to allow unset variables (they're checked explicitly)
             
             echo "=== NesterAIBot GHCR Deploy ==="
             
@@ -137,8 +144,10 @@ jobs:
             
             # Docker login
             echo "🔑 Logging into GHCR..."
-            if [ -z "$GHCR_TOKEN" ] || [ -z "$GHCR_USER" ]; then
+            if [ -z "${GHCR_TOKEN:-}" ] || [ -z "${GHCR_USER:-}" ]; then
               echo "❌ GHCR_TOKEN or GHCR_USER not set"
+              echo "GHCR_TOKEN: ${GHCR_TOKEN:+SET}"
+              echo "GHCR_USER: ${GHCR_USER:+SET}"
               exit 1
             fi
             
