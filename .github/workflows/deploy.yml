@@ -119,25 +119,61 @@ jobs:
               git init
             fi
             
-            # Set origin (add if missing, update if exists)
+            # Set origin with token authentication (if repo is private)
             echo "🔗 Setting remote origin..."
             git remote remove origin 2>/dev/null || true
-            git remote add origin https://github.com/nesterlabs-ai/NesterAIBot.git
             
-            # Fetch with prune to clean up old refs and get latest
-            # Use GIT_TERMINAL_PROMPT=0 to avoid interactive prompts
-            echo "📥 Fetching latest code (pruning old refs)..."
+            # Use token in URL if available, otherwise use public URL
+            if [ -n "${{ secrets.GITHUB_TOKEN }}" ]; then
+              GIT_REPO_URL="https://${{ secrets.GITHUB_TOKEN }}@github.com/nesterlabs-ai/NesterAIBot.git"
+              echo "Using authenticated URL for private repo"
+            else
+              GIT_REPO_URL="https://github.com/nesterlabs-ai/NesterAIBot.git"
+              echo "Using public URL"
+            fi
+            
+            git remote add origin "$GIT_REPO_URL"
+            
+            # Configure git to avoid prompts
             export GIT_TERMINAL_PROMPT=0
             export GIT_ASKPASS=echo
+            git config --global credential.helper store || true
             
-            # Try multiple fetch strategies
-            if ! git fetch --prune origin main 2>&1; then
+            # Fetch with prune to clean up old refs and get latest
+            echo "📥 Fetching latest code (pruning old refs)..."
+            FETCH_SUCCESS=false
+            
+            # Try fetch with authenticated URL
+            if git fetch --prune origin main 2>&1; then
+              FETCH_SUCCESS=true
+              echo "✅ Fetch successful"
+            else
               echo "⚠️  Fetch with prune failed, trying without prune..."
-              if ! git fetch origin main 2>&1; then
-                echo "⚠️  Fetch failed, trying with full URL..."
-                git fetch https://github.com/nesterlabs-ai/NesterAIBot.git main 2>&1 || {
-                  echo "⚠️  All fetch attempts failed, but continuing..."
-                }
+              if git fetch origin main 2>&1; then
+                FETCH_SUCCESS=true
+                echo "✅ Fetch successful (without prune)"
+              else
+                echo "⚠️  Standard fetch failed, trying with full URL..."
+                if git fetch --prune "$GIT_REPO_URL" main 2>&1; then
+                  FETCH_SUCCESS=true
+                  echo "✅ Fetch successful (with full URL)"
+                else
+                  echo "❌ All fetch attempts failed"
+                fi
+              fi
+            fi
+            
+            # If fetch failed, try to get latest commit SHA from GitHub API
+            if [ "$FETCH_SUCCESS" = false ]; then
+              echo "⚠️  Fetch failed, attempting to get latest commit via GitHub API..."
+              LATEST_SHA=$(curl -s -H "Accept: application/vnd.github.v3+json" \
+                https://api.github.com/repos/nesterlabs-ai/NesterAIBot/commits/main \
+                | grep -o '"sha":"[^"]*' | head -1 | cut -d'"' -f4) || LATEST_SHA=""
+              
+              if [ -n "$LATEST_SHA" ]; then
+                echo "📌 Latest commit SHA: ${LATEST_SHA:0:7}"
+                # Try to fetch specific commit
+                git fetch "$GIT_REPO_URL" "$LATEST_SHA" 2>&1 || true
               fi
             fi
             
@@ -147,20 +183,36 @@ jobs:
             
             # Verify we have the latest refs
             echo "📋 Remote refs after fetch:"
-            git ls-remote origin main | head -1 || echo "  Could not list remote refs"
+            git ls-remote origin main 2>/dev/null | head -1 || echo "  Could not list remote refs"
             
             # Force checkout/create main branch tracking origin/main
             # -B creates branch if it doesn't exist, or resets if it does
             echo "🌿 Checking out main branch (force create/reset)..."
-            git checkout -B main origin/main || {
-              echo "⚠️  Checkout failed, trying alternative approach..."
-              git branch -D main 2>/dev/null || true
-              git checkout -b main origin/main
-            }
+            if git show-ref --verify --quiet refs/remotes/origin/main; then
+              git checkout -B main origin/main || {
+                echo "⚠️  Checkout failed, trying alternative approach..."
+                git branch -D main 2>/dev/null || true
+                git checkout -b main origin/main
+              }
+            else
+              echo "⚠️  origin/main ref not found, checking out latest commit..."
+              # If origin/main doesn't exist, try to checkout the latest commit we have
+              LATEST_LOCAL=$(git log --all --format="%H" | head -1)
+              if [ -n "$LATEST_LOCAL" ]; then
+                git checkout -B main "$LATEST_LOCAL" || git checkout -b main "$LATEST_LOCAL"
+              else
+                echo "❌ No commits found locally"
+              fi
+            fi
             
             # Hard reset to ensure clean state matching origin/main exactly
-            echo "🔄 Resetting to origin/main (hard reset)..."
-            git reset --hard origin/main
+            if git show-ref --verify --quiet refs/remotes/origin/main; then
+              echo "🔄 Resetting to origin/main (hard reset)..."
+              git reset --hard origin/main
+            else
+              echo "⚠️  origin/main not available, resetting to current HEAD..."
+              git reset --hard HEAD
+            fi
             
             # Diagnostic information (keep for troubleshooting)
             echo ""
@@ -206,7 +258,7 @@ jobs:
               echo "Current directory: $(pwd)"
               echo "Current branch: ${CURRENT_BRANCH}"
               echo "Current commit: ${CURRENT_COMMIT_SHORT}"
-              echo "Remote URL: $(git remote get-url origin)"
+              echo "Remote URL: $(git remote get-url origin | sed 's/\/\/.*@/\/\/***@/')"
               echo "Origin/main commit: $(git rev-parse origin/main 2>/dev/null || echo 'not found')"
               echo ""
               echo "Remote branches:"
@@ -226,7 +278,40 @@ jobs:
               echo ""
               echo "Checking if script exists in latest commit on GitHub:"
               git ls-tree -r HEAD --name-only | grep -i lightsail || echo "  Not found in current HEAD"
-              exit 1
+              echo ""
+              echo "=== Attempting inline deployment as fallback ==="
+              echo "Since script not found, running deployment steps inline..."
+              
+              # Inline deployment as fallback
+              set -euo pipefail
+              
+              # Step 1: Git sync (already done above)
+              echo "Step 1: Git sync complete"
+              
+              # Step 2: Fetch secrets
+              echo "Step 2: Fetching secrets..."
+              if [ -f scripts/fetch-secrets.sh ]; then
+                bash scripts/fetch-secrets.sh .env
+              else
+                echo "⚠️  fetch-secrets.sh not found, skipping..."
+              fi
+              
+              # Step 3: Docker login
+              echo "Step 3: Docker login..."
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+              
+              # Step 4: Pull images
+              echo "Step 4: Pulling images..."
+              if [ -f docker-compose.https.yml ]; then
+                export IMAGE_TAG
+                docker-compose -f docker-compose.https.yml pull
+                docker-compose -f docker-compose.https.yml down || true
+                docker-compose -f docker-compose.https.yml up -d
+                echo "✅ Deployment complete (inline fallback)"
+              else
+                echo "❌ docker-compose.https.yml not found"
+                exit 1
+              fi
             fi
 
   post-deploy:
