@@ -31,6 +31,14 @@ def get_shared_client(timeout: float = 30.0, verify: bool = False) -> httpx.Asyn
     global _shared_client
     
     if _shared_client is None or _shared_client.is_closed:
+        # Check if HTTP/2 is available (requires h2 package)
+        try:
+            import h2
+            use_http2 = True
+        except ImportError:
+            use_http2 = False
+            logger.warning("h2 package not installed, HTTP/2 disabled. Install with: pip install httpx[http2]")
+        
         _shared_client = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout, connect=5.0, read=timeout),
             verify=verify,
@@ -39,9 +47,9 @@ def get_shared_client(timeout: float = 30.0, verify: bool = False) -> httpx.Asyn
                 max_keepalive_connections=5,
                 keepalive_expiry=30.0,
             ),
-            http2=True,  # Use HTTP/2 for better performance
+            http2=use_http2,  # Use HTTP/2 if available, otherwise HTTP/1.1
         )
-        logger.debug("Created shared HTTP client with connection pooling")
+        logger.debug(f"Created shared HTTP client with connection pooling (HTTP/2: {use_http2})")
     
     return _shared_client
 
