@@ -312,15 +312,11 @@ jobs:
                 
                 if [ -n "$SECRET_JSON" ]; then
                   echo "✅ Fetched secrets directly"
-                  # Create .env from JSON using Python
-                  python3 -c "
-import json
-import sys
-secret_data = json.loads('''$SECRET_JSON''')
-for key, value in sorted(secret_data.items()):
-    if value:
-        print(f'{key}={value}')
-" > .env
+                  # Create .env from JSON using Python (write to temp file first)
+                  TEMP_JSON=$(mktemp)
+                  echo "$SECRET_JSON" > "$TEMP_JSON"
+                  python3 -c "import json; import sys; data = json.load(open('$TEMP_JSON')); [print(f'{k}={v}') for k, v in sorted(data.items()) if v]" > .env
+                  rm -f "$TEMP_JSON"
                   chmod 600 .env
                 else
                   echo "⚠️  Could not fetch secrets, using existing .env if present"
