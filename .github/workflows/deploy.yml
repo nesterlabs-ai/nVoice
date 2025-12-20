@@ -117,21 +117,34 @@ jobs:
               git remote add origin https://github.com/nesterlabs-ai/NesterAIBot.git || git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
             fi
             
+            # Set correct remote and fetch latest
             git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
-            git fetch origin main
+            echo "Fetching latest code from main branch..."
+            git fetch origin main --force || {
+              echo "⚠️  Fetch failed, trying without force..."
+              git fetch origin main
+            }
+            
+            # Checkout main branch explicitly
+            git checkout main 2>/dev/null || git checkout -b main
             git reset --hard origin/main
             
-            # Ensure script is executable
-            chmod +x scripts/lightsail-deploy.sh 2>/dev/null || true
+            echo "Current commit: $(git log -1 --oneline)"
+            echo "Verifying scripts/lightsail-deploy.sh exists..."
             
-            # Execute deployment script
+            # Ensure script is executable
             if [ -f scripts/lightsail-deploy.sh ]; then
+              chmod +x scripts/lightsail-deploy.sh
+              echo "✅ Found scripts/lightsail-deploy.sh"
               bash scripts/lightsail-deploy.sh
             else
               echo "❌ Error: scripts/lightsail-deploy.sh not found after git pull"
               echo "Current directory: $(pwd)"
+              echo "Current commit: $(git log -1 --oneline)"
               echo "Files in scripts/:"
               ls -la scripts/ || echo "scripts/ directory not found"
+              echo "All files in repo:"
+              find . -name "*.sh" -type f | head -10
               exit 1
             fi
 
