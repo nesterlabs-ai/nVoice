@@ -261,12 +261,41 @@ jobs:
             # Pull and deploy with isolated project name
             echo "📥 Pulling images from GHCR (enforced)..."
             export IMAGE_TAG
-            docker-compose -f docker-compose.https.yml \
+            
+            # Try pulling with current tag (full SHA or latest)
+            PULL_SUCCESS=false
+            if docker-compose -f docker-compose.https.yml \
               --project-name nesterbot-ghcr \
-              pull --ignore-pull-failures=false || {
-              echo "❌ GHCR pull failed - this is required"
+              pull --ignore-pull-failures=false 2>&1; then
+              PULL_SUCCESS=true
+              echo "✅ Pulled images successfully"
+            else
+              echo "⚠️  Pull with current tag failed, trying 'latest' tag..."
+              # Update compose file to use 'latest' tag
+              sed -i 's|:${IMAGE_TAG:-latest}|:latest|g' docker-compose.https.yml 2>/dev/null || true
+              if [ -n "${IMAGE_TAG:-}" ] && [ "$IMAGE_TAG" != "latest" ]; then
+                sed -i "s|:$IMAGE_TAG|:latest|g" docker-compose.https.yml 2>/dev/null || true
+                sed -i "s|:$IMAGE_TAG_FULL|:latest|g" docker-compose.https.yml 2>/dev/null || true
+                sed -i "s|:$IMAGE_TAG_SHORT|:latest|g" docker-compose.https.yml 2>/dev/null || true
+              fi
+              
+              if docker-compose -f docker-compose.https.yml \
+                --project-name nesterbot-ghcr \
+                pull --ignore-pull-failures=false 2>&1; then
+                PULL_SUCCESS=true
+                echo "✅ Pulled images with 'latest' tag"
+              fi
+            fi
+            
+            if [ "$PULL_SUCCESS" = false ]; then
+              echo "❌ GHCR pull failed with both specific tag and 'latest'"
+              echo "   This may indicate:"
+              echo "   - Images haven't been built/pushed yet"
+              echo "   - GHCR authentication issue"
+              echo "   - Network connectivity problem"
+              echo "   Check the build job output for image push status"
               exit 1
-            }
+            fi
             
             echo "🚀 Deploying containers with GHCR images only..."
             docker-compose -f docker-compose.https.yml \
