@@ -245,12 +245,27 @@ jobs:
               IMAGE_TAG_SHORT=$(echo "$IMAGE_TAG" | cut -c1-7)
               echo "📌 Attempting to use commit SHA tag: $IMAGE_TAG_FULL"
               echo "📌 Fallback available: latest tag"
-              # Try full SHA first, then short SHA, then latest
+              
+              # CRITICAL: Replace ANY existing tag (including old commit SHAs) with new one
+              # This handles cases where docker-compose.https.yml has old tags from previous deploys
+              sed -i "s|ghcr.io/nesterlabs-ai/nesteraibot-backend:[^ ]*|ghcr.io/nesterlabs-ai/nesteraibot-backend:$IMAGE_TAG_FULL|g" docker-compose.https.yml || true
+              sed -i "s|ghcr.io/nesterlabs-ai/nesteraibot-frontend:[^ ]*|ghcr.io/nesterlabs-ai/nesteraibot-frontend:$IMAGE_TAG_FULL|g" docker-compose.https.yml || true
+              
+              # Also handle the ${IMAGE_TAG:-latest} pattern
               sed -i "s|:\${IMAGE_TAG:-latest}|:$IMAGE_TAG_FULL|g" docker-compose.https.yml || true
               sed -i "s|:latest|:$IMAGE_TAG_FULL|g" docker-compose.https.yml || true
+              
+              echo "✅ Updated docker-compose.https.yml with tag: $IMAGE_TAG_FULL"
             else
               echo "📌 Using 'latest' tag (IMAGE_TAG not set or is 'latest')"
+              # Ensure we're using latest, not old tags
+              sed -i "s|ghcr.io/nesterlabs-ai/nesteraibot-backend:[^ ]*|ghcr.io/nesterlabs-ai/nesteraibot-backend:latest|g" docker-compose.https.yml || true
+              sed -i "s|ghcr.io/nesterlabs-ai/nesteraibot-frontend:[^ ]*|ghcr.io/nesterlabs-ai/nesteraibot-frontend:latest|g" docker-compose.https.yml || true
             fi
+            
+            # Verify the tags were updated correctly
+            echo "📋 Verifying image tags in docker-compose.https.yml:"
+            grep "image:" docker-compose.https.yml | grep -E "backend|frontend" || true
             
             # === PURGE LOCAL IMAGES (CRITICAL - PREVENTS REGRESSION) ===
             echo "🧹 Step: Purging local nester images to enforce GHCR-only..."
