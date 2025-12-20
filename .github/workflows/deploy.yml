@@ -248,16 +248,31 @@ jobs:
               echo "⚠️  IMAGE_TAG not set, using 'latest' tag"
             fi
             
-            # Pull and deploy
-            echo "📥 Pulling images..."
+            # === PURGE LOCAL IMAGES (CRITICAL - PREVENTS REGRESSION) ===
+            echo "🧹 Step: Purging local nester images to enforce GHCR-only..."
+            docker images "nester*" -q 2>/dev/null | sort -u | xargs -r docker rmi -f 2>/dev/null || true
+            docker images "nester-bot*" -q 2>/dev/null | sort -u | xargs -r docker rmi -f 2>/dev/null || true
+            echo "✅ Local images purged"
+            
+            # Pull and deploy with isolated project name
+            echo "📥 Pulling images from GHCR (enforced)..."
             export IMAGE_TAG
-            docker-compose -f docker-compose.https.yml pull || {
-              echo "⚠️  Pull failed, but continuing..."
+            docker-compose -f docker-compose.https.yml \
+              --project-name nesterbot-ghcr \
+              pull --ignore-pull-failures=false || {
+              echo "❌ GHCR pull failed - this is required"
+              exit 1
             }
             
-            echo "🚀 Deploying containers..."
-            docker-compose -f docker-compose.https.yml down --remove-orphans || true
-            docker-compose -f docker-compose.https.yml up -d --remove-orphans || {
+            echo "🚀 Deploying containers with GHCR images only..."
+            docker-compose -f docker-compose.https.yml \
+              --project-name nesterbot-ghcr \
+              down --remove-orphans || true
+            
+            docker-compose -f docker-compose.https.yml \
+              --project-name nesterbot-ghcr \
+              up -d --force-recreate --remove-orphans \
+              --pull always || {
               echo "❌ Failed to start containers"
               echo "Checking port 80..."
               docker ps --filter "publish=80" || true
@@ -268,8 +283,24 @@ jobs:
             echo "⏳ Waiting for services..."
             sleep 20
             
+            # === VERIFY GHCR ONLY (CRITICAL - FAIL IF LOCAL IMAGES) ===
+            echo "🔍 Verifying GHCR-only deployment..."
+            LOCAL_IMAGES=$(docker ps --format "{{.Image}}" | grep -v "ghcr.io" | grep -i "nester" || true)
+            if [ -n "$LOCAL_IMAGES" ]; then
+              echo "❌ CRITICAL: Local images detected in running containers!"
+              echo "   Found: $LOCAL_IMAGES"
+              echo "   This deployment must use GHCR images only"
+              exit 1
+            fi
+            
+            GHCR_COUNT=$(docker ps --format "{{.Image}}" | grep -c "ghcr.io" || echo "0")
+            if [ "$GHCR_COUNT" -lt 2 ]; then
+              echo "⚠️  Warning: Expected at least 2 GHCR containers, found $GHCR_COUNT"
+            fi
+            
+            echo "✅ GHCR verification passed"
             echo "✅ Deploy complete"
-            docker ps
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
             DEPLOY_SCRIPT_EOF
             
             chmod +x scripts/lightsail-deploy.sh
