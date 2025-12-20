@@ -110,8 +110,30 @@ jobs:
             
             cd ~/nester-bot
             
+            # Ensure we have the latest code (including the deployment script)
+            if [ ! -d .git ]; then
+              echo "Initializing git repository..."
+              git init
+              git remote add origin https://github.com/nesterlabs-ai/NesterAIBot.git || git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
+            fi
+            
+            git remote set-url origin https://github.com/nesterlabs-ai/NesterAIBot.git
+            git fetch origin main
+            git reset --hard origin/main
+            
+            # Ensure script is executable
+            chmod +x scripts/lightsail-deploy.sh 2>/dev/null || true
+            
             # Execute deployment script
-            bash scripts/lightsail-deploy.sh
+            if [ -f scripts/lightsail-deploy.sh ]; then
+              bash scripts/lightsail-deploy.sh
+            else
+              echo "❌ Error: scripts/lightsail-deploy.sh not found after git pull"
+              echo "Current directory: $(pwd)"
+              echo "Files in scripts/:"
+              ls -la scripts/ || echo "scripts/ directory not found"
+              exit 1
+            fi
 
   post-deploy:
     name: Post-Deployment Verification
