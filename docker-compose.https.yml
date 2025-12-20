@@ -1,8 +1,6 @@
 # Docker Compose with Caddy for HTTPS
 # Use this instead of docker-compose.yml for HTTPS deployment
 
-version: '3.8'
-
 services:
   # Caddy - Reverse Proxy with automatic HTTPS
   caddy:

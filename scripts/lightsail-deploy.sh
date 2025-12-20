@@ -114,10 +114,19 @@ docker-compose -f docker-compose.https.yml pull || {
 
 # Step 5: Deploy containers
 log_info "Step 5: Deploying containers..."
-docker-compose -f docker-compose.https.yml down || {
+# Stop all containers including orphans (like old Caddy)
+docker-compose -f docker-compose.https.yml down --remove-orphans || {
     log_warn "Some containers may not have been running (this is OK)"
 }
 
+# Also stop any standalone Caddy container that might be using port 80
+if docker ps --format '{{.Names}}' | grep -q '^nester-caddy$'; then
+    log_info "Stopping standalone Caddy container..."
+    docker stop nester-caddy 2>/dev/null || true
+    docker rm nester-caddy 2>/dev/null || true
+fi
+
+# Start containers
 docker-compose -f docker-compose.https.yml up -d || {
     log_error "Failed to start containers"
     exit 1
