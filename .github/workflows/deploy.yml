@@ -238,10 +238,14 @@ jobs:
             fi
             
             # Update image tags if needed
-            if [ -n "$IMAGE_TAG" ] && [ "$IMAGE_TAG" != "latest" ]; then
+            if [ -n "${IMAGE_TAG:-}" ] && [ "$IMAGE_TAG" != "latest" ]; then
               IMAGE_TAG_SHORT=$(echo "$IMAGE_TAG" | cut -c1-7)
-              echo "📌 Using image tag: $IMAGE_TAG_SHORT"
+              echo "📌 Using image tag: $IMAGE_TAG_SHORT (commit: $IMAGE_TAG)"
+              echo "📌 This ensures we're using the exact code from this deployment"
               sed -i "s|:latest|:$IMAGE_TAG_SHORT|g" docker-compose.https.yml || true
+              sed -i "s|:\${IMAGE_TAG:-latest}|:$IMAGE_TAG_SHORT|g" docker-compose.https.yml || true
+            else
+              echo "⚠️  IMAGE_TAG not set, using 'latest' tag"
             fi
             
             # Pull and deploy
@@ -353,6 +357,25 @@ jobs:
             
             echo "=== Backend Image Info ==="
             docker inspect nester-backend 2>/dev/null | grep -E '"Image"|"RepoDigests"' | head -3 || echo "Could not inspect container"
+            echo ""
+            
+            echo "=== Code Version Verification ==="
+            echo "Expected commit SHA: ${{ github.sha }}"
+            echo "Expected short SHA: $(echo ${{ github.sha }} | cut -c1-7)"
+            echo ""
+            echo "Actual image tag in use:"
+            docker inspect nester-backend 2>/dev/null | grep -E '"Image"' | head -1 || echo "Could not get image tag"
+            echo ""
+            echo "Checking if container has latest code (commit SHA in image):"
+            IMAGE_TAG=$(docker inspect nester-backend 2>/dev/null | grep -oP '"Image":\s*"\K[^"]+' | head -1)
+            if echo "$IMAGE_TAG" | grep -q "$(echo ${{ github.sha }} | cut -c1-7)"; then
+              echo "✅ Container is using latest code (commit ${{ github.sha }})"
+            elif echo "$IMAGE_TAG" | grep -q "latest"; then
+              echo "⚠️  Container is using 'latest' tag - may need to pull latest image"
+              echo "   Run: docker-compose -f docker-compose.https.yml pull && docker-compose -f docker-compose.https.yml up -d"
+            else
+              echo "⚠️  Could not verify code version"
+            fi
             echo ""
             
             echo "=== Config File Check (system_prompt) ==="
