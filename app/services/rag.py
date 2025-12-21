@@ -45,7 +45,7 @@ def get_shared_client(timeout: float = 30.0, verify: bool = False) -> httpx.Asyn
             limits=httpx.Limits(
                 max_connections=10,
                 max_keepalive_connections=5,
-                keepalive_expiry=30.0,
+                keepalive_expiry=60.0,  # Increased to 60 seconds for better connection reuse
             ),
             http2=use_http2,  # Use HTTP/2 if available, otherwise HTTP/1.1
         )
