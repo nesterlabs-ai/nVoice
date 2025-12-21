@@ -49,7 +49,7 @@ rag:
   config:
     api_url: "https://lightrag-alb-599477844.eu-north-1.elb.amazonaws.com:8443"  # LightRAG server
     api_key: "${LIGHTRAG_API_KEY}"  # API key for authentication
-    mode: "local"  # Query mode: "local" is fastest (entity-focused), good balance of speed and accuracy
+    mode: "mix"  # Query mode: "mix" balances entity-focused and pattern analysis for better accuracy
     top_k: 6  # Balanced: more context than 3, faster than 8 - good accuracy/speed tradeoff
     timeout: 20  # API timeout in seconds
     use_streaming: true  # Enabled - streaming for faster retrieval
