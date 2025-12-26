@@ -12,125 +12,89 @@
 </head>
 
 <body>
-  <!-- Animated Background -->
-  <div class="background-animation">
-    <div class="gradient-orb orb-1"></div>
-    <div class="gradient-orb orb-2"></div>
-    <div class="gradient-orb orb-3"></div>
-  </div>
-
-  <div class="app-container">
-    <!-- Header -->
-    <header class="header">
-      <div class="logo">
-        <div class="logo-icon">
-          <img src="/nester-icon.png" alt="Nester AI" onerror="this.style.display='none'">
-        </div>
-        <span class="logo-text">Nester AI</span>
-      </div>
-      <div class="header-status">
-        <div class="status-badge" id="status-badge">
-          <span class="status-indicator"></span>
-          <span class="status-text">Offline</span>
-        </div>
+  <!-- Main content area (your app content goes here) -->
+  <div class="app-content">
+    <!-- Header with branding -->
+    <header class="app-header">
+      <div class="brand">
+        <img src="/nester-icon.png" alt="Nester AI" class="brand-icon" onerror="this.style.display='none'">
+        <span class="brand-name">Nester AI</span>
       </div>
     </header>
 
-    <!-- Main Voice Interface -->
-    <main class="main-content">
-      <!-- Central Voice Orb -->
-      <div class="voice-orb-container" id="voice-orb-container">
-        <!-- Outer Rings -->
-        <div class="orb-ring ring-1"></div>
-        <div class="orb-ring ring-2"></div>
-        <div class="orb-ring ring-3"></div>
-
-        <!-- Main Orb -->
-        <div class="voice-orb" id="voice-orb">
-          <div class="orb-gradient"></div>
-          <div class="orb-glow"></div>
-          <div class="orb-pulse"></div>
-
-          <!-- Audio Visualizer inside orb -->
-          <div class="orb-visualizer" id="orb-visualizer">
-            <div class="viz-bar" style="--i: 0"></div>
-            <div class="viz-bar" style="--i: 1"></div>
-            <div class="viz-bar" style="--i: 2"></div>
-            <div class="viz-bar" style="--i: 3"></div>
-            <div class="viz-bar" style="--i: 4"></div>
-            <div class="viz-bar" style="--i: 5"></div>
-            <div class="viz-bar" style="--i: 6"></div>
-            <div class="viz-bar" style="--i: 7"></div>
-            <div class="viz-bar" style="--i: 8"></div>
-          </div>
-
-          <!-- Mic Icon -->
-          <div class="orb-icon" id="orb-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-          </div>
-        </div>
-
-        <!-- State Label -->
-        <div class="orb-label" id="orb-label">Tap to start</div>
+    <!-- Conversation display area -->
+    <div class="conversation-area" id="conversation-area">
+      <div class="welcome-message" id="welcome-message">
+        <h2>Hi, I'm Nester</h2>
+        <p>Your AI voice assistant. Tap the orb below to start talking.</p>
       </div>
 
-      <!-- Transcript Display -->
-      <div class="transcript-container" id="transcript-container">
-        <div class="transcript-bubble user-bubble" id="user-transcript">
-          <span class="bubble-label">You</span>
-          <span class="bubble-text" id="user-text"></span>
-        </div>
-        <div class="transcript-bubble bot-bubble" id="bot-transcript">
-          <span class="bubble-label">Nester AI</span>
-          <span class="bubble-text" id="bot-text"></span>
-        </div>
-      </div>
-    </main>
-
-    <!-- Bottom Control Panel -->
-    <footer class="control-panel">
-      <button class="control-btn" id="connect-btn" aria-label="Connect">
-        <div class="btn-bg"></div>
-        <div class="btn-content">
-          <span class="btn-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-mic">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-stop">
-              <rect x="6" y="6" width="12" height="12" rx="2"/>
-            </svg>
-          </span>
-          <span class="btn-text">Start Conversation</span>
-        </div>
-      </button>
-
-      <!-- Debug Toggle -->
-      <button class="debug-toggle" id="debug-toggle" aria-label="Toggle Debug Log">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 20V10"/>
-          <path d="M18 20V4"/>
-          <path d="M6 20v-4"/>
-        </svg>
-      </button>
-    </footer>
-
-    <!-- Debug Log Panel (Hidden by default) -->
-    <div class="debug-panel" id="debug-panel">
-      <div class="debug-header">
-        <span>Activity Log</span>
-        <button class="debug-close" id="debug-close">×</button>
-      </div>
-      <div class="debug-content" id="debug-log"></div>
+      <!-- Transcript bubbles appear here -->
+      <div class="transcript-list" id="transcript-list"></div>
     </div>
   </div>
+
+  <!-- Floating Voice Orb Widget -->
+  <div class="voice-orb-container" id="voice-orb-container">
+    <!-- Outer glow rings -->
+    <div class="orb-glow-ring ring-1"></div>
+    <div class="orb-glow-ring ring-2"></div>
+    <div class="orb-glow-ring ring-3"></div>
+
+    <!-- Main orb -->
+    <div class="voice-orb" id="voice-orb">
+      <!-- Animated gradient background -->
+      <div class="orb-gradient"></div>
+
+      <!-- Inner dark circle -->
+      <div class="orb-inner">
+        <!-- Mic icon (idle/listening) -->
+        <svg class="orb-icon icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+
+        <!-- Wave bars (speaking) -->
+        <div class="orb-waves">
+          <span class="wave-bar" style="--i: 0"></span>
+          <span class="wave-bar" style="--i: 1"></span>
+          <span class="wave-bar" style="--i: 2"></span>
+          <span class="wave-bar" style="--i: 3"></span>
+          <span class="wave-bar" style="--i: 4"></span>
+        </div>
+
+        <!-- Thinking dots -->
+        <div class="orb-thinking">
+          <span class="thinking-dot"></span>
+          <span class="thinking-dot"></span>
+          <span class="thinking-dot"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status label -->
+    <div class="orb-status" id="orb-status">Tap to talk</div>
+  </div>
+
+  <!-- Debug panel (hidden by default) -->
+  <div class="debug-panel" id="debug-panel">
+    <div class="debug-header">
+      <span>Activity Log</span>
+      <button class="debug-close" id="debug-close">&times;</button>
+    </div>
+    <div class="debug-content" id="debug-log"></div>
+  </div>
+
+  <!-- Debug toggle button -->
+  <button class="debug-toggle" id="debug-toggle" aria-label="Toggle Debug Log">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 20V10"/>
+      <path d="M18 20V4"/>
+      <path d="M6 20v-4"/>
+    </svg>
+  </button>
 
   <audio id="bot-audio" autoplay></audio>
 
