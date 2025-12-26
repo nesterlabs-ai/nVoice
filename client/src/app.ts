@@ -5,12 +5,10 @@
  */
 
 /**
- * RTVI Client Implementation
+ * Nester AI Voice Assistant - Modern Floating UI
  *
  * This client connects to an RTVI-compatible bot server using WebSocket.
- *
- * Requirements:
- * - A running RTVI bot server (defaults to http://localhost:7860)
+ * Features a modern floating design with animated voice orb and visual feedback.
  */
 
 import {
@@ -22,54 +20,186 @@ import {
   WebSocketTransport
 } from "@pipecat-ai/websocket-transport";
 
-class WebsocketClientApp {
+type OrbState = 'idle' | 'connecting' | 'listening' | 'speaking' | 'processing';
+
+class VoiceAssistantApp {
   private rtviClient: RTVIClient | null = null;
+
+  // UI Elements
   private connectBtn: HTMLButtonElement | null = null;
-  private statusDot: HTMLElement | null = null;
+  private btnText: HTMLElement | null = null;
+  private statusBadge: HTMLElement | null = null;
+  private statusText: HTMLElement | null = null;
+  private voiceOrbContainer: HTMLElement | null = null;
+  private orbLabel: HTMLElement | null = null;
+  private debugPanel: HTMLElement | null = null;
   private debugLog: HTMLElement | null = null;
-  private voiceOverlay: HTMLElement | null = null;
-  private overlayWaveContainer: HTMLElement | null = null;
-  private logToggle: HTMLElement | null = null;
+  private debugToggle: HTMLElement | null = null;
+  private debugClose: HTMLElement | null = null;
+  private userTranscript: HTMLElement | null = null;
+  private botTranscript: HTMLElement | null = null;
+  private userText: HTMLElement | null = null;
+  private botText: HTMLElement | null = null;
+
+  // Audio elements
   private botAudio: HTMLAudioElement;
+  private audioContext: AudioContext | null = null;
+  private audioAnalyzer: AnalyserNode | null = null;
+  private vizBars: HTMLElement[] = [];
+  private animationFrameId: number | null = null;
+
+  // State
   private isConnected: boolean = false;
   private isConnecting: boolean = false;
+  private currentState: OrbState = 'idle';
+  private isBotSpeaking: boolean = false;
 
   constructor() {
-    console.log("Voice Chat Initializing...");
+    console.log("Nester AI Voice Assistant Initializing...");
     this.botAudio = document.createElement('audio');
     this.botAudio.autoplay = true;
     document.body.appendChild(this.botAudio);
 
     this.setupDOMElements();
     this.setupEventListeners();
-    this.initializeVisualEffects();
+    this.initializeState();
   }
 
   /**
-   * Set up references to DOM elements and create necessary media elements
+   * Set up references to DOM elements
    */
   private setupDOMElements(): void {
+    // Header elements
+    this.statusBadge = document.getElementById('status-badge');
+    this.statusText = this.statusBadge?.querySelector('.status-text') || null;
+
+    // Voice orb elements
+    this.voiceOrbContainer = document.getElementById('voice-orb-container');
+    this.orbLabel = document.getElementById('orb-label');
+
+    // Control elements
     this.connectBtn = document.getElementById('connect-btn') as HTMLButtonElement;
-    this.statusDot = document.getElementById('status-dot');
+    this.btnText = this.connectBtn?.querySelector('.btn-text') || null;
+
+    // Debug elements
+    this.debugPanel = document.getElementById('debug-panel');
     this.debugLog = document.getElementById('debug-log');
-    this.voiceOverlay = document.getElementById('voice-overlay');
-    this.overlayWaveContainer = document.querySelector('.overlay-wave-container') as HTMLElement;
-    this.logToggle = document.getElementById('log-toggle');
+    this.debugToggle = document.getElementById('debug-toggle');
+    this.debugClose = document.getElementById('debug-close');
+
+    // Transcript elements
+    this.userTranscript = document.getElementById('user-transcript');
+    this.botTranscript = document.getElementById('bot-transcript');
+    this.userText = document.getElementById('user-text');
+    this.botText = document.getElementById('bot-text');
+
+    // Visualizer bars
+    const vizContainer = document.getElementById('orb-visualizer');
+    if (vizContainer) {
+      this.vizBars = Array.from(vizContainer.querySelectorAll('.viz-bar'));
+    }
   }
 
   /**
    * Set up event listeners for interactive elements
    */
   private setupEventListeners(): void {
+    // Connect button
     this.connectBtn?.addEventListener('click', () => this.toggleConnection());
-    this.logToggle?.addEventListener('click', () => this.toggleLog());
+
+    // Voice orb click (same as connect button)
+    this.voiceOrbContainer?.addEventListener('click', () => {
+      if (!this.isConnecting) {
+        this.toggleConnection();
+      }
+    });
+
+    // Debug panel toggle
+    this.debugToggle?.addEventListener('click', () => this.toggleDebugPanel());
+    this.debugClose?.addEventListener('click', () => this.hideDebugPanel());
   }
 
   /**
-   * Initialize visual effects and animations
+   * Initialize the UI state
    */
-  private initializeVisualEffects(): void {
-    this.updateConnectionVisuals(false);
+  private initializeState(): void {
+    this.setOrbState('idle');
+    this.updateConnectionUI(false);
+  }
+
+  /**
+   * Set the orb visual state
+   */
+  private setOrbState(state: OrbState): void {
+    this.currentState = state;
+
+    if (!this.voiceOrbContainer) return;
+
+    // Remove all state classes
+    this.voiceOrbContainer.classList.remove('idle', 'connecting', 'listening', 'speaking', 'processing');
+
+    // Add current state class
+    this.voiceOrbContainer.classList.add(state);
+
+    // Update label
+    if (this.orbLabel) {
+      switch (state) {
+        case 'idle':
+          this.orbLabel.textContent = 'Tap to start';
+          break;
+        case 'connecting':
+          this.orbLabel.textContent = 'Connecting...';
+          break;
+        case 'listening':
+          this.orbLabel.textContent = 'Listening...';
+          break;
+        case 'speaking':
+          this.orbLabel.textContent = 'Speaking...';
+          break;
+        case 'processing':
+          this.orbLabel.textContent = 'Processing...';
+          break;
+      }
+    }
+  }
+
+  /**
+   * Update UI based on connection state
+   */
+  private updateConnectionUI(connected: boolean): void {
+    this.isConnected = connected;
+
+    // Update status badge
+    if (this.statusBadge) {
+      if (connected) {
+        this.statusBadge.classList.add('connected');
+      } else {
+        this.statusBadge.classList.remove('connected');
+      }
+    }
+
+    if (this.statusText) {
+      this.statusText.textContent = connected ? 'Online' : 'Offline';
+    }
+
+    // Update connect button
+    if (this.connectBtn) {
+      if (connected) {
+        this.connectBtn.classList.add('connected');
+      } else {
+        this.connectBtn.classList.remove('connected');
+      }
+    }
+
+    if (this.btnText) {
+      this.btnText.textContent = connected ? 'End Conversation' : 'Start Conversation';
+    }
+
+    // Update orb state
+    if (!connected && !this.isConnecting) {
+      this.setOrbState('idle');
+      this.hideTranscripts();
+    }
   }
 
   /**
@@ -84,54 +214,55 @@ class WebsocketClientApp {
   }
 
   /**
-   * Toggle log panel visibility
+   * Toggle debug panel visibility
    */
-  private toggleLog(): void {
-    if (this.debugLog) {
-      this.debugLog.classList.toggle('collapsed');
+  private toggleDebugPanel(): void {
+    if (this.debugPanel) {
+      this.debugPanel.classList.toggle('visible');
     }
   }
 
   /**
-   * Update visual elements based on connection state
+   * Hide debug panel
    */
-  private updateConnectionVisuals(connected: boolean): void {
-    this.isConnected = connected;
-    
-    if (this.statusDot) {
-      if (connected) {
-        this.statusDot.classList.add('connected');
-      } else {
-        this.statusDot.classList.remove('connected');
-      }
+  private hideDebugPanel(): void {
+    if (this.debugPanel) {
+      this.debugPanel.classList.remove('visible');
     }
+  }
 
-    if (this.connectBtn) {
-      if (connected) {
-        this.connectBtn.classList.add('connected');
-        this.connectBtn.disabled = false;
-      } else {
-        this.connectBtn.classList.remove('connected');
-        this.connectBtn.disabled = false;
-      }
+  /**
+   * Show user transcript
+   */
+  private showUserTranscript(text: string): void {
+    if (this.userText) {
+      this.userText.textContent = text;
     }
-
-
-    if (this.voiceOverlay) {
-      if (connected) {
-        this.voiceOverlay.classList.add('active');
-      } else {
-        this.voiceOverlay.classList.remove('active');
-      }
+    if (this.userTranscript) {
+      this.userTranscript.classList.add('visible');
     }
+  }
 
-    if (this.overlayWaveContainer) {
-      if (connected) {
-        this.overlayWaveContainer.classList.add('active');
-      } else {
-        this.overlayWaveContainer.classList.remove('active');
-      }
+  /**
+   * Show bot transcript
+   */
+  private showBotTranscript(text: string): void {
+    if (this.botText) {
+      this.botText.textContent = text;
     }
+    if (this.botTranscript) {
+      this.botTranscript.classList.add('visible');
+    }
+  }
+
+  /**
+   * Hide all transcripts
+   */
+  private hideTranscripts(): void {
+    this.userTranscript?.classList.remove('visible');
+    this.botTranscript?.classList.remove('visible');
+    if (this.userText) this.userText.textContent = '';
+    if (this.botText) this.botText.textContent = '';
   }
 
   /**
@@ -140,31 +271,125 @@ class WebsocketClientApp {
   private log(message: string): void {
     if (!this.debugLog) return;
     const entry = document.createElement('div');
-    entry.textContent = `${new Date().toISOString()} - ${message}`;
-    if (message.startsWith('User: ')) {
-      entry.style.color = '#2196F3';
-    } else if (message.startsWith('Bot: ')) {
-      entry.style.color = '#4CAF50';
+    const time = new Date().toLocaleTimeString();
+    entry.textContent = `[${time}] ${message}`;
+
+    // Color coding for different message types
+    if (message.startsWith('You:') || message.startsWith('User:')) {
+      entry.style.color = '#818cf8'; // Accent color
+    } else if (message.startsWith('Bot:')) {
+      entry.style.color = '#ff8e8e'; // Primary color
+    } else if (message.includes('Error') || message.includes('error')) {
+      entry.style.color = '#ef4444'; // Red
+    } else if (message.includes('Connected') || message.includes('success')) {
+      entry.style.color = '#22c55e'; // Green
     }
+
     this.debugLog.appendChild(entry);
     this.debugLog.scrollTop = this.debugLog.scrollHeight;
     console.log(message);
   }
 
   /**
-   * Update the connection status display
+   * Set up audio track for playback and visualization
    */
-  private updateStatus(status: string): void {
-    const isConnected = status === 'Connected' || status === 'Online';
-    this.updateConnectionVisuals(isConnected);
-    this.log(`Connection Status: ${status}`);
+  private setupAudioTrack(track: MediaStreamTrack): void {
+    this.log('Setting up audio track');
+
+    if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
+      const oldTrack = this.botAudio.srcObject.getAudioTracks()[0];
+      if (oldTrack?.id === track.id) return;
+    }
+
+    const stream = new MediaStream([track]);
+    this.botAudio.srcObject = stream;
+
+    // Set up audio analyzer for visualization
+    this.setupAudioAnalyzer(stream);
   }
 
   /**
-   * Check for available media tracks and set them up if present
-   * This is called when the bot is ready or when the transport state changes to ready
+   * Set up audio analyzer for visualizer
    */
-  setupMediaTracks() {
+  private setupAudioAnalyzer(stream: MediaStream): void {
+    try {
+      if (!this.audioContext) {
+        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+
+      const source = this.audioContext.createMediaStreamSource(stream);
+      this.audioAnalyzer = this.audioContext.createAnalyser();
+      this.audioAnalyzer.fftSize = 32;
+
+      source.connect(this.audioAnalyzer);
+
+      // Start visualization loop
+      this.startVisualization();
+    } catch (e) {
+      this.log(`Audio analyzer setup failed: ${e}`);
+    }
+  }
+
+  /**
+   * Start audio visualization
+   */
+  private startVisualization(): void {
+    if (!this.audioAnalyzer || this.vizBars.length === 0) return;
+
+    const bufferLength = this.audioAnalyzer.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const animate = () => {
+      this.animationFrameId = requestAnimationFrame(animate);
+
+      if (!this.audioAnalyzer || !this.isBotSpeaking) return;
+
+      this.audioAnalyzer.getByteFrequencyData(dataArray);
+
+      // Map frequency data to visualizer bars
+      const step = Math.floor(bufferLength / this.vizBars.length);
+      this.vizBars.forEach((bar, i) => {
+        const value = dataArray[i * step] || 0;
+        const height = Math.max(20, (value / 255) * 60);
+        bar.style.height = `${height}px`;
+      });
+    };
+
+    animate();
+  }
+
+  /**
+   * Stop audio visualization
+   */
+  private stopVisualization(): void {
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    // Reset bars to idle state
+    this.vizBars.forEach(bar => {
+      bar.style.height = '20px';
+    });
+  }
+
+  /**
+   * Handle bot speaking state
+   */
+  private setBotSpeaking(speaking: boolean): void {
+    this.isBotSpeaking = speaking;
+
+    if (speaking) {
+      this.setOrbState('speaking');
+    } else if (this.isConnected) {
+      this.setOrbState('listening');
+    }
+  }
+
+  /**
+   * Check for available media tracks
+   */
+  private setupMediaTracks(): void {
     if (!this.rtviClient) return;
     const tracks = this.rtviClient.tracks();
     if (tracks.bot?.audio) {
@@ -173,91 +398,95 @@ class WebsocketClientApp {
   }
 
   /**
-   * Set up listeners for track events (start/stop)
-   * This handles new tracks being added during the session
+   * Set up track event listeners
    */
-  setupTrackListeners() {
+  private setupTrackListeners(): void {
     if (!this.rtviClient) return;
 
-    // Listen for new tracks starting
     this.rtviClient.on(RTVIEvent.TrackStarted, (track, participant) => {
-      // Only handle non-local (bot) tracks
       if (!participant?.local && track.kind === 'audio') {
         this.setupAudioTrack(track);
       }
     });
 
-    // Listen for tracks stopping
     this.rtviClient.on(RTVIEvent.TrackStopped, (track, participant) => {
-      this.log(`Track stopped: ${track.kind} from ${participant?.name || 'unknown'}`);
+      this.log(`Track stopped: ${track.kind} from ${participant?.name || 'bot'}`);
+    });
+
+    // Bot speech events
+    this.rtviClient.on(RTVIEvent.BotStartedSpeaking, () => {
+      this.log('Bot started speaking');
+      this.setBotSpeaking(true);
+    });
+
+    this.rtviClient.on(RTVIEvent.BotStoppedSpeaking, () => {
+      this.log('Bot stopped speaking');
+      this.setBotSpeaking(false);
+    });
+
+    // User speech events
+    this.rtviClient.on(RTVIEvent.UserStartedSpeaking, () => {
+      this.log('User started speaking');
+      if (this.isBotSpeaking) {
+        this.setBotSpeaking(false);
+      }
+      this.setOrbState('listening');
+    });
+
+    this.rtviClient.on(RTVIEvent.UserStoppedSpeaking, () => {
+      this.log('User stopped speaking');
+      this.setOrbState('processing');
     });
   }
 
   /**
-   * Set up an audio track for playback
-   * Handles both initial setup and track updates
-   */
-  private setupAudioTrack(track: MediaStreamTrack): void {
-    this.log('Setting up audio track');
-    if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
-      const oldTrack = this.botAudio.srcObject.getAudioTracks()[0];
-      if (oldTrack?.id === track.id) return;
-    }
-    this.botAudio.srcObject = new MediaStream([track]);
-  }
-
-  /**
-   * Get the backend URL from environment or use default
+   * Get the backend URL from environment or config
    */
   private getBackendUrl(): string {
-    // Check for Vite environment variable (build time)
     // @ts-ignore - Vite injects this at build time
     if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) {
       // @ts-ignore
       return import.meta.env.VITE_BACKEND_URL;
     }
-    // Check for window config (runtime injection)
     if ((window as any).__BACKEND_URL__) {
       return (window as any).__BACKEND_URL__;
     }
-    // Default for local development
     return 'http://localhost:7860';
   }
 
   /**
-   * Initialize and connect to the bot
-   * This sets up the RTVI client, initializes devices, and establishes the connection
+   * Connect to the bot server
    */
   public async connect(): Promise<void> {
-    // Prevent multiple connection attempts with proper state checking
     if (this.isConnecting) {
-      this.log('Connection already in progress, please wait...');
+      this.log('Connection already in progress...');
       return;
     }
 
     if (this.isConnected || this.rtviClient) {
-      this.log('Already connected. Disconnect first to reconnect.');
+      this.log('Already connected. Disconnect first.');
       return;
     }
 
-    // Set connecting state and disable button immediately
     this.isConnecting = true;
+    this.setOrbState('connecting');
+
     if (this.connectBtn) {
       this.connectBtn.disabled = true;
-      this.connectBtn.textContent = 'Connecting...';
+    }
+    if (this.btnText) {
+      this.btnText.textContent = 'Connecting...';
     }
 
     try {
       const startTime = Date.now();
       const backendUrl = this.getBackendUrl();
-      this.log(`Connecting to backend: ${backendUrl}`);
+      this.log(`Connecting to: ${backendUrl}`);
 
-      //const transport = new DailyTransport();
       const transport = new WebSocketTransport();
       const RTVIConfig: RTVIClientOptions = {
         transport,
         params: {
-          // The baseURL and endpoint of your bot server that the client will connect to
           baseUrl: backendUrl,
           endpoints: { connect: '/connect' },
         },
@@ -266,20 +495,16 @@ class WebsocketClientApp {
         callbacks: {
           onConnected: () => {
             this.isConnecting = false;
-            this.updateStatus('Connected');
-            this.log('Connection established successfully');
-            if (this.connectBtn) {
-              this.connectBtn.textContent = 'Disconnect';
-            }
+            this.updateConnectionUI(true);
+            this.setOrbState('listening');
+            this.log('Connected successfully!');
           },
           onDisconnected: () => {
             this.isConnecting = false;
-            this.updateStatus('Disconnected');
-            this.log('Connection terminated');
+            this.updateConnectionUI(false);
+            this.log('Disconnected');
             this.rtviClient = null;
-            if (this.connectBtn) {
-              this.connectBtn.textContent = 'Connect';
-            }
+            this.stopVisualization();
           },
           onBotReady: (data) => {
             this.log(`Bot ready: ${JSON.stringify(data)}`);
@@ -288,16 +513,24 @@ class WebsocketClientApp {
           onUserTranscript: (data) => {
             if (data.final) {
               this.log(`You: ${data.text}`);
+              this.showUserTranscript(data.text);
             }
           },
-          onBotTranscript: (data) => this.log(`Bot: ${data.text}`),
-          onMessageError: (error) => console.error('Message error:', error),
+          onBotTranscript: (data) => {
+            this.log(`Bot: ${data.text}`);
+            this.showBotTranscript(data.text);
+          },
+          onMessageError: (error) => {
+            console.error('Message error:', error);
+            this.log(`Message error: ${error}`);
+          },
           onError: (error) => {
             console.error('Error:', error);
             this.log(`Error: ${error}`);
           },
         },
-      }
+      };
+
       this.rtviClient = new RTVIClient(RTVIConfig);
       this.setupTrackListeners();
 
@@ -308,32 +541,32 @@ class WebsocketClientApp {
       await this.rtviClient.connect();
 
       const timeTaken = Date.now() - startTime;
-      this.log(`Connection established in ${timeTaken}ms`);
+      this.log(`Connected in ${timeTaken}ms`);
     } catch (error) {
       this.isConnecting = false;
       this.log(`Connection failed: ${(error as Error).message}`);
-      this.updateStatus('Error');
+      this.setOrbState('idle');
 
-      // Clean up on error
       if (this.rtviClient) {
         try {
           await this.rtviClient.disconnect();
-        } catch (disconnectError) {
-          this.log(`Cleanup error: ${disconnectError}`);
+        } catch (e) {
+          this.log(`Cleanup error: ${e}`);
         }
         this.rtviClient = null;
       }
 
-      // Re-enable button on error
       if (this.connectBtn) {
         this.connectBtn.disabled = false;
-        this.connectBtn.textContent = 'Connect';
+      }
+      if (this.btnText) {
+        this.btnText.textContent = 'Start Conversation';
       }
     }
   }
 
   /**
-   * Disconnect from the bot and clean up media resources
+   * Disconnect from the bot server
    */
   public async disconnect(): Promise<void> {
     if (!this.rtviClient && !this.isConnecting) {
@@ -341,55 +574,60 @@ class WebsocketClientApp {
       return;
     }
 
-    // Disable button during disconnect
     if (this.connectBtn) {
       this.connectBtn.disabled = true;
-      this.connectBtn.textContent = 'Disconnecting...';
+    }
+    if (this.btnText) {
+      this.btnText.textContent = 'Disconnecting...';
     }
 
     try {
       this.log('Disconnecting...');
+
       if (this.rtviClient) {
         await this.rtviClient.disconnect();
         this.rtviClient = null;
       }
 
-      // Clean up audio tracks
+      // Clean up audio
       if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
         this.botAudio.srcObject.getAudioTracks().forEach((track) => track.stop());
         this.botAudio.srcObject = null;
       }
 
+      this.stopVisualization();
+
       // Reset states
       this.isConnecting = false;
-      this.updateStatus('Disconnected');
+      this.isBotSpeaking = false;
+      this.updateConnectionUI(false);
       this.log('Disconnected successfully');
 
-      // Re-enable button
       if (this.connectBtn) {
         this.connectBtn.disabled = false;
-        this.connectBtn.textContent = 'Connect';
       }
     } catch (error) {
       this.log(`Disconnect error: ${(error as Error).message}`);
-      // Ensure button is re-enabled even on error
       this.isConnecting = false;
+
       if (this.connectBtn) {
         this.connectBtn.disabled = false;
-        this.connectBtn.textContent = 'Connect';
+      }
+      if (this.btnText) {
+        this.btnText.textContent = 'Start Conversation';
       }
     }
   }
-
 }
 
+// Initialize app when DOM is ready
 declare global {
   interface Window {
-    WebsocketClientApp: typeof WebsocketClientApp;
+    VoiceAssistantApp: typeof VoiceAssistantApp;
   }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  window.WebsocketClientApp = WebsocketClientApp;
-  new WebsocketClientApp();
+  window.VoiceAssistantApp = VoiceAssistantApp;
+  new VoiceAssistantApp();
 });
