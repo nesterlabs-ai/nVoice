@@ -61,11 +61,10 @@ The CI/CD pipeline is configured in `.github/workflows/deploy.yml` and automatic
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10+
 - Required API keys:
-  - Deepgram API key (for speech-to-text)
-  - ElevenLabs API key (for text-to-speech)
-  - Google API key (for LLM)
+  - Deepgram API key (for speech-to-text and text-to-speech)
+  - Google Gemini API key (for LLM)
 
 ### Installation
 
@@ -89,156 +88,190 @@ Then edit `.env` with your actual API keys:
 ```bash
 # Required API Keys
 DEEPGRAM_API_KEY=your_deepgram_api_key
-ELEVENLABS_API_KEY=your_elevenlabs_api_key
-ELEVENLABS_VOICE_ID=your_elevenlabs_voice_id
-GOOGLE_API_KEY=your_google_api_key
+GOOGLE_API_KEY=your_google_gemini_api_key
 
 # Optional: Server Configuration (defaults provided)
 FASTAPI_HOST=0.0.0.0
 FASTAPI_PORT=7860
-WEBSOCKET_HOST=localhost
-WEBSOCKET_PORT=8765
+
+# Optional: RAG Configuration (LightRAG)
+LIGHTRAG_BASE_URL=your_lightrag_service_url
+LIGHTRAG_MODE=mix  # Options: local, global, hybrid, mix
+LIGHTRAG_TOP_K=6
 ```
 
 4. **Run the server**:
 ```bash
-# FastAPI mode
-cd ConversationalBot
-export PYTHONPATH=$(pwd)
-python websocket_server.py
+# Set PYTHONPATH and run
+export PYTHONPATH=/path/to/nester-ai-bot-opensource
+python app/main.py
 ```
 
 5. **Test the connection**:
-See the [Client README](src/client/README.md) for detailed instructions on running and using the client applications.
+See the [Client README](client/README.md) for detailed instructions on running and using the client applications.
 
 ## 📁 Project Structure
 
 ```
-ConversationalBot/
-├── src/
+nester-ai-bot-opensource/
+├── app/
+│   ├── main.py                  # Main application entry point
+│   ├── api/
+│   │   ├── routes.py            # HTTP API routes
+│   │   └── websocket.py         # WebSocket endpoint handler
 │   ├── config/
 │   │   ├── config.yaml          # Main configuration file
-│   │   └── config.py            # Configuration management
+│   │   └── loader.py            # Configuration management
 │   ├── core/
-│   │   └── voice_assistant.py   # Main orchestrator
+│   │   ├── voice_assistant.py   # Main orchestrator
+│   │   ├── server.py            # Server instance
+│   │   └── connection_manager.py # WebSocket session management
 │   ├── services/
-│   │   ├── speech_to_text.py    # STT service
-│   │   ├── text_to_speech.py    # TTS service
-│   │   ├── rag_service.py       # RAG/knowledge service
-│   │   ├── conversation_manager.py # LLM & conversation flow
-│   │   ├── input_analyzer.py    # Input processing
-│   │   └── latency_analyzer.py  # Performance monitoring
-│   ├── client/
-│   │   ├── test_client.html     # Web test client
-│   │   └── simple_client.py     # Python test client
-│   ├── websocket_server.py      # Main server application
-│   └── voice_assistant_server.py # Server class
-├── requirements.txt
+│   │   ├── stt.py               # Speech-to-Text service (Deepgram)
+│   │   ├── tts.py               # Text-to-Speech service (Deepgram)
+│   │   ├── rag.py               # RAG service (LightRAG)
+│   │   ├── conversation.py      # LLM & conversation flow (Gemini)
+│   │   ├── input_analyzer.py    # Input processing & pattern detection
+│   │   └── latency.py           # Performance monitoring
+│   ├── models/
+│   │   └── schemas.py           # Data models and schemas
+│   └── utils/
+│       └── helpers.py           # Utility functions
+├── client/
+│   ├── index.html               # Web test client
+│   ├── src/                     # React client source
+│   └── package.json             # Client dependencies
+├── scripts/
+│   └── ingest_documents.py      # Document ingestion script
+├── tests/                       # Test files
+├── docs/                        # Documentation
+├── requirements.txt             # Python dependencies
 ├── env.example                  # Environment variables template
 └── README.md
 ```
 
 ## ⚙️ Configuration
 
-The system uses a YAML configuration file (`src/config/config.yaml`) with environment variable substitution:
+The system uses a YAML configuration file (`app/config/config.yaml`) with environment variable substitution:
 
 ```yaml
 # Speech-to-Text Configuration
 stt:
-  provider: "deepgram"  # or "whisper"
+  provider: "deepgram"
   config:
     api_key: "${DEEPGRAM_API_KEY}"
-    model: "small"
-    no_speech_prob: 0.3
+    model: "nova-2"
+    smart_format: true
+    endpointing: 300
 
 # Text-to-Speech Configuration
 tts:
-  provider: "elevenlabs"
+  provider: "deepgram"
   config:
-    api_key: "${ELEVENLABS_API_KEY}"
-    voice_id: "${ELEVENLABS_VOICE_ID}"
+    api_key: "${DEEPGRAM_API_KEY}"
+    model: "aura-2-athena-en"
+    encoding: "linear16"
+    sample_rate: 24000
 
 # LLM Configuration
 conversation:
   llm:
+    provider: "google"
+    model: "gemini-2.5-flash"
     api_key: "${GOOGLE_API_KEY}"
 
 # RAG Configuration
 rag:
-  type: "mock"  # Replace with your RAG system
-  config: {}
+  type: "lightrag"
+  config:
+    base_url: "${LIGHTRAG_BASE_URL}"
+    mode: "mix"
+    top_k: 6
+    timeout: 20
 ```
 
 ## 🔧 Usage
 
 ### Client Usage
 
-For detailed instructions on using the web client and Python client, please refer to the [Client README](src/client/README.md).
+For detailed instructions on using the web client, please refer to the [Client README](client/README.md).
 
 ### API Endpoints
 
-- **WebSocket**: `ws://localhost:7860/ws/{session_id}`
-- **Connect**: `POST /connect` - Returns WebSocket URL
+- **WebSocket**: `ws://localhost:7860/ws`
+- **Connect**: `POST /connect` - Returns WebSocket URL and configuration
+- **Health**: `GET /health` - Health check endpoint
 - **Status**: `GET /status` - Server and service status
 
-## 🏃‍♂️ Server Modes
+## 🏃‍♂️ Server Mode
 
-### FastAPI Mode (Default)
-```bash
-python websocket_server.py
-```
-- Provides both HTTP API and WebSocket endpoints
+The server runs in **FastAPI mode** which provides:
+- HTTP API endpoints for status and health checks
+- WebSocket endpoint at `/ws` for real-time voice communication
+- CORS support for cross-origin requests
+- Connection management for multiple concurrent sessions (max 20)
+- Automatic session cleanup and heartbeat monitoring
 - Recommended for production use
-- Includes CORS support and proper error handling
-
-### Standalone WebSocket Mode
-```bash
-WEBSOCKET_SERVER=websocket_server python websocket_server.py
-```
-- Pure WebSocket server without HTTP overhead
-- Better for dedicated voice applications
-- Lower latency for real-time audio
 
 ## 🎛️ Services
 
 ### Speech-to-Text Service
-- **Providers**: Deepgram, Whisper
-- **Features**: Real-time transcription, noise suppression
-- **Configuration**: Model selection, sensitivity settings
+- **Provider**: Deepgram Nova-2
+- **Features**: Real-time transcription, smart formatting, automatic punctuation
+- **Configuration**: Model selection, endpointing settings (300ms)
+- **Optimized**: Low-latency streaming for real-time conversations
 
 ### Text-to-Speech Service
-- **Providers**: ElevenLabs
-- **Features**: Natural voice synthesis, voice cloning
-- **Configuration**: Voice selection, audio quality
+- **Provider**: Deepgram Aura
+- **Model**: aura-2-athena-en (natural female voice)
+- **Features**: Ultra-low latency, natural voice synthesis
+- **Configuration**: 24kHz sample rate, linear16 encoding
+- **Performance**: ~1 second TTFB (Time To First Byte)
 
 ### RAG Service
-- **Features**: Knowledge retrieval, context enhancement
-- **Current Implementation**: Dummy/mock implementation with sample knowledge base
-- **Extensible**: Replace with your actual RAG system (vector databases, document stores, etc.)
-- **Function Integration**: Registered as LLM function call for dynamic knowledge retrieval
+- **Provider**: LightRAG (AWS hosted)
+- **Features**: Graph-based knowledge retrieval with local, global, and hybrid search modes
+- **Mode**: Mix mode (combines all search strategies)
+- **Configuration**: Top-K=6, 20-second timeout
+- **Function Integration**: Registered as LLM function call (`call_rag_system`) for dynamic knowledge retrieval
 
 ### Conversation Manager
-- **Features**: Context management, conversation flow
-- **LLM Integration**: Google LLM, OpenAI support
-- **Function Calls**: Extensible tool integration
+- **LLM**: Google Gemini 2.5 Flash
+- **Features**: Context management, conversation flow, function calling
+- **Functions**:
+  - `call_rag_system` - Knowledge retrieval
+  - `end_conversation` - Graceful conversation termination with farewell
+- **Optimization**: Streaming responses for low latency
 
 ### Latency Analyzer
-- **Metrics**: Processing time, response latency
-- **Monitoring**: Real-time performance tracking
-- **Reporting**: Statistical analysis and logging
+- **Metrics**: STT, LLM, RAG, and TTS processing times
+- **Target**: 1-1.5 second total response time
+- **Monitoring**: Real-time TTFB tracking and performance analysis
+- **Reporting**: Statistical analysis with component-level breakdowns
 
-## 🔧 Development
+## 🌐 Conversation Features
 
-## 🌐 Hinglish Support
+### Automatic Greeting
+- Bot greets users when they first speak: *"Hello! I'm the Nesterlabs voice assistant. How can I help you today?"*
+- Configured via system prompt GREETING PROTOCOL
 
-The system includes native support for Hinglish (Hindi-English mixed language) conversations:
+### Automatic Conversation Ending
+- **Function**: `end_conversation`
+- **Triggers**: goodbye, bye, end call, see you, etc.
+- **Behavior**:
+  1. LLM detects farewell intent via function calling
+  2. Bot speaks: *"Goodbye! Thank you for visiting Nesterlabs."*
+  3. Waits 3.5 seconds for TTS to complete
+  4. Automatically disconnects WebSocket session
+- **No manual intervention required** - fully automated
 
+### Hinglish Support
 - **Automatic Detection**: Understands both English and Hinglish inputs
 - **Natural Responses**: Responds in the same language style as the user
-- **Translation for RAG**: Automatically translates Hinglish queries to English for RAG system processing
-- **Configuration**: Enable via `language_config.support_hinglish = true`
+- **Translation for RAG**: Automatically translates Hinglish queries to English for RAG processing
+- **Configuration**: Enabled in `language_config.support_hinglish`
 
-### Hinglish Examples
+**Examples**:
 - "weather kaisa h?" → "What is the weather like?"
 - "aaj rainy weather h kya?" → "Is it rainy weather today?"
 - "mujhe kaam ke baare mein batao" → "Tell me about work"
@@ -257,7 +290,7 @@ class CustomService:
 
 ### 2. Register Function Handler
 ```python
-# In conversation_manager.py
+# In app/services/conversation.py
 async def _handle_custom_query(self, params: FunctionCallParams) -> None:
     query = params.arguments.get("query", "")
     result = await self.custom_service.process_query(query)
@@ -287,15 +320,14 @@ Add your service configuration to the config files and initialize it in the voic
 
 ### Adding New Services
 
-1. Create a service class in `src/services/`
+1. Create a service class in `app/services/`
 2. Implement the required interface methods
-3. Register the service in `VoiceAssistant`
-4. Update configuration as needed
-
+3. Register the service in `VoiceAssistant` (`app/core/voice_assistant.py`)
+4. Update configuration in `app/config/config.yaml`
 
 ### Custom LLM Integration
 
-Add support for additional LLM providers by extending the conversation manager's `initialize_llm` method.
+Add support for additional LLM providers by extending the conversation manager's `initialize_llm` method in `app/services/conversation.py`.
 
 ## 📊 Monitoring
 
@@ -340,7 +372,8 @@ Add support for additional LLM providers by extending the conversation manager's
 Enable debug logging:
 ```bash
 export LOG_LEVEL=DEBUG
-python websocket_server.py
+export PYTHONPATH=/path/to/nester-ai-bot-opensource
+python app/main.py
 ```
 
 ## 🤝 Contributing

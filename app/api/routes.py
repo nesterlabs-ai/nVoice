@@ -54,7 +54,8 @@ async def connect(request: Request) -> Dict[str, Any]:
         ws_url = f"ws://{host}:{port}"
     else:
         # Development: FastAPI WebSocket endpoint
-        host = server.server_config.get("fastapi_host", "localhost")
+        # Always use localhost for client connections (even if server binds to 0.0.0.0)
+        host = "localhost"
         port = server.server_config.get("fastapi_port", 7860)
         ws_url = f"ws://{host}:{port}/ws"
 

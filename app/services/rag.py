@@ -164,7 +164,7 @@ class LightRAGService(BaseRAGService):
 
     async def get_response(self, query: str) -> str:
         """Query the LightRAG API and get a response using streaming for faster first-token.
-        
+
         Optimizations applied:
         - Connection pooling for reduced latency
         - Streaming for faster first-token response
@@ -177,7 +177,10 @@ class LightRAGService(BaseRAGService):
         Returns:
             The RAG response string
         """
+        import time
+        start_time = time.time()
         try:
+            logger.info(f"🔍 RAG START: Query='{query}' at {start_time}")
             logger.debug(f"LightRAG query: {query}")
 
             # Optimized payload: include top_k for faster retrieval
@@ -209,6 +212,7 @@ class LightRAGService(BaseRAGService):
 
             # Use streaming endpoint for faster first-token response
             full_response = ""
+            first_chunk_time = None
             try:
                 async with client.stream(
                     "POST",
@@ -217,17 +221,20 @@ class LightRAGService(BaseRAGService):
                     headers=headers,
                 ) as response:
                     response.raise_for_status()
-                    
+
                     # Parse NDJSON streaming response
                     async for line in response.aiter_lines():
                         if line.strip():
                             try:
                                 # Parse each JSON line (NDJSON format)
                                 data = json.loads(line)
-                                
+
                                 # Skip references line, get response chunks
                                 if "response" in data:
                                     chunk = data.get("response", "")
+                                    if chunk and first_chunk_time is None:
+                                        first_chunk_time = time.time()
+                                        logger.info(f"⚡ RAG FIRST CHUNK: {first_chunk_time - start_time:.3f}s")
                                     full_response += chunk
                                 elif "error" in data:
                                     logger.error(f"LightRAG streaming error: {data.get('error')}")
@@ -239,6 +246,10 @@ class LightRAGService(BaseRAGService):
                 # Only close if we created a new client (not shared)
                 if not self.use_connection_pooling:
                     await client.aclose()
+
+            end_time = time.time()
+            total_time = end_time - start_time
+            logger.info(f"✅ RAG COMPLETE: Total={total_time:.3f}s, Length={len(full_response)} chars")
 
             if "[no-context]" in full_response:
                 logger.warning("LightRAG: No context found for query")

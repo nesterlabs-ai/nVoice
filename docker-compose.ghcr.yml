@@ -11,23 +11,15 @@ services:
     restart: unless-stopped
     ports:
       - "7860:7860"
-      - "8765:8765"
     environment:
       # API Keys - loaded from .env file
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
-      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
-      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - PINECONE_INDEX=${PINECONE_INDEX}
+      - LIGHTRAG_BASE_URL=${LIGHTRAG_BASE_URL}
+      - PUBLIC_URL=${PUBLIC_URL}
       # Server Configuration
       - FASTAPI_HOST=0.0.0.0
       - FASTAPI_PORT=7860
-      - WEBSOCKET_HOST=0.0.0.0
-      - WEBSOCKET_PORT=8765
-      - WEBSOCKET_SERVER=websocket_server
-      - PUBLIC_URL=${PUBLIC_URL}
       # Session Settings
       - SESSION_TIMEOUT=180
       - LOG_LEVEL=INFO

@@ -41,11 +41,6 @@
         reverse_proxy frontend:80
     }
 
-    # Direct WebSocket port (if needed)
-    # handle /voice* {
-    #     reverse_proxy backend:8765
-    # }
-
     # Security headers
     header {
         X-Frame-Options "SAMEORIGIN"

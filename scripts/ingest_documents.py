@@ -37,7 +37,7 @@ from loguru import logger
 # Load environment variables
 load_dotenv()
 
-from src.services.pinecone_rag_service import PineconeRAGService
+from app.services.pinecone_rag import PineconeRAGService
 
 
 async def ingest_from_file(rag_service: PineconeRAGService, file_path: str) -> dict:

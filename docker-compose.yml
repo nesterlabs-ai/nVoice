@@ -9,14 +9,10 @@ services:
       - .env
     ports:
       - "7860:7860"
-      - "8765:8765"
     environment:
       # Server Configuration (these override .env if needed)
       - FASTAPI_HOST=0.0.0.0
       - FASTAPI_PORT=7860
-      - WEBSOCKET_HOST=0.0.0.0
-      - WEBSOCKET_PORT=8765
-      - WEBSOCKET_SERVER=websocket_server
       - SESSION_TIMEOUT=180
       - LOG_LEVEL=INFO
     volumes:

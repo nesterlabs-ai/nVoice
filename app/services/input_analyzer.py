@@ -32,15 +32,25 @@ class InputAnalyzer:
 
         self.feedback_patterns = [
             r'\b(thank you|thanks|appreciate|good job|well done|excellent)\b',
-            r'\b(bye|goodbye|see you|talk to you later|have a good day)\b',
             r'\bthat was helpful\b',
             r'\bgreat response\b'
+        ]
+
+        # Conversation ending patterns (dedicated category for auto-disconnect)
+        self.ending_patterns = [
+            r'\b(bye|goodbye|see you|talk to you later|have a good day|farewell)\b',
+            r'\b(end|stop|close|quit|exit|hang up|disconnect)\b',
+            r'\b(that\'s all|nothing else|no more questions|all done|i\'m done)\b',
+            r'\b(end (the |this )?(call|conversation|chat|session))\b',
+            r'\b(gotta go|have to go|need to go)\b',
+            r'\b(catch you later|see ya|later|peace out)\b',
         ]
 
         # Add custom patterns if provided
         if custom_patterns:
             self.greeting_patterns.extend(custom_patterns.get("greeting", []))
             self.feedback_patterns.extend(custom_patterns.get("feedback", []))
+            self.ending_patterns.extend(custom_patterns.get("ending", []))
 
         logger.info("Initialized Input Analyzer")
 
@@ -69,18 +79,43 @@ class InputAnalyzer:
 
         return False
 
-    def analyze_input(self, user_input: str) -> Literal["normal_conversation", "needs_rag"]:
+    def is_conversation_ending(self, text: str) -> bool:
+        """Check if the user wants to end the conversation.
+
+        Args:
+            text: The user input text to analyze
+
+        Returns:
+            True if the user wants to end the conversation, False otherwise
+        """
+        text_lower = text.lower().strip()
+
+        # Check if it matches ending patterns
+        for pattern in self.ending_patterns:
+            if re.search(pattern, text_lower):
+                logger.info(f"Conversation ending detected with pattern: {pattern}")
+                return True
+
+        return False
+
+    def analyze_input(self, user_input: str) -> Literal["normal_conversation", "needs_rag", "end_conversation"]:
         """Analyze user input to determine processing type.
-        
+
         Args:
             user_input: The user's input text to analyze
-            
+
         Returns:
-            "normal_conversation" for greetings/feedback, "needs_rag" for complex questions
+            "end_conversation" for goodbye/ending intent,
+            "normal_conversation" for greetings/feedback,
+            "needs_rag" for complex questions
         """
         logger.info(f"Analyzing user input: {user_input}")
 
-        if self.is_greeting_or_feedback(user_input):
+        # Check for conversation ending first (highest priority)
+        if self.is_conversation_ending(user_input):
+            result = "end_conversation"
+            logger.info("Classified as: Conversation ending")
+        elif self.is_greeting_or_feedback(user_input):
             result = "normal_conversation"
             logger.info("Classified as: Normal conversation (greeting/feedback)")
         else:

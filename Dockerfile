@@ -27,15 +27,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-# Include both app/ (new structure) and src/ (legacy) for compatibility
 COPY app/ ./app/
-COPY src/ ./src/
 COPY data/ ./data/
 COPY scripts/ ./scripts/
 
-# Expose ports (FastAPI: 7860, WebSocket: 8765)
+# Expose ports (FastAPI with WebSocket endpoint)
 EXPOSE 7860
-EXPOSE 8765
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

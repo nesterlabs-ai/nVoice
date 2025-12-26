@@ -10,14 +10,19 @@ from typing import Dict, Any
 from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
-from pipecat.frames.frames import TTSSpeakFrame
+from pipecat.frames.frames import TTSSpeakFrame, EndFrame
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.services.llm_service import FunctionCallParams, LLMService
 
 from app.services.input_analyzer import InputAnalyzer
 from app.services.rag import RAGService
+
+# Voice constants
+RAG_VOICE = "aura-2-odysseus-en"  # Masculine, calm, smooth, professional - for RAG responses
+DEFAULT_VOICE = "aura-2-athena-en"  # Natural, clear female voice - default
 
 
 class ConversationManager:
@@ -27,28 +32,28 @@ class ConversationManager:
     to provide a seamless conversational experience.
     """
     
-    # 20 different thinking phrases that cycle linearly
+    # 20 natural, conversational thinking phrases that sound more human
     THINKING_PHRASES = [
-        "Let me look that up.",
-        "Searching my knowledge base.",
-        "One moment please.",
-        "Let me find that for you.",
-        "Checking my sources.",
-        "Looking into that now.",
-        "Give me a second.",
-        "Searching for information.",
-        "Let me see what I can find.",
-        "One sec.",
-        "Checking the database.",
-        "Looking that up.",
-        "Let me research that.",
-        "Searching now.",
-        "Finding the answer.",
+        "Umm, let me check that.",
+        "Oh, let me look that up for you.",
+        "Give me a sec.",
+        "Hmm, let me find that.",
+        "One moment.",
+        "Let me see.",
+        "Ah, let me search for that.",
+        "Okay, checking now.",
+        "Let me pull that up.",
+        "Umm, searching.",
+        "Yeah, let me find that.",
+        "Hold on.",
+        "Let me look into that.",
+        "Hmm, one sec.",
+        "Okay, let me check.",
+        "Searching for that now.",
+        "Let me grab that info.",
         "Just a moment.",
-        "Let me check.",
-        "Looking for details.",
-        "Searching the knowledge base.",
-        "Finding information for you.",
+        "Alright, looking that up.",
+        "Let me find that for you.",
     ]
 
     def __init__(self,
@@ -71,6 +76,7 @@ class ConversationManager:
         self.llm_service = None
         self.tts_service = None
         self.context_aggregator = None
+        self.context = None  # Store OpenAILLMContext for greeting access
         self._thinking_phrase_index = 0  # Counter for cycling through phrases
 
         logger.info("Initialized Conversation Manager")
@@ -105,6 +111,7 @@ class ConversationManager:
 
         # Register function handlers
         self.llm_service.register_function("call_rag_system", self._handle_rag_call)
+        self.llm_service.register_function("end_conversation", self._handle_end_conversation)
 
         return self.llm_service
 
@@ -130,13 +137,32 @@ class ConversationManager:
             # Add event handlers for function calls
             @self.llm_service.event_handler("on_function_calls_started")
             async def on_function_calls_started(service, function_calls):
+                import time
+                logger.info(f"🔧 FUNCTION CALL START: {function_calls} at {time.time()}")
+
+                # Skip thinking phrase for end_conversation function (it has its own farewell)
+                if function_calls and any('end_conversation' in str(call) for call in function_calls):
+                    return
+
+                # Check if this is a RAG call - switch to Odysseus voice
+                is_rag_call = function_calls and any('call_rag_system' in str(call) for call in function_calls)
+
                 if self.tts_service:
+                    if is_rag_call:
+                        # Switch to RAG voice (Odysseus - masculine, calm, professional)
+                        logger.info(f"🎙️ RAG call detected - switching to {RAG_VOICE}")
+                        self.tts_service.set_voice(RAG_VOICE)
+                        # Disconnect so next TTS uses new voice
+                        if hasattr(self.tts_service, '_disconnect'):
+                            await self.tts_service._disconnect()
+
                     phrase = self._get_next_thinking_phrase()
                     await self.tts_service.queue_frame(TTSSpeakFrame(phrase))
 
             @self.llm_service.event_handler("on_function_calls_finished")
             async def on_function_calls_finished(service, function_calls):
-                logger.info(f"Function calls finished: {function_calls}")
+                import time
+                logger.info(f"✅ FUNCTION CALL END: {function_calls} at {time.time()}")
 
     def _strip_markdown(self, text: str) -> str:
         """Strip markdown formatting from text for voice output.
@@ -173,7 +199,7 @@ class ConversationManager:
 
     async def _handle_rag_call(self, params: FunctionCallParams) -> None:
         """Handle RAG system function calls.
-        
+
         Args:
             params: Function call parameters
         """
@@ -181,6 +207,11 @@ class ConversationManager:
 
         try:
             logger.info(f"Processing RAG call for: {question}")
+
+            # TODO: Voice switching during function calls breaks the pipeline
+            # Need to implement via TTSUpdateSettingsFrame or similar mechanism
+            # For now, RAG responses use the current voice set by ToneAwareProcessor
+
             response = await self.rag_service.get_response(question)
             # Strip markdown formatting for voice output
             cleaned_response = self._strip_markdown(response)
@@ -189,6 +220,40 @@ class ConversationManager:
             logger.error(f"Error in RAG call: {e}")
             error_response = f"I apologize, but I encountered an error while processing your question: {str(e)}"
             await params.result_callback(error_response)
+
+    async def _handle_end_conversation(self, params: FunctionCallParams) -> None:
+        """Handle end conversation function call.
+
+        When the LLM detects the user wants to end the conversation, this sends
+        an EndFrame upstream to gracefully terminate the session.
+
+        Args:
+            params: Function call parameters
+        """
+        import asyncio
+        from pipecat.frames.frames import TTSSpeakFrame
+
+        logger.warning("🔴 End conversation function called by LLM")
+
+        # Push farewell message directly to TTS to avoid extra LLM round
+        farewell_message = "Goodbye! Thank you for visiting Nesterlabs."
+        logger.info(f"📢 Pushing farewell message to TTS: '{farewell_message}'")
+
+        if self.tts_service:
+            await self.tts_service.queue_frame(TTSSpeakFrame(farewell_message))
+
+        # Return empty response to function to avoid LLM generating more text
+        await params.result_callback("")
+
+        # Wait for: TTS generation + TTS playback
+        # ~1s TTS generation + ~2.5s TTS playback = 3.5s total
+        logger.info("⏳ Waiting 3.5 seconds for farewell TTS to complete...")
+        await asyncio.sleep(3.5)
+        logger.info("✅ Wait complete, sending EndFrame")
+
+        # Push EndFrame upstream to terminate the session
+        await params.llm.push_frame(EndFrame(), FrameDirection.UPSTREAM)
+        logger.info("🛑 EndFrame sent - session will terminate")
 
     def create_function_schemas(self) -> ToolsSchema:
         """Create function schemas for LLM tool usage.
@@ -208,8 +273,14 @@ class ConversationManager:
             required=["question"],
         )
 
-        # Removed analyze_user_input function - unused and adds complexity
-        return ToolsSchema(standard_tools=[rag_function])
+        end_conversation_function = FunctionSchema(
+            name="end_conversation",
+            description="CRITICAL: Call this function IMMEDIATELY when the user says ANY farewell or wants to end. This includes single words like 'goodbye', 'bye', 'later' or phrases like 'see you', 'talk to you later', 'have a good day', 'end call', 'end conversation', 'hang up', 'disconnect', 'that's all', 'nothing else', 'I'm done', 'gotta go', 'need to go', 'catch you later', or ANY variation of farewell/goodbye. DO NOT just respond to farewells - you MUST call this function.",
+            properties={},
+            required=[],
+        )
+
+        return ToolsSchema(standard_tools=[rag_function, end_conversation_function])
 
     def create_context(self) -> OpenAILLMContext:
         """Create the LLM context with system messages and tools.
@@ -259,6 +330,13 @@ CRITICAL IDENTITY RULES - YOU MUST FOLLOW THESE:
 - NEVER identify as a generic AI - you are specifically the Nesterlabs voice assistant
 - If asked about your identity, always say you are the Nesterlabs voice assistant
 
+CONVERSATION ENDING PROTOCOL:
+- When the user says goodbye, bye, end call, or wants to end the conversation:
+  * YOU MUST call the end_conversation function - DO NOT just respond with text
+  * The end_conversation function will handle the farewell and disconnect automatically
+  * CRITICAL: Call end_conversation() for ANY farewell phrase (bye, goodbye, see you, end call, etc.)
+- NEVER just respond to farewells without calling the end_conversation function
+
 """
         system_message = identity_enforcement + system_message
         # No initial user prompt - greeting is handled via direct TTS
@@ -272,15 +350,15 @@ CRITICAL IDENTITY RULES - YOU MUST FOLLOW THESE:
 
     def create_context_aggregator(self) -> Any:
         """Create the context aggregator for the conversation.
-        
+
         Returns:
             The context aggregator instance
         """
         if not self.llm_service:
             self.initialize_llm()
 
-        context = self.create_context()
-        self.context_aggregator = self.llm_service.create_context_aggregator(context)
+        self.context = self.create_context()  # Store for greeting access
+        self.context_aggregator = self.llm_service.create_context_aggregator(self.context)
         return self.context_aggregator
 
     def get_llm_service(self) -> LLMService:

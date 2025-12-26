@@ -44,20 +44,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.audio.vad.vad_analyzer import VADParams
 
-        # Get VAD configuration
+        # Get VAD configuration - using config.yaml values as defaults
         server_config = voice_assistant_server.server_config
         vad_config = server_config.get("vad", {})
         vad_params = VADParams(
-            confidence=vad_config.get("confidence", 0.7),
-            start_secs=vad_config.get("start_secs", 0.2),
+            confidence=vad_config.get("confidence", 0.8),        # Updated from 0.7
+            start_secs=vad_config.get("start_secs", 0.25),       # Updated from 0.2
             stop_secs=vad_config.get("stop_secs", 0.8),
-            min_volume=vad_config.get("min_volume", 0.6),
+            min_volume=vad_config.get("min_volume", 0.7),        # Updated from 0.6
         )
         vad_analyzer = SileroVADAnalyzer(params=vad_params)
 
         logger.info(
-            f"[Session {session_id}] VAD configured: confidence={vad_params.confidence}, "
-            f"start_secs={vad_params.start_secs}, stop_secs={vad_params.stop_secs}"
+            f"[Session {session_id}] 🎤 VAD configured: confidence={vad_params.confidence}, "
+            f"start_secs={vad_params.start_secs}, stop_secs={vad_params.stop_secs}, "
+            f"min_volume={vad_params.min_volume}"
         )
 
         # Create transport parameters for this connection

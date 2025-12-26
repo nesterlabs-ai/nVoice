@@ -13,14 +13,10 @@ services:
     restart: always
     environment:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - PINECONE_INDEX=${PINECONE_INDEX}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - LIGHTRAG_BASE_URL=${LIGHTRAG_BASE_URL}
       - FASTAPI_HOST=0.0.0.0
       - FASTAPI_PORT=7860
-      - WEBSOCKET_HOST=0.0.0.0
-      - WEBSOCKET_PORT=8765
-      - WEBSOCKET_SERVER=websocket_server
       - LOG_LEVEL=INFO
     volumes:
       - ./data:/app/data

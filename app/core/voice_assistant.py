@@ -18,6 +18,7 @@ from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.processors.filters.stt_mute_filter import STTMuteFilter, STTMuteConfig, STTMuteStrategy
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.transports.base_transport import BaseTransport
 
@@ -27,6 +28,8 @@ from app.services.latency import LatencyAnalyzer
 from app.services.rag import RAGService, create_rag_service
 from app.services.stt import SpeechToTextService
 from app.services.tts import TextToSpeechService
+from app.processors.tone_aware_processor import ToneAwareProcessor
+from app.processors.text_filter_processor import TextFilterProcessor
 
 
 class VoiceAssistant:
@@ -69,6 +72,27 @@ class VoiceAssistant:
         self.runner = None
         self.rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
         self.latency_analyzer = LatencyAnalyzer()
+
+        # STT mute filter for greeting control
+        self.stt_mute_filter = STTMuteFilter(
+            config=STTMuteConfig(strategies={STTMuteStrategy.MUTE_UNTIL_FIRST_BOT_COMPLETE})
+        )
+
+        # Tone-aware processor for dynamic voice selection
+        self.tone_processor = ToneAwareProcessor(
+            cooldown_seconds=3.0,  # Prevent rapid switching
+            enabled=True,
+        )
+
+        # Text filter processor to remove markdown before TTS
+        self.text_filter = TextFilterProcessor(enabled=True)
+
+        # Store LLM and context references for greeting injection
+        self.llm = None
+        self.context_aggregator = None
+
+        # Track conversation ending
+        self.conversation_should_end = False
 
         # Track if greeting has been sent (with timestamp to prevent duplicates within 5 seconds)
         self._greeting_sent_at = 0
@@ -139,17 +163,30 @@ class VoiceAssistant:
         llm = self.conversation_manager.get_llm_service()
         context_aggregator = self.conversation_manager.get_context_aggregator()
 
+        # Store LLM, TTS and context for greeting injection
+        self.llm = llm
+        self.tts = tts
+        self.context_aggregator = context_aggregator
+
         # Set up TTS service in conversation manager for function call feedback
         self.conversation_manager.set_tts_service(tts)
 
-        # Create pipeline
+        # Connect TTS to tone processor for dynamic voice switching
+        self.tone_processor.set_tts_service(tts)
+
+        # Create pipeline - STT mute filter AFTER context (official Pipecat pattern)
+        # ToneAwareProcessor sits after STT to detect emotional tone and switch TTS voice
+        # TextFilterProcessor sits between LLM and TTS to remove markdown formatting
         self.pipeline = Pipeline(
             [
                 transport.input(),
                 stt,
-                context_aggregator.user(),
+                self.tone_processor,        # Detect tone and switch TTS voice
+                context_aggregator.user(),  # Context BEFORE mute filter
+                self.stt_mute_filter,       # Mute AFTER context sees frames
                 self.rtvi,
                 llm,
+                self.text_filter,           # Remove markdown before TTS
                 tts,
                 transport.output(),
                 context_aggregator.assistant(),
@@ -200,23 +237,16 @@ class VoiceAssistant:
 
         @transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
-            import time
-            logger.info(f"Client connected: {client}")
-            # Send a single greeting directly via TTS (not via LLM to avoid multi-sentence responses)
-            # Only send greeting if not sent within last 5 seconds (prevents duplicates from pipeline reprocessing)
-            current_time = time.time()
-            if current_time - self._greeting_sent_at > 5:
-                self._greeting_sent_at = current_time
-                # Queue greeting with StartInterruptionFrame to prevent reprocessing
-                from pipecat.frames.frames import StartInterruptionFrame, EndInterruptionFrame
-                await self.task.queue_frames([
-                    StartInterruptionFrame(),
-                    TTSSpeakFrame("Hey there! How can I help you today?"),
-                    EndInterruptionFrame()
-                ])
-                logger.debug("Queued greeting frame with interruption markers")
-            else:
-                logger.debug("Greeting already sent recently, skipping")
+            logger.info(f"✅ Client connected: {client}")
+
+            # Wait for pipeline to be ready (1s for fastest greeting)
+            await asyncio.sleep(1.0)
+
+            # Push greeting directly to TTS service (bypasses LLM/context/RTI loops)
+            await self.tts.queue_frame(
+                TTSSpeakFrame("Hello! I'm the Nesterlabs voice assistant. How can I help you today?")
+            )
+            logger.info("🎤 Greeting pushed directly to TTS service")
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
