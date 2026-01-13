@@ -19,3 +19,7 @@ httpx[http2]>=0.27.0  # HTTP/2 support for better performance with RAG service
 # Audio analysis for tone detection
 librosa>=0.10.0  # Audio feature extraction (pitch, energy, spectral analysis)
 numpy>=1.24.0    # Numerical operations for audio processing
+
+# Emotion detection dependencies (MSP-PODCAST wav2vec2)
+torch>=2.0.0     # PyTorch for deep learning models
+transformers>=4.30.0  # Hugging Face transformers for wav2vec2 models
