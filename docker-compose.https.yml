@@ -41,6 +41,8 @@ services:
     environment:
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - RESEMBLE_API_KEY=${RESEMBLE_API_KEY}
+      - RESEMBLE_VOICE_UUID=${RESEMBLE_VOICE_UUID:-8b0c7b93}
       - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY}
       - LIGHTRAG_BASE_URL=${LIGHTRAG_BASE_URL}
       - PUBLIC_URL=${PUBLIC_URL}
@@ -60,9 +62,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 5
-      start_period: 40s
+      start_period: 60s
     networks:
       - nester-network
 
