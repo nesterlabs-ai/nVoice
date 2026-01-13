@@ -1,5 +1,6 @@
 # Docker Compose for GitHub Container Registry (GHCR) deployment
 # Uses pre-built images from ghcr.io instead of building locally
+# Environment variables are loaded from .env file on the deployment server
 
 version: '3.8'
 
