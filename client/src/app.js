@@ -1,8 +1,12 @@
 "use strict";
 /**
- * Copyright (c) 2024–2025, Daily
+ * Nester AI - Floating Voice Orb Widget
  *
- * SPDX-License-Identifier: BSD 2-Clause License
+ * A compact floating voice assistant with state-based animations.
+ * States: idle | listening | thinking | speaking
+ *
+ * Features rich content panel for dynamic visual responses.
+ * Emotion detection is handled server-side by Hume AI.
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -14,64 +18,92 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-/**
- * RTVI Client Implementation
- *
- * This client connects to an RTVI-compatible bot server using WebSocket.
- *
- * Requirements:
- * - A running RTVI bot server (defaults to http://localhost:7860)
- */
 const client_js_1 = require("@pipecat-ai/client-js");
 const websocket_transport_1 = require("@pipecat-ai/websocket-transport");
-class WebsocketClientApp {
+class VoiceOrbApp {
     constructor() {
         this.rtviClient = null;
-        this.connectBtn = null;
-        this.statusDot = null;
+        // UI Elements
+        this.orbContainer = null;
+        this.orbStatus = null;
+        this.welcomeMessage = null;
+        this.transcriptList = null;
+        this.debugPanel = null;
         this.debugLog = null;
-        this.voiceOverlay = null;
-        this.overlayWaveContainer = null;
-        this.logToggle = null;
+        this.debugToggle = null;
+        this.debugClose = null;
+        this.richContentPanel = null;
+        this.richContentInner = null;
+        this.emotionPanel = null;
+        this.emotionToggle = null;
+        this.emotionClose = null;
+        this.emotionLabel = null;
+        this.emotionEmoji = null;
+        this.emotionConfidence = null;
+        this.toneLabel = null;
+        this.arousalBar = null;
+        this.arousalValue = null;
+        this.dominanceBar = null;
+        this.dominanceValue = null;
+        this.valenceBar = null;
+        this.valenceValue = null;
+        this.emotionTimeline = null;
+        // State
+        this.voiceState = 'idle';
         this.isConnected = false;
-        console.log("Voice Chat Initializing...");
+        this.isConnecting = false;
+        console.log("Nester AI Voice Orb initializing...");
         this.botAudio = document.createElement('audio');
         this.botAudio.autoplay = true;
         document.body.appendChild(this.botAudio);
         this.setupDOMElements();
         this.setupEventListeners();
-        this.initializeVisualEffects();
+        this.setVoiceState('idle');
     }
-    /**
-     * Set up references to DOM elements and create necessary media elements
-     */
     setupDOMElements() {
-        this.connectBtn = document.getElementById('connect-btn');
-        this.statusDot = document.getElementById('status-dot');
+        this.orbContainer = document.getElementById('voice-orb-container');
+        this.orbStatus = document.getElementById('orb-status');
+        this.welcomeMessage = document.getElementById('welcome-message');
+        this.transcriptList = document.getElementById('transcript-list');
+        this.debugPanel = document.getElementById('debug-panel');
         this.debugLog = document.getElementById('debug-log');
-        this.voiceOverlay = document.getElementById('voice-overlay');
-        this.overlayWaveContainer = document.querySelector('.overlay-wave-container');
-        this.logToggle = document.getElementById('log-toggle');
+        this.debugToggle = document.getElementById('debug-toggle');
+        this.debugClose = document.getElementById('debug-close');
+        this.richContentPanel = document.getElementById('rich-content-panel');
+        this.richContentInner = document.getElementById('rich-content-inner');
+        this.emotionPanel = document.getElementById('emotion-panel');
+        this.emotionToggle = document.getElementById('emotion-toggle');
+        this.emotionClose = document.getElementById('emotion-close');
+        this.emotionLabel = document.getElementById('emotion-label');
+        this.emotionEmoji = document.getElementById('emotion-emoji');
+        this.emotionConfidence = document.getElementById('emotion-confidence');
+        this.toneLabel = document.getElementById('tone-label');
+        this.arousalBar = document.getElementById('arousal-bar');
+        this.arousalValue = document.getElementById('arousal-value');
+        this.dominanceBar = document.getElementById('dominance-bar');
+        this.dominanceValue = document.getElementById('dominance-value');
+        this.valenceBar = document.getElementById('valence-bar');
+        this.valenceValue = document.getElementById('valence-value');
+        this.emotionTimeline = document.getElementById('emotion-timeline');
     }
-    /**
-     * Set up event listeners for interactive elements
-     */
     setupEventListeners() {
-        var _a, _b;
-        (_a = this.connectBtn) === null || _a === void 0 ? void 0 : _a.addEventListener('click', () => this.toggleConnection());
-        (_b = this.logToggle) === null || _b === void 0 ? void 0 : _b.addEventListener('click', () => this.toggleLog());
+        var _a, _b, _c, _d, _e;
+        // Orb click handler
+        (_a = this.orbContainer) === null || _a === void 0 ? void 0 : _a.addEventListener('click', () => this.handleOrbClick());
+        // Debug panel
+        (_b = this.debugToggle) === null || _b === void 0 ? void 0 : _b.addEventListener('click', () => this.toggleDebugPanel());
+        (_c = this.debugClose) === null || _c === void 0 ? void 0 : _c.addEventListener('click', () => this.hideDebugPanel());
+        // Emotion panel
+        (_d = this.emotionToggle) === null || _d === void 0 ? void 0 : _d.addEventListener('click', () => this.toggleEmotionPanel());
+        (_e = this.emotionClose) === null || _e === void 0 ? void 0 : _e.addEventListener('click', () => this.hideEmotionPanel());
     }
     /**
-     * Initialize visual effects and animations
+     * Handle orb click - connect or disconnect
      */
-    initializeVisualEffects() {
-        this.updateConnectionVisuals(false);
-    }
-    /**
-     * Toggle connection state
-     */
-    toggleConnection() {
+    handleOrbClick() {
         return __awaiter(this, void 0, void 0, function* () {
+            if (this.isConnecting)
+                return;
             if (this.isConnected) {
                 yield this.disconnect();
             }
@@ -81,82 +113,367 @@ class WebsocketClientApp {
         });
     }
     /**
-     * Toggle log panel visibility
+     * Set voice state and update UI
      */
-    toggleLog() {
-        if (this.debugLog) {
-            this.debugLog.classList.toggle('collapsed');
+    setVoiceState(state) {
+        this.voiceState = state;
+        if (!this.orbContainer || !this.orbStatus)
+            return;
+        // Remove all state classes
+        this.orbContainer.classList.remove('idle', 'listening', 'thinking', 'speaking', 'connected');
+        // Add current state
+        this.orbContainer.classList.add(state);
+        // Add connected class if connected
+        if (this.isConnected) {
+            this.orbContainer.classList.add('connected');
         }
+        // Update status text
+        const statusTexts = {
+            'idle': this.isConnected ? 'Tap to end' : 'Tap to talk',
+            'listening': 'Listening...',
+            'thinking': 'Thinking...',
+            'speaking': 'Speaking...'
+        };
+        this.orbStatus.textContent = statusTexts[state];
     }
     /**
-     * Update visual elements based on connection state
-     */
-    updateConnectionVisuals(connected) {
-        this.isConnected = connected;
-        if (this.statusDot) {
-            if (connected) {
-                this.statusDot.classList.add('connected');
-            }
-            else {
-                this.statusDot.classList.remove('connected');
-            }
-        }
-        if (this.connectBtn) {
-            if (connected) {
-                this.connectBtn.classList.add('connected');
-                this.connectBtn.disabled = false;
-            }
-            else {
-                this.connectBtn.classList.remove('connected');
-                this.connectBtn.disabled = false;
-            }
-        }
-        if (this.voiceOverlay) {
-            if (connected) {
-                this.voiceOverlay.classList.add('active');
-            }
-            else {
-                this.voiceOverlay.classList.remove('active');
-            }
-        }
-        if (this.overlayWaveContainer) {
-            if (connected) {
-                this.overlayWaveContainer.classList.add('active');
-            }
-            else {
-                this.overlayWaveContainer.classList.remove('active');
-            }
-        }
-    }
-    /**
-     * Add a timestamped message to the debug log
+     * Log message to debug panel
      */
     log(message) {
         if (!this.debugLog)
             return;
         const entry = document.createElement('div');
-        entry.textContent = `${new Date().toISOString()} - ${message}`;
-        if (message.startsWith('User: ')) {
-            entry.style.color = '#2196F3';
+        const time = new Date().toLocaleTimeString();
+        entry.textContent = `[${time}] ${message}`;
+        // Color coding
+        if (message.startsWith('You:')) {
+            entry.style.color = '#37b6ff';
         }
-        else if (message.startsWith('Bot: ')) {
-            entry.style.color = '#4CAF50';
+        else if (message.startsWith('Bot:')) {
+            entry.style.color = '#9747ff';
+        }
+        else if (message.includes('Error')) {
+            entry.style.color = '#ef4444';
+        }
+        else if (message.includes('Connected')) {
+            entry.style.color = '#4ade80';
         }
         this.debugLog.appendChild(entry);
         this.debugLog.scrollTop = this.debugLog.scrollHeight;
         console.log(message);
     }
     /**
-     * Update the connection status display
+     * Add transcript bubble to conversation
      */
-    updateStatus(status) {
-        const isConnected = status === 'Connected' || status === 'Online';
-        this.updateConnectionVisuals(isConnected);
-        this.log(`Connection Status: ${status}`);
+    addTranscript(text, isUser) {
+        var _a;
+        if (!this.transcriptList)
+            return;
+        // Hide welcome message
+        (_a = this.welcomeMessage) === null || _a === void 0 ? void 0 : _a.classList.add('hidden');
+        const bubble = document.createElement('div');
+        bubble.className = `transcript-bubble ${isUser ? 'user' : 'bot'}`;
+        // Add label
+        const label = document.createElement('span');
+        label.className = 'transcript-label';
+        label.textContent = isUser ? 'You' : 'Nester';
+        // Add text
+        const textSpan = document.createElement('span');
+        textSpan.textContent = text;
+        bubble.appendChild(label);
+        bubble.appendChild(textSpan);
+        this.transcriptList.appendChild(bubble);
+        // Scroll to bottom
+        const conversationArea = document.getElementById('conversation-area');
+        if (conversationArea) {
+            conversationArea.scrollTop = conversationArea.scrollHeight;
+        }
     }
     /**
-     * Check for available media tracks and set them up if present
-     * This is called when the bot is ready or when the transport state changes to ready
+     * Toggle debug panel
+     */
+    toggleDebugPanel() {
+        var _a;
+        (_a = this.debugPanel) === null || _a === void 0 ? void 0 : _a.classList.toggle('visible');
+    }
+    /**
+     * Hide debug panel
+     */
+    hideDebugPanel() {
+        var _a;
+        (_a = this.debugPanel) === null || _a === void 0 ? void 0 : _a.classList.remove('visible');
+    }
+    /**
+     * Toggle emotion panel
+     */
+    toggleEmotionPanel() {
+        var _a;
+        (_a = this.emotionPanel) === null || _a === void 0 ? void 0 : _a.classList.toggle('visible');
+    }
+    /**
+     * Hide emotion panel
+     */
+    hideEmotionPanel() {
+        var _a;
+        (_a = this.emotionPanel) === null || _a === void 0 ? void 0 : _a.classList.remove('visible');
+    }
+    /**
+     * Update emotion display with detected emotion data
+     */
+    updateEmotionDisplay(data) {
+        // Update emotion label and emoji
+        const emotionEmojis = {
+            'neutral': '😊',
+            'happy': '😄',
+            'excited': '🤩',
+            'sad': '😢',
+            'angry': '😠',
+            'frustrated': '😤',
+            'fear': '😨',
+            'worried': '😟',
+            'calm': '😌',
+            'content': '😊',
+        };
+        const emoji = emotionEmojis[data.emotion] || '😊';
+        const emotionName = data.emotion.charAt(0).toUpperCase() + data.emotion.slice(1);
+        if (this.emotionEmoji)
+            this.emotionEmoji.textContent = emoji;
+        if (this.emotionLabel)
+            this.emotionLabel.textContent = emotionName;
+        if (this.emotionConfidence) {
+            this.emotionConfidence.textContent = `${Math.round(data.confidence * 100)}%`;
+        }
+        // Update dimensional values with smooth animation
+        if (this.arousalBar && this.arousalValue) {
+            this.arousalBar.style.width = `${data.arousal * 100}%`;
+            this.arousalValue.textContent = data.arousal.toFixed(2);
+        }
+        if (this.dominanceBar && this.dominanceValue) {
+            this.dominanceBar.style.width = `${data.dominance * 100}%`;
+            this.dominanceValue.textContent = data.dominance.toFixed(2);
+        }
+        if (this.valenceBar && this.valenceValue) {
+            this.valenceBar.style.width = `${data.valence * 100}%`;
+            this.valenceValue.textContent = data.valence.toFixed(2);
+        }
+        // Add to emotion timeline
+        this.addEmotionToTimeline(data.emotion, emoji);
+        this.log(`Emotion detected: ${emotionName} (${Math.round(data.confidence * 100)}%)`);
+    }
+    /**
+     * Update tone display when voice tone is switched
+     */
+    updateToneDisplay(tone) {
+        const toneDisplayNames = {
+            'neutral': 'Neutral Voice',
+            'excited': 'Excited Voice',
+            'sad': 'Empathetic Voice',
+            'frustrated': 'Calm Voice',
+            'happy': 'Happy Voice',
+            'angry': 'Controlled Voice',
+            'fear': 'Gentle Voice',
+            'content': 'Content Voice',
+        };
+        const displayName = toneDisplayNames[tone] || 'Neutral Voice';
+        if (this.toneLabel) {
+            this.toneLabel.textContent = displayName;
+            // Animate the tone indicator
+            const toneIndicator = document.getElementById('current-tone');
+            if (toneIndicator) {
+                toneIndicator.classList.add('tone-switching');
+                setTimeout(() => toneIndicator.classList.remove('tone-switching'), 600);
+            }
+        }
+        this.log(`Voice tone switched to: ${displayName}`);
+    }
+    /**
+     * Add emotion dot to timeline
+     */
+    addEmotionToTimeline(emotion, emoji) {
+        if (!this.emotionTimeline)
+            return;
+        const emotionColors = {
+            'neutral': '#6b7280',
+            'happy': '#10b981',
+            'excited': '#8b5cf6',
+            'sad': '#3b82f6',
+            'angry': '#ef4444',
+            'frustrated': '#f59e0b',
+            'fear': '#ec4899',
+            'worried': '#f59e0b',
+            'calm': '#10b981',
+            'content': '#10b981',
+        };
+        const dot = document.createElement('div');
+        dot.className = 'timeline-dot';
+        dot.style.backgroundColor = emotionColors[emotion] || '#6b7280';
+        dot.title = `${emotion.charAt(0).toUpperCase() + emotion.slice(1)}`;
+        // Keep only last 20 emotions
+        if (this.emotionTimeline.children.length >= 20) {
+            this.emotionTimeline.removeChild(this.emotionTimeline.firstChild);
+        }
+        this.emotionTimeline.appendChild(dot);
+        // Animate dot entrance
+        setTimeout(() => dot.classList.add('visible'), 10);
+    }
+    /**
+     * Show rich content panel with animation
+     */
+    showRichContentPanel() {
+        var _a;
+        (_a = this.richContentPanel) === null || _a === void 0 ? void 0 : _a.classList.add('visible');
+    }
+    /**
+     * Hide rich content panel
+     */
+    hideRichContentPanel() {
+        var _a;
+        (_a = this.richContentPanel) === null || _a === void 0 ? void 0 : _a.classList.remove('visible');
+    }
+    /**
+     * Clear all rich content cards
+     */
+    clearRichContent() {
+        if (this.richContentInner) {
+            this.richContentInner.innerHTML = '';
+        }
+        this.hideRichContentPanel();
+    }
+    /**
+     * Add a rich content card with animation
+     */
+    addRichContent(content) {
+        if (!this.richContentInner)
+            return;
+        const card = document.createElement('div');
+        card.className = `knowledge-card ${content.type === 'info_card' ? 'info-card' : ''}`;
+        let cardHTML = '';
+        // Image or placeholder
+        if (content.image) {
+            cardHTML += `<img class="card-image" src="${content.image}" alt="${content.title}" onerror="this.parentElement.querySelector('.card-image-placeholder')?.classList.remove('hidden'); this.remove();">`;
+        }
+        else {
+            cardHTML += `
+        <div class="card-image-placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+      `;
+        }
+        // Card content
+        cardHTML += `<div class="card-content">`;
+        // Type badge
+        const badgeText = content.type.replace('_', ' ').replace('card', '').trim().toUpperCase() || 'INFO';
+        cardHTML += `<span class="card-type-badge">${badgeText}</span>`;
+        // Title
+        cardHTML += `<h3 class="card-title">${content.title}</h3>`;
+        // Description
+        if (content.description) {
+            cardHTML += `<p class="card-description">${content.description}</p>`;
+        }
+        // Stats grid
+        if (content.stats && content.stats.length > 0) {
+            cardHTML += `<div class="stats-grid">`;
+            content.stats.forEach(stat => {
+                cardHTML += `
+          <div class="stat-item">
+            <div class="stat-value">${stat.value}</div>
+            <div class="stat-label">${stat.label}</div>
+          </div>
+        `;
+            });
+            cardHTML += `</div>`;
+        }
+        // Features list
+        if (content.features && content.features.length > 0) {
+            cardHTML += `<div class="card-features">`;
+            content.features.forEach(feature => {
+                cardHTML += `
+          <div class="feature-item">
+            <span class="feature-dot"></span>
+            <span>${feature}</span>
+          </div>
+        `;
+            });
+            cardHTML += `</div>`;
+        }
+        // Link button
+        if (content.link) {
+            const linkText = content.linkText || 'Learn More';
+            cardHTML += `
+        <a href="${content.link}" target="_blank" rel="noopener noreferrer" class="card-link">
+          ${linkText}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14"/>
+            <path d="M12 5l7 7-7 7"/>
+          </svg>
+        </a>
+      `;
+        }
+        cardHTML += `</div>`;
+        card.innerHTML = cardHTML;
+        this.richContentInner.appendChild(card);
+        this.showRichContentPanel();
+        this.log(`Rich content added: ${content.title}`);
+    }
+    /**
+     * Show loading state in rich content panel
+     */
+    showRichContentLoading() {
+        if (!this.richContentInner)
+            return;
+        const loadingCard = document.createElement('div');
+        loadingCard.className = 'knowledge-card loading';
+        loadingCard.id = 'rich-content-loader';
+        loadingCard.innerHTML = `
+      <div class="card-loader">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    `;
+        this.richContentInner.appendChild(loadingCard);
+        this.showRichContentPanel();
+    }
+    /**
+     * Hide loading state
+     */
+    hideRichContentLoading() {
+        const loader = document.getElementById('rich-content-loader');
+        if (loader) {
+            loader.classList.add('removing');
+            setTimeout(() => loader.remove(), 400);
+        }
+    }
+    /**
+     * Handle rich content from backend response
+     */
+    handleRichContent(richContent) {
+        this.hideRichContentLoading();
+        if (Array.isArray(richContent)) {
+            richContent.forEach(content => this.addRichContent(content));
+        }
+        else {
+            this.addRichContent(richContent);
+        }
+    }
+    /**
+     * Set up audio track
+     */
+    setupAudioTrack(track) {
+        this.log('Audio track connected');
+        if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
+            const oldTrack = this.botAudio.srcObject.getAudioTracks()[0];
+            if ((oldTrack === null || oldTrack === void 0 ? void 0 : oldTrack.id) === track.id)
+                return;
+        }
+        this.botAudio.srcObject = new MediaStream([track]);
+    }
+    /**
+     * Set up media tracks
      */
     setupMediaTracks() {
         var _a;
@@ -168,152 +485,235 @@ class WebsocketClientApp {
         }
     }
     /**
-     * Set up listeners for track events (start/stop)
-     * This handles new tracks being added during the session
+     * Set up event listeners for RTVI
      */
     setupTrackListeners() {
         if (!this.rtviClient)
             return;
-        // Listen for new tracks starting
+        // Track events
         this.rtviClient.on(client_js_1.RTVIEvent.TrackStarted, (track, participant) => {
-            // Only handle non-local (bot) tracks
             if (!(participant === null || participant === void 0 ? void 0 : participant.local) && track.kind === 'audio') {
                 this.setupAudioTrack(track);
             }
         });
-        // Listen for tracks stopping
-        this.rtviClient.on(client_js_1.RTVIEvent.TrackStopped, (track, participant) => {
-            this.log(`Track stopped: ${track.kind} from ${(participant === null || participant === void 0 ? void 0 : participant.name) || 'unknown'}`);
+        // Bot speech events
+        this.rtviClient.on(client_js_1.RTVIEvent.BotStartedSpeaking, () => {
+            this.log('Bot started speaking');
+            this.setVoiceState('speaking');
+        });
+        this.rtviClient.on(client_js_1.RTVIEvent.BotStoppedSpeaking, () => {
+            this.log('Bot stopped speaking');
+            if (this.isConnected) {
+                this.setVoiceState('listening');
+            }
+        });
+        // User speech events
+        this.rtviClient.on(client_js_1.RTVIEvent.UserStartedSpeaking, () => {
+            this.log('User started speaking');
+            this.setVoiceState('listening');
+        });
+        this.rtviClient.on(client_js_1.RTVIEvent.UserStoppedSpeaking, () => {
+            this.log('User stopped speaking');
+            this.setVoiceState('thinking');
         });
     }
     /**
-     * Set up an audio track for playback
-     * Handles both initial setup and track updates
-     */
-    setupAudioTrack(track) {
-        this.log('Setting up audio track');
-        if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
-            const oldTrack = this.botAudio.srcObject.getAudioTracks()[0];
-            if ((oldTrack === null || oldTrack === void 0 ? void 0 : oldTrack.id) === track.id)
-                return;
-        }
-        this.botAudio.srcObject = new MediaStream([track]);
-    }
-    /**
-     * Get the backend URL from environment or use default
+     * Get backend URL
      */
     getBackendUrl() {
         var _a;
-        // Check for Vite environment variable (build time)
-        // @ts-ignore - Vite injects this at build time
+        // @ts-ignore
         if (typeof import.meta !== 'undefined' && ((_a = import.meta.env) === null || _a === void 0 ? void 0 : _a.VITE_BACKEND_URL)) {
             // @ts-ignore
             return import.meta.env.VITE_BACKEND_URL;
         }
-        // Check for window config (runtime injection)
         if (window.__BACKEND_URL__) {
             return window.__BACKEND_URL__;
         }
-        // Default for local development
         return 'http://localhost:7860';
     }
     /**
-     * Initialize and connect to the bot
-     * This sets up the RTVI client, initializes devices, and establishes the connection
+     * Connect to voice server
+     * Note: Emotion detection is now handled server-side by Hume AI
      */
     connect() {
         return __awaiter(this, void 0, void 0, function* () {
+            if (this.isConnecting || this.isConnected)
+                return;
+            this.isConnecting = true;
+            this.setVoiceState('thinking'); // Show thinking animation while connecting
             try {
-                const startTime = Date.now();
                 const backendUrl = this.getBackendUrl();
-                this.log(`Connecting to backend: ${backendUrl}`);
-                //const transport = new DailyTransport();
+                this.log(`Connecting to ${backendUrl}...`);
                 const transport = new websocket_transport_1.WebSocketTransport();
-                const RTVIConfig = {
+                const config = {
                     transport,
                     params: {
-                        // The baseURL and endpoint of your bot server that the client will connect to
                         baseUrl: backendUrl,
                         endpoints: { connect: '/connect' },
                     },
                     enableMic: true,
                     enableCam: false,
-                    // Browser-based noise suppression
-                    customAudioConstraints: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                    },
                     callbacks: {
                         onConnected: () => {
-                            this.updateStatus('Connected');
-                            this.log('Connection established successfully');
+                            this.isConnecting = false;
+                            this.isConnected = true;
+                            this.log('Connected successfully!');
+                            this.setVoiceState('listening');
                         },
                         onDisconnected: () => {
-                            this.updateStatus('Disconnected');
-                            this.log('Connection terminated');
+                            this.isConnecting = false;
+                            this.isConnected = false;
+                            this.rtviClient = null;
+                            this.log('Disconnected');
+                            this.setVoiceState('idle');
                         },
-                        onBotReady: (data) => {
-                            this.log(`Bot ready: ${JSON.stringify(data)}`);
+                        onBotReady: () => {
+                            this.log(`Bot ready`);
                             this.setupMediaTracks();
                         },
                         onUserTranscript: (data) => {
                             if (data.final) {
                                 this.log(`You: ${data.text}`);
+                                this.addTranscript(data.text, true);
                             }
                         },
-                        onBotTranscript: (data) => this.log(`Bot: ${data.text}`),
-                        onMessageError: (error) => console.error('Message error:', error),
-                        onError: (error) => console.error('Error:', error),
+                        onBotTranscript: (data) => {
+                            this.log(`Bot: ${data.text}`);
+                            this.addTranscript(data.text, false);
+                        },
+                        onError: (error) => {
+                            this.log(`Error: ${error}`);
+                            console.error('RTVI Error:', error);
+                        },
+                        onServerMessage: (message) => {
+                            // Handle custom server messages (OutputTransportMessageFrame from backend)
+                            console.log('[Emotion] Server message received:', JSON.stringify(message, null, 2));
+                            try {
+                                // The RTVI SDK unwraps the message - we receive { data: {...} }
+                                // Check multiple possible message structures
+                                let emotionData = null;
+                                let messageType = null;
+                                // Case 1: message.data contains our custom data directly
+                                if (message && message.data) {
+                                    messageType = message.data.message_type;
+                                    emotionData = message.data;
+                                }
+                                // Case 2: message itself has message_type (direct data)
+                                else if (message && message.message_type) {
+                                    messageType = message.message_type;
+                                    emotionData = message;
+                                }
+                                // Case 3: Wrapped in server-message type
+                                else if (message && message.type === 'server-message' && message.data) {
+                                    messageType = message.data.message_type;
+                                    emotionData = message.data;
+                                }
+                                console.log('[Emotion] Parsed message type:', messageType, 'data:', emotionData);
+                                if (messageType === 'emotion_detected' && emotionData) {
+                                    console.log('[Emotion] Updating emotion display:', emotionData);
+                                    this.updateEmotionDisplay(emotionData);
+                                }
+                                else if (messageType === 'tone_switched' && emotionData) {
+                                    console.log('[Emotion] Updating tone display:', emotionData.new_tone);
+                                    this.updateToneDisplay(emotionData.new_tone);
+                                }
+                            }
+                            catch (e) {
+                                console.error('[Emotion] Error handling server message:', e);
+                            }
+                        },
                     },
                 };
-                this.rtviClient = new client_js_1.RTVIClient(RTVIConfig);
+                this.rtviClient = new client_js_1.RTVIClient(config);
                 this.setupTrackListeners();
-                this.log('Initializing devices...');
                 yield this.rtviClient.initDevices();
-                this.log('Connecting to server...');
                 yield this.rtviClient.connect();
-                const timeTaken = Date.now() - startTime;
-                this.log(`Connection established in ${timeTaken}ms`);
             }
             catch (error) {
+                this.isConnecting = false;
                 this.log(`Connection failed: ${error.message}`);
-                this.updateStatus('Error');
+                this.setVoiceState('idle');
                 if (this.rtviClient) {
                     try {
                         yield this.rtviClient.disconnect();
                     }
-                    catch (disconnectError) {
-                        this.log(`Cleanup error: ${disconnectError}`);
-                    }
+                    catch (e) { }
+                    this.rtviClient = null;
                 }
             }
         });
     }
     /**
-     * Disconnect from the bot and clean up media resources
+     * Disconnect from voice server
      */
     disconnect() {
         return __awaiter(this, void 0, void 0, function* () {
-            if (this.rtviClient) {
-                try {
-                    this.log('Disconnecting...');
+            if (!this.rtviClient && !this.isConnecting)
+                return;
+            this.log('Disconnecting...');
+            try {
+                if (this.rtviClient) {
                     yield this.rtviClient.disconnect();
                     this.rtviClient = null;
-                    if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
-                        this.botAudio.srcObject.getAudioTracks().forEach((track) => track.stop());
-                        this.botAudio.srcObject = null;
-                    }
-                    this.log('Disconnected successfully');
                 }
-                catch (error) {
-                    this.log(`Disconnect error: ${error.message}`);
+                // Clean up audio
+                if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
+                    this.botAudio.srcObject.getAudioTracks().forEach((track) => track.stop());
+                    this.botAudio.srcObject = null;
                 }
+                this.isConnecting = false;
+                this.isConnected = false;
+                this.setVoiceState('idle');
+                this.log('Disconnected successfully');
+            }
+            catch (error) {
+                this.log(`Disconnect error: ${error.message}`);
+                this.isConnecting = false;
+                this.isConnected = false;
+                this.setVoiceState('idle');
             }
         });
     }
+    /**
+     * Demo function to test rich content panel (for development)
+     * Can be called from browser console: window.demoRichContent()
+     */
+    demoRichContent() {
+        this.clearRichContent();
+        // Demo project card
+        this.addRichContent({
+            type: 'project_card',
+            title: 'NesterLabs ConversationalBot',
+            description: 'A real-time voice conversational assistant with ultra-low latency responses.',
+            image: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=400',
+            features: [
+                '1.5 second response time',
+                'Hinglish language support',
+                'RAG knowledge integration',
+                'Real-time voice streaming'
+            ],
+            link: 'https://github.com/nesterlabs-ai/NesterConversationalBot',
+            linkText: 'View on GitHub'
+        });
+        // Demo stats card
+        setTimeout(() => {
+            this.addRichContent({
+                type: 'stats_card',
+                title: 'Performance Metrics',
+                stats: [
+                    { label: 'Latency', value: '1.5s' },
+                    { label: 'Accuracy', value: '98%' },
+                    { label: 'Users', value: '10K+' },
+                    { label: 'Uptime', value: '99.9%' }
+                ]
+            });
+        }, 600);
+    }
 }
 window.addEventListener('DOMContentLoaded', () => {
-    window.WebsocketClientApp = WebsocketClientApp;
-    new WebsocketClientApp();
+    window.VoiceOrbApp = VoiceOrbApp;
+    const app = new VoiceOrbApp();
+    // Expose demo function for testing
+    window.demoRichContent = () => app.demoRichContent();
 });
