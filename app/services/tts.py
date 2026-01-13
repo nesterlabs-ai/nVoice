@@ -2,7 +2,7 @@
 Text-to-Speech service for the Voice Assistant.
 
 This module provides text-to-speech functionality using various TTS engines
-including Deepgram, ElevenLabs, and Cartesia.
+including Deepgram, ElevenLabs, Cartesia, and Chatterbox (Resemble AI).
 """
 
 from typing import Any, Dict
@@ -12,6 +12,8 @@ from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+
+from app.services.chatterbox_tts import ChatterboxTTSService
 
 
 class TextToSpeechService:
@@ -119,6 +121,29 @@ class TextToSpeechService:
                 selected_voice_id = voice_id
 
             self.tts_service = CartesiaTTSService(api_key=api_key, voice_id=selected_voice_id)
+
+        elif self.tts_provider == "chatterbox":
+            api_key = self.config.get("api_key")
+            voice_uuid = self.config.get("voice_uuid")
+            if not api_key:
+                raise ValueError("Resemble AI API key is required for Chatterbox")
+            if not voice_uuid:
+                raise ValueError("Resemble AI voice UUID is required for Chatterbox")
+
+            synthesis_url = self.config.get("synthesis_url", "https://f.cluster.resemble.ai/synthesize")
+            stream_url = self.config.get("stream_url", "https://f.cluster.resemble.ai/stream")
+            sample_rate = self.config.get("sample_rate", 24000)
+            voice = self.config.get("voice", "neutral")
+
+            self.tts_service = ChatterboxTTSService(
+                api_key=api_key,
+                voice_uuid=voice_uuid,
+                synthesis_url=synthesis_url,
+                stream_url=stream_url,
+                sample_rate=sample_rate,
+                voice=voice,
+            )
+            logger.info(f"Using Chatterbox TTS with emotion control (voice_uuid={voice_uuid}, sample_rate={sample_rate}Hz)")
 
         else:
             raise ValueError(f"Unsupported TTS provider: {self.tts_provider}")

@@ -25,15 +25,14 @@ stt:
     
 
 tts:
-  provider: "deepgram"  # Using Deepgram for cost-effectiveness
+  provider: "chatterbox"  # Chatterbox with emotion control via Resemble AI Cloud
   config:
-    api_key: "${DEEPGRAM_API_KEY}"
-    # Aura 2 voices - Latest generation with better quality
-    # Female: aura-2-athena-en (calm), aura-2-vesta-en (empathetic), aura-2-thalia-en (energetic)
-    # Male: aura-2-zeus-en (authoritative), aura-2-orion-en (approachable), aura-2-neptune-en (patient)
-    voice: "aura-2-athena-en"    # Aura 2.0 - Natural, clear female voice
-    encoding: "linear16"          # High quality audio (16-bit PCM, L16 format)
-    sample_rate: 24000            # 24kHz sample rate for better quality
+    api_key: "${RESEMBLE_API_KEY}"
+    voice_uuid: "${RESEMBLE_VOICE_UUID}"
+    synthesis_url: "https://f.cluster.resemble.ai/synthesize"
+    stream_url: "https://f.cluster.resemble.ai/stream"
+    sample_rate: 24000
+    voice: "neutral"  # Initial voice/emotion state
 
 input_analyzer:
   custom_patterns:

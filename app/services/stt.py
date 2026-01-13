@@ -55,29 +55,41 @@ class TextNormalizedDeepgramSTTService(DeepgramSTTService):
             logger.warning(f"Text normalization failed for '{text}': {e}")
             return text
 
-    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
-        """Process a frame with text normalization.
+    async def push_frame(self, frame: Frame, direction: FrameDirection = FrameDirection.DOWNSTREAM) -> None:
+        """Override push_frame to normalize text and log transcription frames.
 
         Args:
-            frame: Input frame to process
-            direction: Frame processing direction
+            frame: Frame to push
+            direction: Frame direction
         """
-        await super().process_frame(frame, direction)
+        # Log and normalize TranscriptionFrames
+        if isinstance(frame, TranscriptionFrame):
+            logger.info(f"🎤 STT push_frame: TranscriptionFrame text='{frame.text}'")
+            if frame.text:
+                normalized_text = self._normalize_text(frame.text)
+                if normalized_text != frame.text:
+                    logger.debug(f"Normalized text: '{frame.text}' -> '{normalized_text}'")
+                    frame = TranscriptionFrame(
+                        text=normalized_text,
+                        user_id=frame.user_id,
+                        timestamp=frame.timestamp,
+                        language=getattr(frame, "language", None),
+                    )
 
-        if isinstance(frame, TranscriptionFrame) and frame.text:
-            normalized_text = self._normalize_text(frame.text)
-            if normalized_text != frame.text:
-                logger.debug(f"Normalized text: '{frame.text}' -> '{normalized_text}'")
-                normalized_frame = TranscriptionFrame(
-                    text=normalized_text,
-                    user_id=frame.user_id,
-                    timestamp=frame.timestamp,
-                    language=getattr(frame, "language", None),
-                )
-                await self.push_frame(normalized_frame, direction)
-                return
+        await super().push_frame(frame, direction)
 
-        await self.push_frame(frame, direction)
+    async def queue_frame(self, frame: Frame, direction: FrameDirection = FrameDirection.DOWNSTREAM) -> None:
+        """Override queue_frame to log transcription frames.
+
+        Args:
+            frame: Frame to queue
+            direction: Frame direction
+        """
+        # Log TranscriptionFrames
+        if isinstance(frame, TranscriptionFrame):
+            logger.info(f"🎤 STT queue_frame: TranscriptionFrame text='{frame.text}'")
+
+        await super().queue_frame(frame, direction)
 
 
 class SpeechToTextService:

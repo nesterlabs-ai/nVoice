@@ -25,6 +25,17 @@ from app.core.server import voice_assistant_server
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown events."""
     logger.info("Starting NesterVoiceAI application...")
+
+    # Load configuration if not already loaded
+    if not voice_assistant_server.config:
+        try:
+            config = get_assistant_config()
+            voice_assistant_server.config = config
+            logger.info("Configuration loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load configuration: {e}")
+            raise
+
     yield
     logger.info("Shutting down NesterVoiceAI application...")
 
@@ -54,7 +65,7 @@ def create_app() -> FastAPI:
     # Include API routes
     app.include_router(router)
 
-    # WebSocket endpoint
+    # WebSocket endpoint (emotion detection now handled by Hume AI server-side)
     app.add_api_websocket_route("/ws", websocket_endpoint)
 
     return app
