@@ -105,3 +105,39 @@ client/node_modules/
 # Build artifacts
 client/dist/
 client/build/
+
+# Documentation and analysis files (keep out of repo)
+*_ANALYSIS.md
+*_COMPARISON.md
+*_VISUALIZATION.md
+*_BLOG.md
+*_CLEANUP.md
+SYSTEM_ARCHITECTURE.md
+systempromtcontext.txt
+
+# Test and experimental files
+test_*.py
+*_test.py
+test_audio_samples/
+=*
+
+# ML Models and checkpoints (too large for git)
+pretrained_models/
+wav2vec2_checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Disabled/experimental services
+*.disabled
+*_backup.py
+*_old.py
+
+# Other project folders
+NesterConversationalBot/
+
+# HTML exports
+*.html
+!client/index.html
+!client/*.html
