@@ -15,7 +15,10 @@ services:
       # API Keys - loaded from .env file
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - RESEMBLE_API_KEY=${RESEMBLE_API_KEY}
+      - RESEMBLE_VOICE_UUID=${RESEMBLE_VOICE_UUID:-8b0c7b93}
       - LIGHTRAG_BASE_URL=${LIGHTRAG_BASE_URL}
+      - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY}
       - PUBLIC_URL=${PUBLIC_URL}
       # Server Configuration
       - FASTAPI_HOST=0.0.0.0
@@ -30,9 +33,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
 
   # Frontend - Pre-built image from GHCR
   frontend:
