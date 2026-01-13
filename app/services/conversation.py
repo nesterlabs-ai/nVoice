@@ -20,8 +20,7 @@ from pipecat.services.llm_service import FunctionCallParams, LLMService
 from app.services.input_analyzer import InputAnalyzer
 from app.services.rag import RAGService
 
-# Voice constants
-RAG_VOICE = "aura-2-odysseus-en"  # Masculine, calm, smooth, professional - for RAG responses
+# Voice constant (default only - actual voice is controlled by ToneAwareProcessor)
 DEFAULT_VOICE = "aura-2-athena-en"  # Natural, clear female voice - default
 
 
@@ -144,18 +143,9 @@ class ConversationManager:
                 if function_calls and any('end_conversation' in str(call) for call in function_calls):
                     return
 
-                # Check if this is a RAG call - switch to Odysseus voice
-                is_rag_call = function_calls and any('call_rag_system' in str(call) for call in function_calls)
-
+                # RAG calls now use the same voice as set by ToneAwareProcessor
+                # (hybrid audio + text tone detection)
                 if self.tts_service:
-                    if is_rag_call:
-                        # Switch to RAG voice (Odysseus - masculine, calm, professional)
-                        logger.info(f"🎙️ RAG call detected - switching to {RAG_VOICE}")
-                        self.tts_service.set_voice(RAG_VOICE)
-                        # Disconnect so next TTS uses new voice
-                        if hasattr(self.tts_service, '_disconnect'):
-                            await self.tts_service._disconnect()
-
                     phrase = self._get_next_thinking_phrase()
                     await self.tts_service.queue_frame(TTSSpeakFrame(phrase))
 

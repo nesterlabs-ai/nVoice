@@ -78,9 +78,9 @@ class VoiceAssistant:
             config=STTMuteConfig(strategies={STTMuteStrategy.MUTE_UNTIL_FIRST_BOT_COMPLETE})
         )
 
-        # Tone-aware processor for dynamic voice selection
+        # Tone-aware processor for dynamic voice selection using SpeechBrain wav2vec2-large
         self.tone_processor = ToneAwareProcessor(
-            cooldown_seconds=3.0,  # Prevent rapid switching
+            cooldown_seconds=3.0,  # Cooldown between voice switches
             enabled=True,
         )
 
@@ -142,7 +142,7 @@ class VoiceAssistant:
 
         logger.info("All services initialized successfully")
 
-    def create_pipeline(self, transport: BaseTransport) -> Pipeline:
+    async def create_pipeline(self, transport: BaseTransport) -> Pipeline:
         """Create the processing pipeline.
 
         Args:
@@ -174,19 +174,22 @@ class VoiceAssistant:
         # Connect TTS to tone processor for dynamic voice switching
         self.tone_processor.set_tts_service(tts)
 
-        # Create pipeline - STT mute filter AFTER context (official Pipecat pattern)
-        # ToneAwareProcessor sits after STT to detect emotional tone and switch TTS voice
-        # TextFilterProcessor sits between LLM and TTS to remove markdown formatting
+        # Initialize SpeechBrain wav2vec2-large for emotion detection
+        await self.tone_processor.initialize()
+
+        # Create pipeline
+        # ToneAwareProcessor receives audio frames for SpeechBrain emotion detection
+        # TextFilterProcessor removes markdown before TTS
         self.pipeline = Pipeline(
             [
                 transport.input(),
+                self.tone_processor,          # SpeechBrain wav2vec2-large emotion detection + voice switching
                 stt,
-                self.tone_processor,        # Detect tone and switch TTS voice
-                context_aggregator.user(),  # Context BEFORE mute filter
-                self.stt_mute_filter,       # Mute AFTER context sees frames
+                context_aggregator.user(),    # Context BEFORE mute filter
+                self.stt_mute_filter,         # Mute AFTER context sees frames
                 self.rtvi,
                 llm,
-                self.text_filter,           # Remove markdown before TTS
+                self.text_filter,             # Remove markdown before TTS
                 tts,
                 transport.output(),
                 context_aggregator.assistant(),
@@ -275,7 +278,7 @@ class VoiceAssistant:
 
         # Create pipeline and task
         logger.debug("Creating pipeline...")
-        self.create_pipeline(transport)
+        await self.create_pipeline(transport)
 
         logger.debug("Creating task...")
         self.create_task()

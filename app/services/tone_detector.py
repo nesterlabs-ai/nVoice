@@ -11,20 +11,26 @@ from typing import Dict, Any, Optional, Tuple
 
 from loguru import logger
 
-# Tone to Deepgram Aura-2 voice mapping
+# Emotion to Deepgram Aura-2 voice mapping
 # All voices verified against Deepgram Aura-2 voice list (2025)
 TONE_TO_VOICE = {
+    # Primary tone mappings
     "neutral": "aura-2-athena-en",      # Calm, Smooth, Professional (default)
     "frustrated": "aura-2-neptune-en",  # Professional, Patient, Polite - calming for frustrated users
     "excited": "aura-2-thalia-en",      # Clear, Confident, Energetic, Enthusiastic - matches excitement
     "sad": "aura-2-vesta-en",           # Natural, Expressive, Patient, Empathetic - supportive for sad users
+    # Extended emotion mappings
+    "happy": "aura-2-thalia-en",        # Same as excited
+    "angry": "aura-2-neptune-en",       # Same as frustrated
+    "fear": "aura-2-luna-en",           # Gentle, calming
+    "empathetic": "aura-asteria-en",    # Warm, supportive
 }
 
 # Default voice when tone detection fails
 DEFAULT_VOICE = "aura-2-athena-en"
 
-# Valid tones
-VALID_TONES = {"neutral", "frustrated", "excited", "sad"}
+# Valid tones (core set used by SpeechBrain)
+VALID_TONES = {"neutral", "frustrated", "excited", "sad", "happy", "angry", "fear", "empathetic"}
 
 
 class ToneDetector:
@@ -255,13 +261,23 @@ Respond with ONLY one word (neutral/frustrated/excited/sad):"""
         """
         current_time = time.time()
 
+        logger.info(f"🔍 should_switch_voice: new={new_tone}, last={self.last_tone}, last_switch_time={self.last_switch_time}")
+
         # Don't switch if same tone
         if new_tone == self.last_tone:
+            logger.debug(f"Same tone, no switch: {new_tone}")
             return False
 
-        # Standard cooldown for all switches
-        if current_time - self.last_switch_time < self.tone_switch_cooldown:
-            logger.debug(f"Tone switch blocked by cooldown ({self.last_tone} → {new_tone})")
+        # Allow first switch immediately (last_switch_time is 0 at start)
+        # This ensures the first emotional detection switches the voice right away
+        if self.last_switch_time == 0.0:
+            logger.info(f"✅ First voice switch allowed immediately: {self.last_tone} → {new_tone}")
+            return True
+
+        # Standard cooldown for subsequent switches
+        time_since_switch = current_time - self.last_switch_time
+        if time_since_switch < self.tone_switch_cooldown:
+            logger.debug(f"Tone switch blocked by cooldown: {time_since_switch:.1f}s < {self.tone_switch_cooldown}s ({self.last_tone} → {new_tone})")
             return False
 
         # STICKY EMOTIONAL TONES: Once in an emotional voice, NEVER switch to neutral
@@ -279,6 +295,7 @@ Respond with ONLY one word (neutral/frustrated/excited/sad):"""
             else:
                 logger.info(f"Sticky timeout reached, allowing switch to neutral")
 
+        logger.info(f"✅ Voice switch ALLOWED: {self.last_tone} → {new_tone}")
         return True
 
     def get_voice_for_tone(self, tone: str) -> str:
