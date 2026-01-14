@@ -566,6 +566,78 @@ class VoiceScannerApp {
   }
 
   /**
+   * Update emotion display with HYBRID emotion data (audio + text)
+   */
+  private updateHybridEmotionDisplay(data: {
+    primary_emotion: string;
+    secondary_emotion?: string;
+    arousal: number;
+    dominance: number;
+    valence: number;
+    confidence: number;
+    audio_emotion: string;
+    text_emotion: string;
+    audio_weight: number;
+    text_weight: number;
+    mismatch_detected: boolean;
+    interpretation?: string;
+    tokens_used: number;
+    timestamp: number;
+  }): void {
+    // Update emotion label and emoji
+    const emotionEmojis: Record<string, string> = {
+      'neutral': '😊',
+      'happy': '😄',
+      'excited': '🤩',
+      'sad': '😢',
+      'angry': '😠',
+      'frustrated': '😤',
+      'fear': '😨',
+      'worried': '😟',
+      'calm': '😌',
+      'content': '😊',
+    };
+
+    const emoji = emotionEmojis[data.primary_emotion] || '😊';
+    const emotionName = data.primary_emotion.toUpperCase();
+
+    if (this.emotionEmoji) this.emotionEmoji.textContent = emoji;
+    if (this.emotionLabel) this.emotionLabel.textContent = emotionName;
+    if (this.emotionConfidence) {
+      this.emotionConfidence.textContent = `${Math.round(data.confidence * 100)}%`;
+    }
+
+    // Update dimensional values (fused from audio + text)
+    if (this.arousalBar && this.arousalValue) {
+      this.arousalBar.style.width = `${data.arousal * 100}%`;
+      this.arousalValue.textContent = data.arousal.toFixed(2);
+    }
+    if (this.dominanceValue) {
+      this.dominanceValue.textContent = data.dominance.toFixed(2);
+    }
+    if (this.valenceValue) {
+      this.valenceValue.textContent = data.valence.toFixed(2);
+    }
+
+    // Add to emotion timeline
+    this.addEmotionToTimeline(data.primary_emotion, emoji);
+
+    // Add hybrid-specific terminal message with audio/text breakdown
+    const audioPercent = Math.round(data.audio_weight * 100);
+    const textPercent = Math.round(data.text_weight * 100);
+
+    let terminalMsg = `🔄 hybrid.emotion({primary: '${data.primary_emotion}', conf: ${(data.confidence * 100).toFixed(0)}%, audio: ${audioPercent}%, text: ${textPercent}%})`;
+
+    if (data.mismatch_detected && data.interpretation) {
+      terminalMsg += `\n⚠️  ${data.interpretation}`;
+    }
+
+    this.addTerminalMessage(terminalMsg, 'command');
+
+    this.log(`🔄 Hybrid Emotion: ${emotionName} (${Math.round(data.confidence * 100)}%) | Audio: ${data.audio_emotion} ${audioPercent}% | Text: ${data.text_emotion} ${textPercent}%`);
+  }
+
+  /**
    * Update tone display when voice tone is switched
    */
   private updateToneDisplay(tone: string): void {
@@ -970,7 +1042,10 @@ class VoiceScannerApp {
 
               console.log('[Emotion] Parsed message type:', messageType, 'data:', emotionData);
 
-              if (messageType === 'emotion_detected' && emotionData) {
+              if (messageType === 'hybrid_emotion_detected' && emotionData) {
+                console.log('[🔄 HYBRID EMOTION] Updating emotion display:', emotionData);
+                this.updateHybridEmotionDisplay(emotionData);
+              } else if (messageType === 'emotion_detected' && emotionData) {
                 console.log('[Emotion] Updating emotion display:', emotionData);
                 this.updateEmotionDisplay(emotionData);
               } else if (messageType === 'tone_switched' && emotionData) {

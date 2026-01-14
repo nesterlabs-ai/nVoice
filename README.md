@@ -48,6 +48,23 @@ Optimized for ultra-low latency with response times of 1-1.5 seconds for seamles
 └─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
 ```
 
+> 📖 For detailed architecture documentation, see [docs/architecture/SYSTEM_ARCHITECTURE.md](docs/architecture/SYSTEM_ARCHITECTURE.md)
+
+## 📁 Project Structure
+
+```
+nester-ai-voice-assistant/
+├── app/              # Main application code
+├── client/           # Frontend web application
+├── data/             # Knowledge base data
+├── docs/             # Documentation
+├── deployment/       # Docker & AWS deployment configs
+├── scripts/          # Utility scripts
+└── .github/          # CI/CD workflows
+```
+
+> 📖 For complete project structure, see [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
+
 ## 🔄 CI/CD Pipeline
 
 This project includes automated CI/CD pipelines for:

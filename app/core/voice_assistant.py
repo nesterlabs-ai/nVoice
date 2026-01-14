@@ -78,10 +78,12 @@ class VoiceAssistant:
             config=STTMuteConfig(strategies={STTMuteStrategy.MUTE_UNTIL_FIRST_BOT_COMPLETE})
         )
 
-        # Tone-aware processor for dynamic voice selection using SpeechBrain wav2vec2-large
+        # Tone-aware processor for dynamic voice selection using MSP-PODCAST + LLM text sentiment
+        groq_api_key = self.config.get("conversation", {}).get("llm", {}).get("api_key")
         self.tone_processor = ToneAwareProcessor(
             cooldown_seconds=3.0,  # Cooldown between voice switches
             enabled=True,
+            groq_api_key=groq_api_key,  # Pass Groq API key for LLM text sentiment
         )
 
         # Text filter processor to remove markdown before TTS
@@ -183,8 +185,8 @@ class VoiceAssistant:
         self.pipeline = Pipeline(
             [
                 transport.input(),
-                self.tone_processor,          # SpeechBrain wav2vec2-large emotion detection + voice switching
-                stt,
+                stt,                          # STT first to generate transcriptions
+                self.tone_processor,          # AFTER STT to receive both audio AND transcriptions for hybrid mode
                 context_aggregator.user(),    # Context BEFORE mute filter
                 self.stt_mute_filter,         # Mute AFTER context sees frames
                 self.rtvi,

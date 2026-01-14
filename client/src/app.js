@@ -1,12 +1,17 @@
 "use strict";
 /**
- * Nester AI - Floating Voice Orb Widget
+ * Nester AI - Voice Intelligence Scanner
  *
- * A compact floating voice assistant with state-based animations.
+ * A sci-fi themed voice assistant with scanner interface and emotion visualization.
  * States: idle | listening | thinking | speaking
  *
- * Features rich content panel for dynamic visual responses.
- * Emotion detection is handled server-side by Hume AI.
+ * Features:
+ * - Scanner frame with animated scan line
+ * - Circular audio visualizer
+ * - Waveform visualization
+ * - Emotion metrics panel
+ * - Terminal system messages
+ * - Floating particles
  */
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -20,82 +25,298 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const client_js_1 = require("@pipecat-ai/client-js");
 const websocket_transport_1 = require("@pipecat-ai/websocket-transport");
-class VoiceOrbApp {
+class VoiceScannerApp {
     constructor() {
         this.rtviClient = null;
         // UI Elements
+        this.scannerFrame = null;
         this.orbContainer = null;
         this.orbStatus = null;
         this.welcomeMessage = null;
         this.transcriptList = null;
+        this.transcriptStatus = null;
         this.debugPanel = null;
         this.debugLog = null;
         this.debugToggle = null;
         this.debugClose = null;
-        this.richContentPanel = null;
-        this.richContentInner = null;
         this.emotionPanel = null;
         this.emotionToggle = null;
-        this.emotionClose = null;
         this.emotionLabel = null;
         this.emotionEmoji = null;
         this.emotionConfidence = null;
         this.toneLabel = null;
         this.arousalBar = null;
         this.arousalValue = null;
-        this.dominanceBar = null;
         this.dominanceValue = null;
-        this.valenceBar = null;
         this.valenceValue = null;
         this.emotionTimeline = null;
+        this.statusIndicator = null;
+        this.loadingOverlay = null;
+        this.terminalContent = null;
+        this.terminalStatus = null;
+        this.typingLine = null;
+        this.timestampElement = null;
+        this.notification = null;
+        // Canvas elements
+        this.waveformCanvas = null;
+        this.circularCanvas = null;
+        this.preloaderCanvas = null;
+        this.waveformCtx = null;
+        this.circularCtx = null;
+        this.preloaderCtx = null;
+        // Audio analysis
+        this.audioContext = null;
+        this.analyser = null;
+        this.dataArray = null;
+        this.animationFrame = null;
         // State
         this.voiceState = 'idle';
         this.isConnected = false;
         this.isConnecting = false;
-        console.log("Nester AI Voice Orb initializing...");
+        this.preloaderAngle = 0;
+        console.log("Nester AI Voice Scanner initializing...");
         this.botAudio = document.createElement('audio');
         this.botAudio.autoplay = true;
         document.body.appendChild(this.botAudio);
         this.setupDOMElements();
         this.setupEventListeners();
+        this.initializeCanvases();
+        this.startTimestampUpdate();
+        this.createFloatingParticles();
+        this.showLoadingOverlay();
         this.setVoiceState('idle');
+        // Hide loading after initialization
+        setTimeout(() => this.hideLoadingOverlay(), 2500);
     }
     setupDOMElements() {
+        this.scannerFrame = document.getElementById('scanner-frame');
         this.orbContainer = document.getElementById('voice-orb-container');
         this.orbStatus = document.getElementById('orb-status');
         this.welcomeMessage = document.getElementById('welcome-message');
         this.transcriptList = document.getElementById('transcript-list');
+        this.transcriptStatus = document.getElementById('transcript-status');
         this.debugPanel = document.getElementById('debug-panel');
         this.debugLog = document.getElementById('debug-log');
         this.debugToggle = document.getElementById('debug-toggle');
         this.debugClose = document.getElementById('debug-close');
-        this.richContentPanel = document.getElementById('rich-content-panel');
-        this.richContentInner = document.getElementById('rich-content-inner');
         this.emotionPanel = document.getElementById('emotion-panel');
         this.emotionToggle = document.getElementById('emotion-toggle');
-        this.emotionClose = document.getElementById('emotion-close');
         this.emotionLabel = document.getElementById('emotion-label');
         this.emotionEmoji = document.getElementById('emotion-emoji');
         this.emotionConfidence = document.getElementById('emotion-confidence');
         this.toneLabel = document.getElementById('tone-label');
         this.arousalBar = document.getElementById('arousal-bar');
         this.arousalValue = document.getElementById('arousal-value');
-        this.dominanceBar = document.getElementById('dominance-bar');
         this.dominanceValue = document.getElementById('dominance-value');
-        this.valenceBar = document.getElementById('valence-bar');
         this.valenceValue = document.getElementById('valence-value');
         this.emotionTimeline = document.getElementById('emotion-timeline');
+        this.statusIndicator = document.getElementById('status-indicator');
+        this.loadingOverlay = document.getElementById('loading-overlay');
+        this.terminalContent = document.getElementById('terminal-content');
+        this.terminalStatus = document.getElementById('terminal-status');
+        this.typingLine = document.getElementById('typing-line');
+        this.timestampElement = document.getElementById('timestamp');
+        this.notification = document.getElementById('notification');
+        // Canvas elements
+        this.waveformCanvas = document.getElementById('waveform-canvas');
+        this.circularCanvas = document.getElementById('circular-canvas');
+        this.preloaderCanvas = document.getElementById('preloader-canvas');
     }
     setupEventListeners() {
-        var _a, _b, _c, _d, _e;
-        // Orb click handler
-        (_a = this.orbContainer) === null || _a === void 0 ? void 0 : _a.addEventListener('click', () => this.handleOrbClick());
+        var _a, _b, _c, _d;
+        // Scanner frame click handler (whole frame is clickable)
+        (_a = this.scannerFrame) === null || _a === void 0 ? void 0 : _a.addEventListener('click', () => this.handleOrbClick());
         // Debug panel
         (_b = this.debugToggle) === null || _b === void 0 ? void 0 : _b.addEventListener('click', () => this.toggleDebugPanel());
         (_c = this.debugClose) === null || _c === void 0 ? void 0 : _c.addEventListener('click', () => this.hideDebugPanel());
-        // Emotion panel
+        // Emotion panel toggle
         (_d = this.emotionToggle) === null || _d === void 0 ? void 0 : _d.addEventListener('click', () => this.toggleEmotionPanel());
-        (_e = this.emotionClose) === null || _e === void 0 ? void 0 : _e.addEventListener('click', () => this.hideEmotionPanel());
+    }
+    /**
+     * Initialize canvas elements for visualizations
+     */
+    initializeCanvases() {
+        // Waveform canvas
+        if (this.waveformCanvas) {
+            this.waveformCanvas.width = this.waveformCanvas.offsetWidth * 2;
+            this.waveformCanvas.height = this.waveformCanvas.offsetHeight * 2;
+            this.waveformCtx = this.waveformCanvas.getContext('2d');
+            this.drawIdleWaveform();
+        }
+        // Circular visualizer canvas
+        if (this.circularCanvas) {
+            const container = this.circularCanvas.parentElement;
+            if (container) {
+                this.circularCanvas.width = container.offsetWidth;
+                this.circularCanvas.height = container.offsetHeight;
+            }
+            this.circularCtx = this.circularCanvas.getContext('2d');
+        }
+        // Preloader canvas
+        if (this.preloaderCanvas) {
+            this.preloaderCtx = this.preloaderCanvas.getContext('2d');
+            this.animatePreloader();
+        }
+    }
+    /**
+     * Draw idle waveform (flat line with subtle noise)
+     */
+    drawIdleWaveform() {
+        if (!this.waveformCtx || !this.waveformCanvas)
+            return;
+        const ctx = this.waveformCtx;
+        const width = this.waveformCanvas.width;
+        const height = this.waveformCanvas.height;
+        const centerY = height / 2;
+        ctx.clearRect(0, 0, width, height);
+        // Draw center line with gradient
+        const gradient = ctx.createLinearGradient(0, 0, width, 0);
+        gradient.addColorStop(0, 'rgba(55, 182, 255, 0.3)');
+        gradient.addColorStop(0.5, 'rgba(55, 182, 255, 0.8)');
+        gradient.addColorStop(1, 'rgba(55, 182, 255, 0.3)');
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, centerY);
+        // Subtle idle movement
+        for (let x = 0; x < width; x += 4) {
+            const noise = Math.sin(x * 0.02 + Date.now() * 0.002) * 3;
+            ctx.lineTo(x, centerY + noise);
+        }
+        ctx.stroke();
+    }
+    /**
+     * Animate preloader spinner
+     */
+    animatePreloader() {
+        if (!this.preloaderCtx || !this.preloaderCanvas)
+            return;
+        const ctx = this.preloaderCtx;
+        const width = this.preloaderCanvas.width;
+        const height = this.preloaderCanvas.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const radius = Math.min(width, height) / 2 - 15;
+        const animate = () => {
+            ctx.clearRect(0, 0, width, height);
+            // Draw arc segments
+            const segments = 12;
+            for (let i = 0; i < segments; i++) {
+                const angle = (i / segments) * Math.PI * 2 + this.preloaderAngle;
+                const alpha = 0.2 + (i / segments) * 0.8;
+                ctx.strokeStyle = `rgba(55, 182, 255, ${alpha})`;
+                ctx.lineWidth = 3;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, angle, angle + 0.3);
+                ctx.stroke();
+            }
+            this.preloaderAngle += 0.05;
+            if (this.loadingOverlay && !this.loadingOverlay.classList.contains('hidden')) {
+                requestAnimationFrame(animate);
+            }
+        };
+        animate();
+    }
+    /**
+     * Show loading overlay
+     */
+    showLoadingOverlay() {
+        if (this.loadingOverlay) {
+            this.loadingOverlay.classList.remove('hidden');
+            this.animatePreloader();
+        }
+    }
+    /**
+     * Hide loading overlay
+     */
+    hideLoadingOverlay() {
+        if (this.loadingOverlay) {
+            this.loadingOverlay.classList.add('hidden');
+            this.addTerminalMessage('Voice scanner ready. Awaiting user input.', 'regular');
+        }
+    }
+    /**
+     * Start timestamp update
+     */
+    startTimestampUpdate() {
+        const updateTime = () => {
+            if (this.timestampElement) {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
+                this.timestampElement.textContent = `TIME: ${timeStr}`;
+            }
+        };
+        updateTime();
+        setInterval(updateTime, 1000);
+    }
+    /**
+     * Create floating particles
+     */
+    createFloatingParticles() {
+        const container = document.getElementById('floating-particles');
+        if (!container)
+            return;
+        const particleCount = 30;
+        for (let i = 0; i < particleCount; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.cssText = `
+        position: absolute;
+        width: ${2 + Math.random() * 4}px;
+        height: ${2 + Math.random() * 4}px;
+        background: rgba(55, 182, 255, ${0.2 + Math.random() * 0.4});
+        border-radius: 50%;
+        left: ${Math.random() * 100}%;
+        top: ${Math.random() * 100}%;
+        animation: floatParticle ${10 + Math.random() * 20}s linear infinite;
+        animation-delay: ${-Math.random() * 20}s;
+      `;
+            container.appendChild(particle);
+        }
+    }
+    /**
+     * Add message to terminal
+     */
+    addTerminalMessage(message, type = 'regular') {
+        if (!this.terminalContent || !this.typingLine)
+            return;
+        const line = document.createElement('div');
+        line.className = `terminal-line ${type}-line`;
+        if (type === 'command') {
+            line.textContent = `> ${message}`;
+        }
+        else if (type === 'error') {
+            line.innerHTML = `<span style="color: #ef4444;">[ERROR]</span> ${message}`;
+        }
+        else if (type === 'success') {
+            line.innerHTML = `<span style="color: #4ade80;">[OK]</span> ${message}`;
+        }
+        else {
+            line.textContent = message;
+        }
+        // Insert before the typing line
+        this.terminalContent.insertBefore(line, this.typingLine);
+        // Keep only last 20 lines
+        const lines = this.terminalContent.querySelectorAll('.terminal-line:not(.typing)');
+        if (lines.length > 20) {
+            lines[0].remove();
+        }
+        // Scroll to bottom
+        this.terminalContent.scrollTop = this.terminalContent.scrollHeight;
+    }
+    /**
+     * Show notification banner
+     */
+    showNotification(message) {
+        if (!this.notification)
+            return;
+        this.notification.textContent = message;
+        this.notification.classList.add('visible');
+        setTimeout(() => {
+            var _a;
+            (_a = this.notification) === null || _a === void 0 ? void 0 : _a.classList.remove('visible');
+        }, 3000);
     }
     /**
      * Handle orb click - connect or disconnect
@@ -117,24 +338,50 @@ class VoiceOrbApp {
      */
     setVoiceState(state) {
         this.voiceState = state;
-        if (!this.orbContainer || !this.orbStatus)
+        if (!this.scannerFrame || !this.orbContainer || !this.orbStatus)
             return;
-        // Remove all state classes
+        // Remove all state classes from scanner frame
+        this.scannerFrame.classList.remove('idle', 'listening', 'thinking', 'speaking', 'connected');
         this.orbContainer.classList.remove('idle', 'listening', 'thinking', 'speaking', 'connected');
         // Add current state
+        this.scannerFrame.classList.add(state);
         this.orbContainer.classList.add(state);
         // Add connected class if connected
         if (this.isConnected) {
+            this.scannerFrame.classList.add('connected');
             this.orbContainer.classList.add('connected');
         }
-        // Update status text
+        // Update status text (sci-fi style)
         const statusTexts = {
-            'idle': this.isConnected ? 'Tap to end' : 'Tap to talk',
-            'listening': 'Listening...',
-            'thinking': 'Thinking...',
-            'speaking': 'Speaking...'
+            'idle': this.isConnected ? 'TAP TO TERMINATE' : 'TAP TO INITIALIZE',
+            'listening': 'SCANNING VOICE INPUT...',
+            'thinking': 'PROCESSING SIGNAL...',
+            'speaking': 'TRANSMITTING RESPONSE...'
         };
         this.orbStatus.textContent = statusTexts[state];
+        // Update status indicator
+        if (this.statusIndicator) {
+            this.statusIndicator.className = this.isConnected ? 'live-dot active' : 'live-dot';
+        }
+        // Update transcript status
+        if (this.transcriptStatus) {
+            this.transcriptStatus.textContent = this.isConnected ? 'ACTIVE' : 'READY';
+        }
+        // Update terminal status
+        if (this.terminalStatus) {
+            this.terminalStatus.textContent = this.isConnected ? 'CONNECTED' : 'ONLINE';
+        }
+        // Update signal status
+        const signalStatus = document.getElementById('signal-status');
+        if (signalStatus) {
+            const signalTexts = {
+                'idle': 'STANDBY',
+                'listening': 'RECEIVING',
+                'thinking': 'PROCESSING',
+                'speaking': 'TRANSMITTING'
+            };
+            signalStatus.textContent = signalTexts[state];
+        }
     }
     /**
      * Log message to debug panel
@@ -143,7 +390,7 @@ class VoiceOrbApp {
         if (!this.debugLog)
             return;
         const entry = document.createElement('div');
-        const time = new Date().toLocaleTimeString();
+        const time = new Date().toLocaleTimeString('en-US', { hour12: false });
         entry.textContent = `[${time}] ${message}`;
         // Color coding
         if (message.startsWith('You:')) {
@@ -176,18 +423,16 @@ class VoiceOrbApp {
         // Add label
         const label = document.createElement('span');
         label.className = 'transcript-label';
-        label.textContent = isUser ? 'You' : 'Nester';
+        label.textContent = isUser ? 'USER' : 'NESTER';
         // Add text
         const textSpan = document.createElement('span');
+        textSpan.className = 'transcript-text';
         textSpan.textContent = text;
         bubble.appendChild(label);
         bubble.appendChild(textSpan);
         this.transcriptList.appendChild(bubble);
         // Scroll to bottom
-        const conversationArea = document.getElementById('conversation-area');
-        if (conversationArea) {
-            conversationArea.scrollTop = conversationArea.scrollHeight;
-        }
+        this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
     }
     /**
      * Toggle debug panel
@@ -204,18 +449,11 @@ class VoiceOrbApp {
         (_a = this.debugPanel) === null || _a === void 0 ? void 0 : _a.classList.remove('visible');
     }
     /**
-     * Toggle emotion panel
+     * Toggle emotion panel visibility
      */
     toggleEmotionPanel() {
         var _a;
         (_a = this.emotionPanel) === null || _a === void 0 ? void 0 : _a.classList.toggle('visible');
-    }
-    /**
-     * Hide emotion panel
-     */
-    hideEmotionPanel() {
-        var _a;
-        (_a = this.emotionPanel) === null || _a === void 0 ? void 0 : _a.classList.remove('visible');
     }
     /**
      * Update emotion display with detected emotion data
@@ -235,7 +473,7 @@ class VoiceOrbApp {
             'content': '😊',
         };
         const emoji = emotionEmojis[data.emotion] || '😊';
-        const emotionName = data.emotion.charAt(0).toUpperCase() + data.emotion.slice(1);
+        const emotionName = data.emotion.toUpperCase();
         if (this.emotionEmoji)
             this.emotionEmoji.textContent = emoji;
         if (this.emotionLabel)
@@ -243,53 +481,97 @@ class VoiceOrbApp {
         if (this.emotionConfidence) {
             this.emotionConfidence.textContent = `${Math.round(data.confidence * 100)}%`;
         }
-        // Update dimensional values with smooth animation
+        // Update dimensional values
         if (this.arousalBar && this.arousalValue) {
             this.arousalBar.style.width = `${data.arousal * 100}%`;
             this.arousalValue.textContent = data.arousal.toFixed(2);
         }
-        if (this.dominanceBar && this.dominanceValue) {
-            this.dominanceBar.style.width = `${data.dominance * 100}%`;
+        if (this.dominanceValue) {
             this.dominanceValue.textContent = data.dominance.toFixed(2);
         }
-        if (this.valenceBar && this.valenceValue) {
-            this.valenceBar.style.width = `${data.valence * 100}%`;
+        if (this.valenceValue) {
             this.valenceValue.textContent = data.valence.toFixed(2);
         }
         // Add to emotion timeline
         this.addEmotionToTimeline(data.emotion, emoji);
+        // Add terminal message
+        this.addTerminalMessage(`emotion.detect({type: '${data.emotion}', conf: ${(data.confidence * 100).toFixed(0)}%});`, 'command');
         this.log(`Emotion detected: ${emotionName} (${Math.round(data.confidence * 100)}%)`);
+    }
+    /**
+     * Update emotion display with HYBRID emotion data (audio + text)
+     */
+    updateHybridEmotionDisplay(data) {
+        // Update emotion label and emoji
+        const emotionEmojis = {
+            'neutral': '😊',
+            'happy': '😄',
+            'excited': '🤩',
+            'sad': '😢',
+            'angry': '😠',
+            'frustrated': '😤',
+            'fear': '😨',
+            'worried': '😟',
+            'calm': '😌',
+            'content': '😊',
+        };
+        const emoji = emotionEmojis[data.primary_emotion] || '😊';
+        const emotionName = data.primary_emotion.toUpperCase();
+        if (this.emotionEmoji)
+            this.emotionEmoji.textContent = emoji;
+        if (this.emotionLabel)
+            this.emotionLabel.textContent = emotionName;
+        if (this.emotionConfidence) {
+            this.emotionConfidence.textContent = `${Math.round(data.confidence * 100)}%`;
+        }
+        // Update dimensional values (fused from audio + text)
+        if (this.arousalBar && this.arousalValue) {
+            this.arousalBar.style.width = `${data.arousal * 100}%`;
+            this.arousalValue.textContent = data.arousal.toFixed(2);
+        }
+        if (this.dominanceValue) {
+            this.dominanceValue.textContent = data.dominance.toFixed(2);
+        }
+        if (this.valenceValue) {
+            this.valenceValue.textContent = data.valence.toFixed(2);
+        }
+        // Add to emotion timeline
+        this.addEmotionToTimeline(data.primary_emotion, emoji);
+        // Add hybrid-specific terminal message with audio/text breakdown
+        const audioPercent = Math.round(data.audio_weight * 100);
+        const textPercent = Math.round(data.text_weight * 100);
+        let terminalMsg = `🔄 hybrid.emotion({primary: '${data.primary_emotion}', conf: ${(data.confidence * 100).toFixed(0)}%, audio: ${audioPercent}%, text: ${textPercent}%})`;
+        if (data.mismatch_detected && data.interpretation) {
+            terminalMsg += `\n⚠️  ${data.interpretation}`;
+        }
+        this.addTerminalMessage(terminalMsg, 'command');
+        this.log(`🔄 Hybrid Emotion: ${emotionName} (${Math.round(data.confidence * 100)}%) | Audio: ${data.audio_emotion} ${audioPercent}% | Text: ${data.text_emotion} ${textPercent}%`);
     }
     /**
      * Update tone display when voice tone is switched
      */
     updateToneDisplay(tone) {
         const toneDisplayNames = {
-            'neutral': 'Neutral Voice',
-            'excited': 'Excited Voice',
-            'sad': 'Empathetic Voice',
-            'frustrated': 'Calm Voice',
-            'happy': 'Happy Voice',
-            'angry': 'Controlled Voice',
-            'fear': 'Gentle Voice',
-            'content': 'Content Voice',
+            'neutral': 'NEUTRAL',
+            'excited': 'ENERGETIC',
+            'sad': 'EMPATHETIC',
+            'frustrated': 'CALM',
+            'happy': 'WARM',
+            'angry': 'CONTROLLED',
+            'fear': 'GENTLE',
+            'content': 'RELAXED',
         };
-        const displayName = toneDisplayNames[tone] || 'Neutral Voice';
+        const displayName = toneDisplayNames[tone] || 'NEUTRAL';
         if (this.toneLabel) {
             this.toneLabel.textContent = displayName;
-            // Animate the tone indicator
-            const toneIndicator = document.getElementById('current-tone');
-            if (toneIndicator) {
-                toneIndicator.classList.add('tone-switching');
-                setTimeout(() => toneIndicator.classList.remove('tone-switching'), 600);
-            }
         }
+        this.addTerminalMessage(`voice.tone.switch('${tone}');`, 'command');
         this.log(`Voice tone switched to: ${displayName}`);
     }
     /**
      * Add emotion dot to timeline
      */
-    addEmotionToTimeline(emotion, emoji) {
+    addEmotionToTimeline(emotion, _emoji) {
         if (!this.emotionTimeline)
             return;
         const emotionColors = {
@@ -308,8 +590,8 @@ class VoiceOrbApp {
         dot.className = 'timeline-dot';
         dot.style.backgroundColor = emotionColors[emotion] || '#6b7280';
         dot.title = `${emotion.charAt(0).toUpperCase() + emotion.slice(1)}`;
-        // Keep only last 20 emotions
-        if (this.emotionTimeline.children.length >= 20) {
+        // Keep only last 15 emotions
+        if (this.emotionTimeline.children.length >= 15) {
             this.emotionTimeline.removeChild(this.emotionTimeline.firstChild);
         }
         this.emotionTimeline.appendChild(dot);
@@ -317,151 +599,146 @@ class VoiceOrbApp {
         setTimeout(() => dot.classList.add('visible'), 10);
     }
     /**
-     * Show rich content panel with animation
+     * Start audio visualization
      */
-    showRichContentPanel() {
-        var _a;
-        (_a = this.richContentPanel) === null || _a === void 0 ? void 0 : _a.classList.add('visible');
-    }
-    /**
-     * Hide rich content panel
-     */
-    hideRichContentPanel() {
-        var _a;
-        (_a = this.richContentPanel) === null || _a === void 0 ? void 0 : _a.classList.remove('visible');
-    }
-    /**
-     * Clear all rich content cards
-     */
-    clearRichContent() {
-        if (this.richContentInner) {
-            this.richContentInner.innerHTML = '';
-        }
-        this.hideRichContentPanel();
-    }
-    /**
-     * Add a rich content card with animation
-     */
-    addRichContent(content) {
-        if (!this.richContentInner)
+    startAudioVisualization() {
+        if (!this.analyser || !this.dataArray)
             return;
-        const card = document.createElement('div');
-        card.className = `knowledge-card ${content.type === 'info_card' ? 'info-card' : ''}`;
-        let cardHTML = '';
-        // Image or placeholder
-        if (content.image) {
-            cardHTML += `<img class="card-image" src="${content.image}" alt="${content.title}" onerror="this.parentElement.querySelector('.card-image-placeholder')?.classList.remove('hidden'); this.remove();">`;
-        }
-        else {
-            cardHTML += `
-        <div class="card-image-placeholder">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-        </div>
-      `;
-        }
-        // Card content
-        cardHTML += `<div class="card-content">`;
-        // Type badge
-        const badgeText = content.type.replace('_', ' ').replace('card', '').trim().toUpperCase() || 'INFO';
-        cardHTML += `<span class="card-type-badge">${badgeText}</span>`;
-        // Title
-        cardHTML += `<h3 class="card-title">${content.title}</h3>`;
-        // Description
-        if (content.description) {
-            cardHTML += `<p class="card-description">${content.description}</p>`;
-        }
-        // Stats grid
-        if (content.stats && content.stats.length > 0) {
-            cardHTML += `<div class="stats-grid">`;
-            content.stats.forEach(stat => {
-                cardHTML += `
-          <div class="stat-item">
-            <div class="stat-value">${stat.value}</div>
-            <div class="stat-label">${stat.label}</div>
-          </div>
-        `;
-            });
-            cardHTML += `</div>`;
-        }
-        // Features list
-        if (content.features && content.features.length > 0) {
-            cardHTML += `<div class="card-features">`;
-            content.features.forEach(feature => {
-                cardHTML += `
-          <div class="feature-item">
-            <span class="feature-dot"></span>
-            <span>${feature}</span>
-          </div>
-        `;
-            });
-            cardHTML += `</div>`;
-        }
-        // Link button
-        if (content.link) {
-            const linkText = content.linkText || 'Learn More';
-            cardHTML += `
-        <a href="${content.link}" target="_blank" rel="noopener noreferrer" class="card-link">
-          ${linkText}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M5 12h14"/>
-            <path d="M12 5l7 7-7 7"/>
-          </svg>
-        </a>
-      `;
-        }
-        cardHTML += `</div>`;
-        card.innerHTML = cardHTML;
-        this.richContentInner.appendChild(card);
-        this.showRichContentPanel();
-        this.log(`Rich content added: ${content.title}`);
+        const visualize = () => {
+            if (!this.isConnected)
+                return;
+            this.analyser.getByteFrequencyData(this.dataArray);
+            // Draw waveform
+            this.drawWaveform();
+            // Draw circular visualizer
+            this.drawCircularVisualizer();
+            // Update peak frequency
+            this.updatePeakFrequency();
+            this.animationFrame = requestAnimationFrame(visualize);
+        };
+        visualize();
     }
     /**
-     * Show loading state in rich content panel
+     * Draw audio waveform
      */
-    showRichContentLoading() {
-        if (!this.richContentInner)
+    drawWaveform() {
+        if (!this.waveformCtx || !this.waveformCanvas || !this.dataArray)
             return;
-        const loadingCard = document.createElement('div');
-        loadingCard.className = 'knowledge-card loading';
-        loadingCard.id = 'rich-content-loader';
-        loadingCard.innerHTML = `
-      <div class="card-loader">
-        <span></span>
-        <span></span>
-        <span></span>
-      </div>
-    `;
-        this.richContentInner.appendChild(loadingCard);
-        this.showRichContentPanel();
+        const ctx = this.waveformCtx;
+        const width = this.waveformCanvas.width;
+        const height = this.waveformCanvas.height;
+        const centerY = height / 2;
+        ctx.clearRect(0, 0, width, height);
+        // Create gradient
+        const gradient = ctx.createLinearGradient(0, 0, width, 0);
+        gradient.addColorStop(0, 'rgba(55, 182, 255, 0.3)');
+        gradient.addColorStop(0.3, 'rgba(55, 182, 255, 0.8)');
+        gradient.addColorStop(0.5, 'rgba(151, 71, 255, 0.9)');
+        gradient.addColorStop(0.7, 'rgba(55, 182, 255, 0.8)');
+        gradient.addColorStop(1, 'rgba(55, 182, 255, 0.3)');
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const sliceWidth = width / this.dataArray.length;
+        let x = 0;
+        for (let i = 0; i < this.dataArray.length; i++) {
+            const v = this.dataArray[i] / 128.0;
+            const y = centerY + (v - 1) * (height / 3);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            }
+            else {
+                ctx.lineTo(x, y);
+            }
+            x += sliceWidth;
+        }
+        ctx.stroke();
+        // Draw glow effect
+        ctx.strokeStyle = 'rgba(55, 182, 255, 0.3)';
+        ctx.lineWidth = 6;
+        ctx.stroke();
     }
     /**
-     * Hide loading state
+     * Draw circular audio visualizer
      */
-    hideRichContentLoading() {
-        const loader = document.getElementById('rich-content-loader');
-        if (loader) {
-            loader.classList.add('removing');
-            setTimeout(() => loader.remove(), 400);
+    drawCircularVisualizer() {
+        if (!this.circularCtx || !this.circularCanvas || !this.dataArray)
+            return;
+        const ctx = this.circularCtx;
+        const width = this.circularCanvas.width;
+        const height = this.circularCanvas.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const radius = Math.min(width, height) / 2 - 50;
+        ctx.clearRect(0, 0, width, height);
+        const bars = 64;
+        const barWidth = (Math.PI * 2) / bars;
+        for (let i = 0; i < bars; i++) {
+            const dataIndex = Math.floor(i * (this.dataArray.length / bars));
+            const value = this.dataArray[dataIndex] / 255;
+            const barHeight = value * 40 + 5;
+            const angle = i * barWidth - Math.PI / 2;
+            const x1 = centerX + Math.cos(angle) * radius;
+            const y1 = centerY + Math.sin(angle) * radius;
+            const x2 = centerX + Math.cos(angle) * (radius + barHeight);
+            const y2 = centerY + Math.sin(angle) * (radius + barHeight);
+            ctx.strokeStyle = `rgba(55, 182, 255, ${0.3 + value * 0.7})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
         }
     }
     /**
-     * Handle rich content from backend response
+     * Update peak frequency display
      */
-    handleRichContent(richContent) {
-        this.hideRichContentLoading();
-        if (Array.isArray(richContent)) {
-            richContent.forEach(content => this.addRichContent(content));
+    updatePeakFrequency() {
+        if (!this.dataArray)
+            return;
+        let maxVal = 0;
+        let maxIndex = 0;
+        for (let i = 0; i < this.dataArray.length; i++) {
+            if (this.dataArray[i] > maxVal) {
+                maxVal = this.dataArray[i];
+                maxIndex = i;
+            }
         }
-        else {
-            this.addRichContent(richContent);
+        // Approximate frequency (assuming 44100 sample rate)
+        const frequency = Math.round((maxIndex * 44100) / (this.dataArray.length * 2));
+        const peakValue = document.getElementById('peak-value');
+        if (peakValue && maxVal > 10) {
+            peakValue.textContent = `${frequency} HZ`;
+        }
+        // Update amplitude
+        const amplitudeValue = document.getElementById('amplitude-value');
+        if (amplitudeValue) {
+            const amplitude = (maxVal / 255).toFixed(2);
+            amplitudeValue.textContent = amplitude;
         }
     }
     /**
-     * Set up audio track
+     * Stop audio visualization
+     */
+    stopAudioVisualization() {
+        if (this.animationFrame) {
+            cancelAnimationFrame(this.animationFrame);
+            this.animationFrame = null;
+        }
+        // Reset displays
+        this.drawIdleWaveform();
+        if (this.circularCtx && this.circularCanvas) {
+            this.circularCtx.clearRect(0, 0, this.circularCanvas.width, this.circularCanvas.height);
+        }
+        const peakValue = document.getElementById('peak-value');
+        if (peakValue)
+            peakValue.textContent = '-- HZ';
+        const amplitudeValue = document.getElementById('amplitude-value');
+        if (amplitudeValue)
+            amplitudeValue.textContent = '0.00';
+    }
+    /**
+     * Set up audio track with visualization
      */
     setupAudioTrack(track) {
         this.log('Audio track connected');
@@ -470,7 +747,21 @@ class VoiceOrbApp {
             if ((oldTrack === null || oldTrack === void 0 ? void 0 : oldTrack.id) === track.id)
                 return;
         }
-        this.botAudio.srcObject = new MediaStream([track]);
+        const stream = new MediaStream([track]);
+        this.botAudio.srcObject = stream;
+        // Set up audio analysis for visualization
+        try {
+            this.audioContext = new AudioContext();
+            const source = this.audioContext.createMediaStreamSource(stream);
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = 256;
+            source.connect(this.analyser);
+            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+            this.startAudioVisualization();
+        }
+        catch (e) {
+            console.warn('Could not set up audio visualization:', e);
+        }
     }
     /**
      * Set up media tracks
@@ -511,6 +802,7 @@ class VoiceOrbApp {
         this.rtviClient.on(client_js_1.RTVIEvent.UserStartedSpeaking, () => {
             this.log('User started speaking');
             this.setVoiceState('listening');
+            this.showNotification('VOICE DETECTED');
         });
         this.rtviClient.on(client_js_1.RTVIEvent.UserStoppedSpeaking, () => {
             this.log('User stopped speaking');
@@ -534,14 +826,15 @@ class VoiceOrbApp {
     }
     /**
      * Connect to voice server
-     * Note: Emotion detection is now handled server-side by Hume AI
      */
     connect() {
         return __awaiter(this, void 0, void 0, function* () {
             if (this.isConnecting || this.isConnected)
                 return;
             this.isConnecting = true;
-            this.setVoiceState('thinking'); // Show thinking animation while connecting
+            this.setVoiceState('thinking');
+            this.addTerminalMessage('voice.scanner.connect();', 'command');
+            this.addTerminalMessage('Establishing secure connection...', 'regular');
             try {
                 const backendUrl = this.getBackendUrl();
                 this.log(`Connecting to ${backendUrl}...`);
@@ -560,6 +853,8 @@ class VoiceOrbApp {
                             this.isConnected = true;
                             this.log('Connected successfully!');
                             this.setVoiceState('listening');
+                            this.addTerminalMessage('Connection established. Voice scanner active.', 'success');
+                            this.showNotification('CONNECTION ESTABLISHED');
                         },
                         onDisconnected: () => {
                             this.isConnecting = false;
@@ -567,10 +862,13 @@ class VoiceOrbApp {
                             this.rtviClient = null;
                             this.log('Disconnected');
                             this.setVoiceState('idle');
+                            this.stopAudioVisualization();
+                            this.addTerminalMessage('Connection terminated.', 'regular');
                         },
                         onBotReady: () => {
                             this.log(`Bot ready`);
                             this.setupMediaTracks();
+                            this.addTerminalMessage('Voice AI initialized and ready.', 'success');
                         },
                         onUserTranscript: (data) => {
                             if (data.final) {
@@ -584,33 +882,32 @@ class VoiceOrbApp {
                         },
                         onError: (error) => {
                             this.log(`Error: ${error}`);
+                            this.addTerminalMessage(`${error}`, 'error');
                             console.error('RTVI Error:', error);
                         },
                         onServerMessage: (message) => {
-                            // Handle custom server messages (OutputTransportMessageFrame from backend)
                             console.log('[Emotion] Server message received:', JSON.stringify(message, null, 2));
                             try {
-                                // The RTVI SDK unwraps the message - we receive { data: {...} }
-                                // Check multiple possible message structures
                                 let emotionData = null;
                                 let messageType = null;
-                                // Case 1: message.data contains our custom data directly
                                 if (message && message.data) {
                                     messageType = message.data.message_type;
                                     emotionData = message.data;
                                 }
-                                // Case 2: message itself has message_type (direct data)
                                 else if (message && message.message_type) {
                                     messageType = message.message_type;
                                     emotionData = message;
                                 }
-                                // Case 3: Wrapped in server-message type
                                 else if (message && message.type === 'server-message' && message.data) {
                                     messageType = message.data.message_type;
                                     emotionData = message.data;
                                 }
                                 console.log('[Emotion] Parsed message type:', messageType, 'data:', emotionData);
-                                if (messageType === 'emotion_detected' && emotionData) {
+                                if (messageType === 'hybrid_emotion_detected' && emotionData) {
+                                    console.log('[🔄 HYBRID EMOTION] Updating emotion display:', emotionData);
+                                    this.updateHybridEmotionDisplay(emotionData);
+                                }
+                                else if (messageType === 'emotion_detected' && emotionData) {
                                     console.log('[Emotion] Updating emotion display:', emotionData);
                                     this.updateEmotionDisplay(emotionData);
                                 }
@@ -633,6 +930,7 @@ class VoiceOrbApp {
             catch (error) {
                 this.isConnecting = false;
                 this.log(`Connection failed: ${error.message}`);
+                this.addTerminalMessage(`Connection failed: ${error.message}`, 'error');
                 this.setVoiceState('idle');
                 if (this.rtviClient) {
                     try {
@@ -652,6 +950,7 @@ class VoiceOrbApp {
             if (!this.rtviClient && !this.isConnecting)
                 return;
             this.log('Disconnecting...');
+            this.addTerminalMessage('voice.scanner.disconnect();', 'command');
             try {
                 if (this.rtviClient) {
                     yield this.rtviClient.disconnect();
@@ -662,6 +961,14 @@ class VoiceOrbApp {
                     this.botAudio.srcObject.getAudioTracks().forEach((track) => track.stop());
                     this.botAudio.srcObject = null;
                 }
+                // Clean up audio context
+                if (this.audioContext) {
+                    yield this.audioContext.close();
+                    this.audioContext = null;
+                    this.analyser = null;
+                    this.dataArray = null;
+                }
+                this.stopAudioVisualization();
                 this.isConnecting = false;
                 this.isConnected = false;
                 this.setVoiceState('idle');
@@ -675,45 +982,8 @@ class VoiceOrbApp {
             }
         });
     }
-    /**
-     * Demo function to test rich content panel (for development)
-     * Can be called from browser console: window.demoRichContent()
-     */
-    demoRichContent() {
-        this.clearRichContent();
-        // Demo project card
-        this.addRichContent({
-            type: 'project_card',
-            title: 'NesterLabs ConversationalBot',
-            description: 'A real-time voice conversational assistant with ultra-low latency responses.',
-            image: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=400',
-            features: [
-                '1.5 second response time',
-                'Hinglish language support',
-                'RAG knowledge integration',
-                'Real-time voice streaming'
-            ],
-            link: 'https://github.com/nesterlabs-ai/NesterConversationalBot',
-            linkText: 'View on GitHub'
-        });
-        // Demo stats card
-        setTimeout(() => {
-            this.addRichContent({
-                type: 'stats_card',
-                title: 'Performance Metrics',
-                stats: [
-                    { label: 'Latency', value: '1.5s' },
-                    { label: 'Accuracy', value: '98%' },
-                    { label: 'Users', value: '10K+' },
-                    { label: 'Uptime', value: '99.9%' }
-                ]
-            });
-        }, 600);
-    }
 }
 window.addEventListener('DOMContentLoaded', () => {
-    window.VoiceOrbApp = VoiceOrbApp;
-    const app = new VoiceOrbApp();
-    // Expose demo function for testing
-    window.demoRichContent = () => app.demoRichContent();
+    window.VoiceScannerApp = VoiceScannerApp;
+    new VoiceScannerApp();
 });

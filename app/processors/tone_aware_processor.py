@@ -36,6 +36,7 @@ from app.services.msp_emotion_detector import (
     MSPEmotionDetector,
 )
 from app.services.chatterbox_tts import ChatterboxTTSService
+from app.services.hybrid_emotion_detector import HybridEmotionDetector
 
 
 class ToneAwareProcessor(FrameProcessor):
@@ -75,6 +76,8 @@ class ToneAwareProcessor(FrameProcessor):
         tts_service=None,
         cooldown_seconds: float = 2.0,  # Slightly longer for stability
         enabled: bool = True,
+        use_hybrid_mode: bool = True,  # NEW: Enable hybrid audio+text detection
+        groq_api_key: str = None,  # NEW: Groq API key for LLM text sentiment
         **kwargs
     ):
         """Initialize the ToneAwareProcessor.
@@ -83,6 +86,8 @@ class ToneAwareProcessor(FrameProcessor):
             tts_service: Reference to Deepgram TTS service for voice switching
             cooldown_seconds: Minimum time between voice switches
             enabled: Whether to enable tone-aware voice switching
+            use_hybrid_mode: Use hybrid audio+text emotion detection (default: True)
+            groq_api_key: Groq API key for LLM-based text sentiment (required for hybrid mode)
             **kwargs: Additional arguments passed to FrameProcessor
         """
         super().__init__(**kwargs)
@@ -92,6 +97,13 @@ class ToneAwareProcessor(FrameProcessor):
 
         # Text-based fallback detector
         self.tone_detector = ToneDetector(cooldown_seconds=cooldown_seconds)
+
+        # NEW: Hybrid emotion detector (audio + LLM text sentiment)
+        self.use_hybrid_mode = use_hybrid_mode
+        self.hybrid_detector = HybridEmotionDetector(
+            audio_detector=self.emotion_detector,
+            llm_api_key=groq_api_key
+        ) if use_hybrid_mode else None
 
         self.tts_service = tts_service
         self.enabled = enabled
@@ -107,6 +119,9 @@ class ToneAwareProcessor(FrameProcessor):
         self._latest_emotion: str = "neutral"
         self._latest_tone: str = "neutral"
         self._latest_confidence: float = 0.0
+
+        # NEW: Hybrid detection state
+        self._latest_transcript: str = ""  # Store last transcript for hybrid mode
 
         # ===== STABILITY SYSTEM =====
         # Tuned for MSP-PODCAST dimensional emotions:
@@ -134,8 +149,9 @@ class ToneAwareProcessor(FrameProcessor):
         # VAD threshold for silence detection
         self._vad_threshold: int = 500  # Skip audio below this amplitude
 
+        mode_str = "HYBRID (Audio 70% + LLM Text 30%)" if use_hybrid_mode else "AUDIO-ONLY"
         logger.info(
-            f"ToneAwareProcessor MSP-PODCAST: conf=0.25, buffer=1000ms, "
+            f"ToneAwareProcessor {mode_str}: MSP-PODCAST, conf=0.25, buffer=1000ms, "
             f"stability=2, cooldown={cooldown_seconds}s"
         )
 
@@ -253,7 +269,12 @@ class ToneAwareProcessor(FrameProcessor):
         if isinstance(frame, transcription_types):
             text = getattr(frame, "text", "")
             frame_name = type(frame).__name__
-            logger.debug(f"{frame_name}: '{text}'")
+            logger.info(f"📥 {frame_name}: '{text}'")
+
+            # Store transcript for hybrid mode
+            if text and text.strip():
+                self._latest_transcript = text
+                logger.info(f"💾 Stored transcript for hybrid: '{text[:50]}'...")
 
             # If MSP-PODCAST not connected, use text-based detection
             if not self.emotion_detector.is_connected and text and text.strip():
@@ -289,29 +310,115 @@ class ToneAwareProcessor(FrameProcessor):
         # Process at 1000ms (MSP-PODCAST optimal for stable dimensions)
         if self._audio_buffer_duration_ms >= self._min_buffer_ms:
             try:
-                # Send to MSP-PODCAST for dimensional emotion detection
-                result = await self.emotion_detector.process_audio(
-                    self._audio_buffer,
-                    sample_rate=sample_rate
-                )
+                # ===== HYBRID MODE: Audio + Text =====
+                if self.use_hybrid_mode and self.hybrid_detector:
+                    transcript_preview = self._latest_transcript[:50] if self._latest_transcript else "[EMPTY]"
+                    logger.info(
+                        f"🔄 HYBRID MODE: Processing audio + text "
+                        f"(transcript: '{transcript_preview}', len: {len(self._latest_transcript)})"
+                    )
 
-                if result:
-                    self._latest_arousal = result.arousal
-                    self._latest_dominance = result.dominance
-                    self._latest_valence = result.valence
-                    self._latest_emotion = result.emotion
-                    self._latest_tone = result.tone
-                    self._latest_confidence = result.confidence
+                    # Get audio emotion first
+                    audio_result = await self.emotion_detector.process_audio(
+                        self._audio_buffer,
+                        sample_rate=sample_rate
+                    )
 
-                    # Emit emotion data to frontend via WebSocket
-                    await self._emit_emotion_event(result)
+                    if audio_result:
+                        # Convert to dict format for hybrid detector
+                        audio_dict = {
+                            "emotion": audio_result.emotion,
+                            "arousal": audio_result.arousal,
+                            "valence": audio_result.valence,
+                            "dominance": audio_result.dominance,
+                            "confidence": audio_result.confidence
+                        }
 
-                    # Check if we should switch voice (only if above threshold)
-                    if result.confidence >= self._confidence_threshold:
-                        await self._check_voice_switch(result.tone, result.confidence)
+                        # Fuse with text sentiment
+                        hybrid_result = await self.hybrid_detector.detect_hybrid_emotion(
+                            audio_emotion_result=audio_dict,
+                            transcript=self._latest_transcript
+                        )
+
+                        # Log detailed hybrid results
+                        logger.info(
+                            f"🎯 HYBRID RESULT:\n"
+                            f"  Primary Emotion: {hybrid_result['primary_emotion']} "
+                            f"(confidence: {hybrid_result['overall_confidence']:.0%})\n"
+                            f"  Audio: {audio_dict['emotion']} ({audio_dict['confidence']:.0%}) "
+                            f"× {hybrid_result['weights']['audio']:.0%}\n"
+                            f"  Text:  {hybrid_result['components']['text']['emotion']} "
+                            f"({hybrid_result['components']['text']['confidence']:.0%}) "
+                            f"× {hybrid_result['weights']['text']:.0%}\n"
+                            f"  Mismatch: {hybrid_result['mismatch_detected']} "
+                            f"{hybrid_result.get('interpretation', '')}\n"
+                            f"  Fused A/V/D: {hybrid_result['arousal']:.2f}/"
+                            f"{hybrid_result['valence']:.2f}/{hybrid_result['dominance']:.2f}\n"
+                            f"  Tokens Used: {hybrid_result['tokens_used']}"
+                        )
+
+                        # Update state with hybrid results
+                        self._latest_arousal = hybrid_result['arousal']
+                        self._latest_dominance = hybrid_result['dominance']
+                        self._latest_valence = hybrid_result['valence']
+                        self._latest_emotion = hybrid_result['primary_emotion']
+                        self._latest_tone = hybrid_result['primary_emotion']
+                        self._latest_confidence = hybrid_result['overall_confidence']
+
+                        # Map to tone for voice switching
+                        tone_map = {
+                            "frustrated": "frustrated",
+                            "excited": "excited",
+                            "sad": "sad",
+                            "neutral": "neutral"
+                        }
+                        detected_tone = tone_map.get(hybrid_result['primary_emotion'], "neutral")
+
+                        # Emit hybrid emotion to frontend
+                        await self._emit_hybrid_emotion_event(hybrid_result)
+
+                        # Check voice switch with hybrid confidence
+                        if hybrid_result['overall_confidence'] >= self._confidence_threshold:
+                            await self._check_voice_switch(
+                                detected_tone,
+                                hybrid_result['overall_confidence']
+                            )
+
+                # ===== AUDIO-ONLY MODE (Original) =====
+                else:
+                    logger.info("🎤 AUDIO-ONLY MODE: Processing audio emotion")
+
+                    # Send to MSP-PODCAST for dimensional emotion detection
+                    result = await self.emotion_detector.process_audio(
+                        self._audio_buffer,
+                        sample_rate=sample_rate
+                    )
+
+                    if result:
+                        self._latest_arousal = result.arousal
+                        self._latest_dominance = result.dominance
+                        self._latest_valence = result.valence
+                        self._latest_emotion = result.emotion
+                        self._latest_tone = result.tone
+                        self._latest_confidence = result.confidence
+
+                        logger.info(
+                            f"🎤 AUDIO-ONLY RESULT: {result.emotion} "
+                            f"(confidence: {result.confidence:.0%}, "
+                            f"A={result.arousal:.2f}, V={result.valence:.2f})"
+                        )
+
+                        # Emit emotion data to frontend via WebSocket
+                        await self._emit_emotion_event(result)
+
+                        # Check if we should switch voice (only if above threshold)
+                        if result.confidence >= self._confidence_threshold:
+                            await self._check_voice_switch(result.tone, result.confidence)
 
             except Exception as e:
-                logger.error(f"MSP-PODCAST audio processing error: {e}")
+                logger.error(f"Emotion processing error: {e}")
+                import traceback
+                traceback.print_exc()
 
             # Clear buffer
             self._audio_buffer = b""
@@ -456,6 +563,48 @@ class ToneAwareProcessor(FrameProcessor):
             logger.error(f"Error switching voice/emotion: {e}")
             import traceback
             traceback.print_exc()
+
+    async def _emit_hybrid_emotion_event(self, hybrid_result: dict) -> None:
+        """Emit hybrid emotion detection event to frontend via WebSocket.
+
+        Args:
+            hybrid_result: Hybrid emotion result dictionary
+        """
+        try:
+            # Create hybrid emotion data payload for frontend
+            emotion_message = {
+                "label": "rtvi-ai",
+                "type": "server-message",
+                "data": {
+                    "message_type": "hybrid_emotion_detected",
+                    "primary_emotion": hybrid_result['primary_emotion'],
+                    "secondary_emotion": hybrid_result.get('secondary_emotion'),
+                    "arousal": round(hybrid_result['arousal'], 2),
+                    "valence": round(hybrid_result['valence'], 2),
+                    "dominance": round(hybrid_result['dominance'], 2),
+                    "confidence": round(hybrid_result['overall_confidence'], 2),
+                    "audio_emotion": hybrid_result['components']['audio']['emotion'],
+                    "text_emotion": hybrid_result['components']['text']['emotion'],
+                    "audio_weight": round(hybrid_result['weights']['audio'], 2),
+                    "text_weight": round(hybrid_result['weights']['text'], 2),
+                    "mismatch_detected": hybrid_result['mismatch_detected'],
+                    "interpretation": hybrid_result.get('interpretation', ''),
+                    "tokens_used": hybrid_result['tokens_used'],
+                    "timestamp": time.time(),
+                }
+            }
+
+            # Push data frame to transport (will be sent via WebSocket)
+            data_frame = OutputTransportMessageFrame(message=emotion_message)
+            await self.push_frame(data_frame)
+
+            logger.info(
+                f"✓ Emitted hybrid emotion event: {hybrid_result['primary_emotion']} "
+                f"({hybrid_result['overall_confidence']:.0%})"
+            )
+
+        except Exception as e:
+            logger.error(f"Error emitting hybrid emotion event: {e}")
 
     async def _emit_emotion_event(self, result) -> None:
         """Emit emotion detection event to frontend via WebSocket.

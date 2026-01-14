@@ -99,6 +99,15 @@ class ConversationManager:
                 model=model
             )
             logger.info(f"Initialized OpenAI LLM service with model: {model}")
+        elif provider == "groq":
+            # Groq (using OpenAI-compatible API)
+            model = self.llm_config.get("model", "llama-3.3-70b-versatile")
+            self.llm_service = OpenAILLMService(
+                api_key=api_key,
+                model=model,
+                base_url="https://api.groq.com/openai/v1"
+            )
+            logger.info(f"Initialized Groq LLM service with model: {model}")
         else:
             # Google Gemini
             model = self.llm_config.get("model", "gemini-1.5-flash-latest")

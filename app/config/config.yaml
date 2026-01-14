@@ -46,19 +46,24 @@ input_analyzer:
 rag:
   type: "lightrag"  # Using external LightRAG API
   config:
-    api_url: "https://lightrag-alb-599477844.eu-north-1.elb.amazonaws.com:8443"  # LightRAG server
+    api_url: "https://nonrecessive-arlie-vexedly.ngrok-free.dev/"  # LightRAG server
     api_key: "${LIGHTRAG_API_KEY}"  # API key for authentication
     mode: "local"  # OPTIMIZED: "local" for 2-3x faster retrieval (entity-focused, was "mix")
-    top_k: 3  # OPTIMIZED: Reduced from 6 for ~50% faster retrieval - optimal speed/quality balance
+    top_k: 10  # Number of top results to retrieve
+    chunk_top_k: 10  # Number of top chunks to retrieve
+    max_entity_tokens: 600  # Maximum tokens for entity extraction
+    max_relation_tokens: 600  # Maximum tokens for relation extraction
+    max_total_tokens: 1000  # Maximum total tokens for response
     timeout: 15  # OPTIMIZED: Reduced from 20s for faster failure detection
     use_streaming: true  # Enabled - streaming for faster retrieval
     use_connection_pooling: true  # Use shared HTTP client for connection reuse (faster)
+    
 
 conversation:
   llm:
-    provider: "google"  # Using Google Gemini
-    model: "gemini-2.5-flash"  # Gemini 2.5 Flash - working with API key
-    api_key: "${GOOGLE_API_KEY}"
+    provider: "groq"  # Using Groq (Llama 3.3 70B)
+    model: "llama-3.3-70b-versatile"  # Llama 3.3 70B - Fast and powerful
+    api_key: "${GROQ_API_KEY}"
     temperature: 0.8  # Natural conversational responses
     max_tokens: 256  # Keep voice responses concise
 

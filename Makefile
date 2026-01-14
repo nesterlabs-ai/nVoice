@@ -73,22 +73,22 @@ type-check:
 
 # Docker
 docker-build:
-	docker-compose build
+	docker-compose -f deployment/docker/docker-compose.yml build
 
 docker-up:
-	docker-compose up -d
+	docker-compose -f deployment/docker/docker-compose.yml up -d
 
 docker-down:
-	docker-compose down
+	docker-compose -f deployment/docker/docker-compose.yml down
 
 docker-logs:
-	docker-compose logs -f
+	docker-compose -f deployment/docker/docker-compose.yml logs -f
 
 docker-https-up:
-	docker-compose -f docker-compose.https.yml up -d
+	docker-compose -f deployment/docker/docker-compose.https.yml up -d
 
 docker-https-down:
-	docker-compose -f docker-compose.https.yml down
+	docker-compose -f deployment/docker/docker-compose.https.yml down
 
 # Cleanup
 clean:

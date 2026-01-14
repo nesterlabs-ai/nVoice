@@ -1,0 +1,59 @@
+PROJECT RESTRUCTURING PLAN
+==========================
+
+ROOT STRUCTURE:
+/
+├── app/                    # Main application code (KEEP AS IS)
+├── client/                 # Frontend code (KEEP AS IS)
+├── data/                   # Data files (KEEP AS IS)
+├── docs/                   # All documentation
+│   ├── architecture/       # Architecture docs
+│   ├── guides/            # Setup and deployment guides
+│   └── comparisons/       # Comparison documents
+├── deployment/            # Deployment files
+│   ├── docker/           # Docker files
+│   ├── aws/              # AWS deployment
+│   └── scripts/          # Deployment scripts
+├── scripts/              # Utility scripts
+├── tests/                # Test files (if any)
+├── .github/              # GitHub workflows (KEEP)
+├── .venv/                # Virtual env (KEEP)
+└── [config files]        # Keep in root
+
+MOVE OPERATIONS:
+================
+
+TO docs/:
+- README.md → Keep in root (project entry point)
+- EMOTION_VISUALIZATION.md → docs/architecture/
+- SYSTEM_ARCHITECTURE.md → docs/architecture/
+- EMOTION_MODELS_COMPARISON.md → docs/comparisons/
+- STT_SERVICES_COMPARISON.md → docs/comparisons/
+- CHATTERBOX_MEDIUM_BLOG.md → docs/
+- DEPLOYMENT_FIX.md → docs/guides/
+- DEPLOYMENT_CLEANUP.md → docs/guides/
+- CLEANUP_SUMMARY.md → docs/guides/
+- HYBRID_EMOTION_TESTING.md → docs/guides/
+- TTFB_ANALYSIS.md → docs/architecture/
+
+TO deployment/:
+- Dockerfile → deployment/docker/
+- docker-compose.yml → deployment/docker/
+- docker-compose.ghcr.yml → deployment/docker/
+- Caddyfile → deployment/docker/
+- aws/ folder → deployment/aws/
+- lightsail-deploy.sh → deployment/scripts/
+- lightsail-deploy-https.sh → deployment/scripts/
+
+TO scripts/:
+- restart_server.sh → scripts/
+- monitor.sh → scripts/
+- monitor-mac.sh → scripts/
+- scripts/* → Keep (already in scripts/)
+
+KEEP IN ROOT:
+- .env, .env.example
+- .gitignore, .dockerignore
+- Makefile
+- package.json, requirements.txt, etc.
+- pyproject.toml (if exists)

@@ -147,19 +147,27 @@ class LightRAGService(BaseRAGService):
                 - use_connection_pooling: Use shared HTTP client (default: True)
         """
         self.config = config or {}
-        self.api_url = self.config.get("api_url", "http://localhost:9621")
+        api_url_raw = self.config.get("api_url", "http://localhost:9621")
+        # Remove trailing slash to avoid double slashes when appending paths
+        self.api_url = api_url_raw.rstrip("/")
         self.api_key = self.config.get("api_key", "")
         # Use "local" mode for faster responses (entity-focused retrieval)
         self.mode = self.config.get("mode", "local")
         # Lower top_k for faster retrieval (3 is optimal balance)
         self.top_k = self.config.get("top_k", 3)
+        self.chunk_top_k = self.config.get("chunk_top_k", 10)
+        self.max_entity_tokens = self.config.get("max_entity_tokens", 600)
+        self.max_relation_tokens = self.config.get("max_relation_tokens", 600)
+        self.max_total_tokens = self.config.get("max_total_tokens", 1000)
         # Reduced timeout for faster failure detection
         self.timeout = self.config.get("timeout", 20)
         self.use_connection_pooling = self.config.get("use_connection_pooling", True)
 
         logger.info(
             f"Initialized LightRAG Service: {self.api_url}, "
-            f"mode={self.mode}, top_k={self.top_k}, timeout={self.timeout}s"
+            f"mode={self.mode}, top_k={self.top_k}, chunk_top_k={self.chunk_top_k}, "
+            f"max_entity_tokens={self.max_entity_tokens}, max_relation_tokens={self.max_relation_tokens}, "
+            f"max_total_tokens={self.max_total_tokens}, timeout={self.timeout}s"
         )
 
     async def get_response(self, query: str) -> str:
@@ -183,12 +191,16 @@ class LightRAGService(BaseRAGService):
             logger.info(f"🔍 RAG START: Query='{query}' at {start_time}")
             logger.debug(f"LightRAG query: {query}")
 
-            # Optimized payload: include top_k for faster retrieval
+            # Optimized payload: include all RAG parameters
             payload = {
                 "query": query,
                 "mode": self.mode,
                 "stream": True,
-                "top_k": self.top_k,  # Limit results for faster processing
+                "top_k": self.top_k,  # Number of top results to retrieve
+                "chunk_top_k": self.chunk_top_k,  # Number of top chunks to retrieve
+                "max_entity_tokens": self.max_entity_tokens,  # Maximum tokens for entity extraction
+                "max_relation_tokens": self.max_relation_tokens,  # Maximum tokens for relation extraction
+                "max_total_tokens": self.max_total_tokens,  # Maximum total tokens for response
             }
 
             headers = {
