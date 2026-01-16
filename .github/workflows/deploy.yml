@@ -185,9 +185,10 @@ jobs:
               fi
             fi
             
-            # Ensure docker-compose.https.yml exists (create minimal if missing)
-            if [ ! -f docker-compose.https.yml ]; then
-              echo "⚠️  docker-compose.https.yml not found, creating minimal version..."
+            # ALWAYS recreate docker-compose.https.yml to ensure latest configuration
+            # This ensures environment variables and healthcheck settings are up to date
+            echo "📝 Creating docker-compose.https.yml with proper configuration..."
+            if true; then
               cat > docker-compose.https.yml << 'COMPOSE_EOF'
             services:
               caddy:
@@ -197,25 +198,49 @@ jobs:
                 ports:
                   - "80:80"
                   - "443:443"
+                environment:
+                  - DOMAIN=${DOMAIN:-localhost}
                 volumes:
                   - ./Caddyfile:/etc/caddy/Caddyfile:ro
                   - caddy_data:/data
                   - caddy_config:/config
                 networks:
                   - nester-network
-              
+                depends_on:
+                  backend:
+                    condition: service_healthy
+
               backend:
                 image: ghcr.io/nesterlabs-ai/nesteraibot-backend:${IMAGE_TAG:-latest}
                 container_name: nester-backend
                 restart: always
                 env_file:
                   - .env
+                environment:
+                  - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+                  - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+                  - GROQ_API_KEY=${GROQ_API_KEY}
+                  - RESEMBLE_API_KEY=${RESEMBLE_API_KEY}
+                  - RESEMBLE_VOICE_UUID=${RESEMBLE_VOICE_UUID:-8b0c7b93}
+                  - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY}
+                  - LIGHTRAG_BASE_URL=${LIGHTRAG_BASE_URL}
+                  - PUBLIC_URL=${PUBLIC_URL}
+                  - FASTAPI_HOST=0.0.0.0
+                  - FASTAPI_PORT=7860
+                  - SESSION_TIMEOUT=180
+                  - LOG_LEVEL=INFO
                 expose:
                   - "7860"
                   - "8765"
+                healthcheck:
+                  test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+                  interval: 30s
+                  timeout: 15s
+                  retries: 5
+                  start_period: 120s
                 networks:
                   - nester-network
-              
+
               frontend:
                 image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:${IMAGE_TAG:-latest}
                 container_name: nester-frontend
@@ -225,12 +250,13 @@ jobs:
                 networks:
                   - nester-network
                 depends_on:
-                  - backend
-            
+                  backend:
+                    condition: service_healthy
+
             networks:
               nester-network:
                 driver: bridge
-            
+
             volumes:
               caddy_data:
               caddy_config:
