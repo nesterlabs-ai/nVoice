@@ -1,25 +1,24 @@
+# Core dependencies
 fastapi~=0.115.14
 uvicorn~=0.35.0
 python-dotenv~=1.1.1
 PyYAML~=6.0.2
 loguru~=0.7.3
+
+# Pipecat Voice AI Framework
 pipecat-ai[daily,deepgram,cartesia,silero,websocket,google,openai]
 pipecat-ai-small-webrtc-prebuilt
 
-# RAG dependencies - Pinecone + LangGraph
-pinecone-client>=3.0.0
-langgraph>=0.2.0
-langchain>=0.3.0
-langchain-openai>=0.2.0
-langchain-pinecone>=0.2.0
-langchain-text-splitters>=0.3.0
-tiktoken>=0.7.0
-httpx[http2]>=0.27.0  # HTTP/2 support for better performance with RAG service
+# HTTP client for LightRAG API (external RAG service)
+httpx[http2]>=0.27.0  # HTTP/2 support for better performance
 
-# Audio analysis for tone detection
-librosa>=0.10.0  # Audio feature extraction (pitch, energy, spectral analysis)
+# Audio analysis for tone detection (kaiser_best resampling)
+librosa>=0.10.0  # Audio feature extraction with high-quality resampling
 numpy>=1.24.0    # Numerical operations for audio processing
 
 # Emotion detection dependencies (MSP-PODCAST wav2vec2)
-torch>=2.0.0     # PyTorch for deep learning models
+# NOTE: torch is installed separately in Dockerfile with CPU-only version
 transformers>=4.30.0  # Hugging Face transformers for wav2vec2 models
+
+# OpenAI client for Groq API compatibility (LLM text sentiment)
+openai>=1.0.0
