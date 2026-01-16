@@ -15,10 +15,10 @@ stt:
     model: "nova-3"  # Nova 3 - Latest and most accurate Deepgram STT model
     api_key: "${DEEPGRAM_API_KEY}"
     language: "en"
-    # Optimized for low latency
+    # Optimized for natural conversation (wait for complete sentences)
     smart_format: true       # Better formatting
-    endpointing: 300         # 300ms silence for faster response
-    utterance_end_ms: 1000   # Reduced for faster finalization
+    endpointing: 800         # 800ms silence - wait for user to finish speaking
+    utterance_end_ms: 1500   # Wait longer to capture complete thoughts
     interim_results: true    # Enable streaming for lower latency
     punctuate: true          # Better text formatting
     filler_words: false      # Remove "um", "uh" for cleaner transcripts
@@ -64,8 +64,8 @@ conversation:
     provider: "groq"  # Using Groq (Llama 3.3 70B)
     model: "llama-3.3-70b-versatile"  # Llama 3.3 70B - Fast and powerful
     api_key: "${GROQ_API_KEY}"
-    temperature: 0.8  # Natural conversational responses
-    max_tokens: 256  # Keep voice responses concise
+    temperature: 0.7  # Balanced - natural but focused responses
+    max_tokens: 512  # Allow longer, more complete responses
 
   system_prompt: |
     You are the Nesterlabs voice assistant. When asked "who are you" or "what are you", you MUST respond: "I'm the Nesterlabs voice assistant. I help visitors learn about Nesterlabs, our services, and connect with our team."
@@ -204,10 +204,12 @@ conversation:
     - Explain we'll have an initial conversation to understand their needs before proposing anything
 
     RESPONSE STYLE:
-    - Keep responses SHORT and conversational (1-3 sentences for voice)
-    - Use natural, spoken language - avoid bullet points or lists
-    - Search knowledge base when asked about Nesterlabs for accurate details
-    - Be helpful and informative, not pushy
+    - Respond in COMPLETE, natural sentences (2-4 sentences typically)
+    - Speak conversationally like a friendly human colleague, not a robot
+    - Give complete answers - don't fragment your response into tiny pieces
+    - Use natural, flowing language - avoid bullet points or lists
+    - Be warm, helpful, and informative without being pushy
+    - When answering questions, provide enough context to be helpful
 
 # Server and VAD (Voice Activity Detection) settings
 server:
@@ -216,9 +218,9 @@ server:
   fastapi_host: "0.0.0.0"
   fastapi_port: 7860
   session_timeout: 180
-  # VAD settings optimized for accuracy and reduced false positives
+  # VAD settings optimized for natural conversation flow
   vad:
-    confidence: 0.8        # Stricter detection to reduce false positives (was 0.7)
-    start_secs: 0.25       # Slightly slower but more accurate detection (was 0.2)
-    stop_secs: 0.8         # Enough silence to avoid cutting off speech
-    min_volume: 0.7        # Higher threshold for better noise filtering (was 0.6)
+    confidence: 0.7        # Balanced detection - not too strict
+    start_secs: 0.2        # Quick to start detecting speech
+    stop_secs: 1.2         # Wait 1.2 seconds of silence before ending (prevents cutoffs)
+    min_volume: 0.6        # Standard volume threshold for speech detection

@@ -1,5 +1,6 @@
 # Backend Dockerfile for NesterConversationalBot
 # Python FastAPI + Pipecat Voice Assistant
+# OPTIMIZED: Uses CPU-only PyTorch (~800MB vs ~2.5GB with CUDA)
 
 FROM python:3.11-slim
 
@@ -23,8 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install CPU-only PyTorch FIRST (before other deps to avoid CUDA version)
+# This saves ~1.7GB compared to default PyTorch with CUDA
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
