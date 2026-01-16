@@ -1,6 +1,7 @@
 # Backend Dockerfile for NesterConversationalBot
 # Python FastAPI + Pipecat Voice Assistant
 # OPTIMIZED: Uses CPU-only PyTorch (~800MB vs ~2.5GB with CUDA)
+# Deployed to 4GB Lightsail instance
 
 FROM python:3.11-slim
 
