@@ -102,11 +102,19 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USER: ${{ github.repository_owner }}
           PUBLIC_URL: ${{ secrets.PUBLIC_URL }}
+          # Pass all required secrets for .env file
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          RESEMBLE_API_KEY: ${{ secrets.RESEMBLE_API_KEY }}
+          RESEMBLE_VOICE_UUID: ${{ secrets.RESEMBLE_VOICE_UUID }}
+          LIGHTRAG_API_KEY: ${{ secrets.LIGHTRAG_API_KEY }}
+          LIGHTRAG_BASE_URL: ${{ secrets.LIGHTRAG_BASE_URL }}
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: AWS_REGION,IMAGE_TAG,GHCR_TOKEN,GHCR_USER,PUBLIC_URL
+          envs: AWS_REGION,IMAGE_TAG,GHCR_TOKEN,GHCR_USER,PUBLIC_URL,DEEPGRAM_API_KEY,GOOGLE_API_KEY,GROQ_API_KEY,RESEMBLE_API_KEY,RESEMBLE_VOICE_UUID,LIGHTRAG_API_KEY,LIGHTRAG_BASE_URL
           script: |
             set -e
             
@@ -200,30 +208,35 @@ jobs:
             }
             echo "✅ GHCR login successful"
             
-            # === FETCH SECRETS FROM AWS ===
-            echo "🔐 Fetching secrets from AWS Secrets Manager..."
-            SECRET_NAME="nester/voice-bot/secrets"
-            SECRET_JSON=$(aws secretsmanager get-secret-value \
-              --secret-id "$SECRET_NAME" \
-              --region "$AWS_REGION" \
-              --query SecretString \
-              --output text 2>/dev/null || echo "")
+            # === CREATE .ENV FROM GITHUB SECRETS ===
+            echo "🔐 Creating .env file from GitHub secrets..."
+            cat > .env << EOF
+            DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY
+            GOOGLE_API_KEY=$GOOGLE_API_KEY
+            GROQ_API_KEY=$GROQ_API_KEY
+            RESEMBLE_API_KEY=$RESEMBLE_API_KEY
+            RESEMBLE_VOICE_UUID=${RESEMBLE_VOICE_UUID:-fb2d2858}
+            LIGHTRAG_API_KEY=$LIGHTRAG_API_KEY
+            LIGHTRAG_BASE_URL=$LIGHTRAG_BASE_URL
+            PUBLIC_URL=$PUBLIC_URL
+            WEBSOCKET_SERVER=fast_api
+            FASTAPI_HOST=0.0.0.0
+            FASTAPI_PORT=7860
+            EOF
             
-            if [ -n "$SECRET_JSON" ]; then
-              echo "✅ Fetched secrets from AWS"
-              if command -v jq &> /dev/null; then
-                echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
-              else
-                python3 -c "import json,sys; d=json.loads(sys.stdin.read()); [print(f'{k}={v}') for k,v in sorted(d.items()) if v]" <<< "$SECRET_JSON" > .env
-              fi
-              chmod 600 .env
-            else
-              echo "⚠️  Could not fetch secrets, checking for existing .env..."
-              if [ ! -f .env ]; then
-                echo "❌ No .env file and secrets fetch failed"
-                exit 1
-              fi
+            # Remove leading whitespace from heredoc
+            sed -i 's/^[[:space:]]*//' .env
+            chmod 600 .env
+            
+            # Verify critical secrets are present
+            if [ -z "$DEEPGRAM_API_KEY" ] || [ -z "$GOOGLE_API_KEY" ]; then
+              echo "⚠️  Warning: Some API keys may be missing"
+              echo "   DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:+SET}"
+              echo "   GOOGLE_API_KEY: ${GOOGLE_API_KEY:+SET}"
+              echo "   GROQ_API_KEY: ${GROQ_API_KEY:+SET}"
+              echo "   RESEMBLE_API_KEY: ${RESEMBLE_API_KEY:+SET}"
             fi
+            echo "✅ .env file created"
             
             # === CREATE CADDYFILE ===
             echo "📝 Creating Caddyfile..."
