@@ -218,9 +218,9 @@ server:
   fastapi_host: "0.0.0.0"
   fastapi_port: 7860
   session_timeout: 180
-  # VAD settings optimized for natural conversation flow
+  # VAD settings - tuned to prevent false interruptions on deployed version
   vad:
-    confidence: 0.7        # Balanced detection - not too strict
-    start_secs: 0.2        # Quick to start detecting speech
+    confidence: 0.85       # Higher confidence to prevent false positives from echo/noise
+    start_secs: 0.35       # Require longer speech duration before detecting (was 0.2)
     stop_secs: 1.2         # Wait 1.2 seconds of silence before ending (prevents cutoffs)
-    min_volume: 0.6        # Standard volume threshold for speech detection
+    min_volume: 0.7        # Higher volume threshold to ignore background noise (was 0.6)
