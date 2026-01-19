@@ -219,14 +219,14 @@ server:
   fastapi_port: 7860
   session_timeout: 180
   # Emotion detection toggle
-  # OPTIMIZED: Now uses INT8 quantization + thread tuning for 2-3x faster inference
-  # Safe to enable on 4GB RAM / 2 vCPU Lightsail with optimizations applied
-  emotion_detection_enabled: true  # ENABLED - optimizations applied to wav2vec2
-  
-  # VAD settings - TUNED TO PREVENT ECHO-BASED FALSE INTERRUPTIONS
-  # The bot's audio output can be picked up by user's mic, causing false interruptions
+  # TEMPORARILY DISABLED to diagnose listening issues on deployed version
+  # When disabled, the ToneAwareProcessor bypasses all emotion inference
+  emotion_detection_enabled: false  # DISABLED - diagnosing deployed version issues
+
+  # VAD settings - EXTREMELY STRICT to prevent ANY false interruptions
+  # The deployed version has issues where echo/noise triggers false speech detection
   vad:
-    confidence: 0.92       # VERY HIGH confidence to prevent echo detection (was 0.85)
-    start_secs: 0.5        # Require 500ms of speech before detecting (was 0.35)
-    stop_secs: 1.5         # Wait 1.5s of silence before ending (was 1.2)
-    min_volume: 0.8        # Higher volume threshold to ignore echo/noise (was 0.7)
+    confidence: 0.95       # MAXIMUM confidence - only clear speech triggers VAD
+    start_secs: 0.6        # Require 600ms of speech before detecting
+    stop_secs: 2.0         # Wait 2 full seconds of silence before ending
+    min_volume: 0.85       # Very high volume threshold - ignores quiet sounds
