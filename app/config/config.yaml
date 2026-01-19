@@ -219,8 +219,8 @@ server:
   fastapi_port: 7860
   session_timeout: 180
   # Emotion detection toggle
-  # DISABLED to reduce CPU load and improve responsiveness
-  emotion_detection_enabled: false
+  # Uses MSP-PODCAST wav2vec2 + Google Gemini for hybrid audio+text sentiment
+  emotion_detection_enabled: true
 
   # VAD settings - SENSITIVE to ensure speech detection works
   # Web audio from browsers needs lower thresholds than local mic

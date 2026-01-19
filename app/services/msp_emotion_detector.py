@@ -79,7 +79,7 @@ class RegressionHead(nn.Module):
 
 def get_msp_model():
     """Get or initialize the MSP-PODCAST emotion model (lazy loading).
-    
+
     OPTIMIZATIONS APPLIED:
     1. INT8 Dynamic Quantization: 2-3x faster inference, 75% smaller model size
     2. Eval mode: Disables dropout/batchnorm training behavior
@@ -91,15 +91,20 @@ def get_msp_model():
         return _model, _processor
 
     if _model_loading:
+        logger.warning("MSP model is already loading in another thread, skipping...")
         return None, None
 
     _model_loading = True
+    logger.info("🚀 Starting MSP-PODCAST model initialization...")
+
     try:
+        logger.info("📦 Importing transformers library...")
         from transformers import Wav2Vec2Processor
         from transformers.models.wav2vec2.modeling_wav2vec2 import (
             Wav2Vec2Model,
             Wav2Vec2PreTrainedModel,
         )
+        logger.info("✅ Transformers imported successfully")
 
         # Define the EmotionModel class
         class EmotionModel(Wav2Vec2PreTrainedModel):
@@ -127,37 +132,51 @@ def get_msp_model():
         _model = EmotionModel.from_pretrained(model_name)
         _model.eval()
         _model = _model.to("cpu")
-        
-        # ===== INT8 DYNAMIC QUANTIZATION =====
+
+        original_size = sum(p.numel() * p.element_size() for p in _model.parameters()) / 1e6
+
+        # ===== INT8 DYNAMIC QUANTIZATION (Optional) =====
         # Converts FP32 weights to INT8 at runtime
         # Benefits: 2-3x faster inference, 75% smaller memory footprint
-        # Accuracy loss: <1% for speech emotion (acceptable)
-        logger.info("🔧 Applying INT8 dynamic quantization...")
-        
-        original_size = sum(p.numel() * p.element_size() for p in _model.parameters()) / 1e6
-        
-        _model = torch.quantization.quantize_dynamic(
-            _model,
-            {torch.nn.Linear},  # Quantize Linear layers (main compute)
-            dtype=torch.qint8
-        )
-        _model_quantized = True
-        
-        # Estimate quantized size (INT8 = 1 byte vs FP32 = 4 bytes for quantized layers)
-        quantized_size = original_size * 0.3  # ~70% reduction for Linear layers
-        
-        logger.info(f"✅ MSP-PODCAST model loaded and optimized:")
-        logger.info(f"   Original size: ~{original_size:.0f}MB")
-        logger.info(f"   Quantized size: ~{quantized_size:.0f}MB (INT8)")
-        logger.info(f"   Speed improvement: 2-3x faster inference")
+        # NOTE: Not supported on Apple Silicon (M1/M2/M3) - skip gracefully
+        import platform
+        is_arm = platform.machine() in ('arm64', 'aarch64')
+
+        if is_arm:
+            logger.info("⚠️ Skipping INT8 quantization (not supported on Apple Silicon)")
+            logger.info(f"✅ MSP-PODCAST model loaded (FP32, ~{original_size:.0f}MB)")
+            _model_quantized = False
+        else:
+            try:
+                logger.info("🔧 Applying INT8 dynamic quantization...")
+                _model = torch.quantization.quantize_dynamic(
+                    _model,
+                    {torch.nn.Linear},  # Quantize Linear layers (main compute)
+                    dtype=torch.qint8
+                )
+                _model_quantized = True
+                quantized_size = original_size * 0.3  # ~70% reduction for Linear layers
+                logger.info(f"✅ MSP-PODCAST model loaded and optimized:")
+                logger.info(f"   Original size: ~{original_size:.0f}MB")
+                logger.info(f"   Quantized size: ~{quantized_size:.0f}MB (INT8)")
+                logger.info(f"   Speed improvement: 2-3x faster inference")
+            except RuntimeError as e:
+                logger.warning(f"⚠️ INT8 quantization failed ({e}), using FP32 model")
+                _model_quantized = False
+                logger.info(f"✅ MSP-PODCAST model loaded (FP32, ~{original_size:.0f}MB)")
         
         # Force garbage collection after model load
         gc.collect()
         
         return _model, _processor
 
+    except ImportError as e:
+        logger.error(f"❌ Failed to import transformers for MSP-PODCAST: {e}")
+        logger.error("   Make sure 'transformers' and 'torch' are installed")
+        _model_loading = False
+        return None, None
     except Exception as e:
-        logger.error(f"Failed to load MSP-PODCAST model: {e}")
+        logger.error(f"❌ Failed to load MSP-PODCAST model: {e}")
         import traceback
         traceback.print_exc()
         _model_loading = False
@@ -277,17 +296,21 @@ class MSPEmotionDetector:
         Returns:
             True if initialization successful, False otherwise
         """
+        logger.info("🔌 MSP-PODCAST connect() called - attempting to load model...")
         try:
             self.model, self.processor = get_msp_model()
             if self.model is not None and self.processor is not None:
                 self.is_connected = True
-                logger.info("MSP-PODCAST emotion detection ready (natural conversation)")
+                logger.info("✅ MSP-PODCAST emotion detection ready (natural conversation)")
                 return True
             else:
                 self.is_connected = False
+                logger.warning("⚠️ MSP-PODCAST model returned None - using text fallback")
                 return False
         except Exception as e:
-            logger.error(f"Failed to initialize MSP-PODCAST: {e}")
+            logger.error(f"❌ Failed to initialize MSP-PODCAST: {e}")
+            import traceback
+            traceback.print_exc()
             self.is_connected = False
             return False
 

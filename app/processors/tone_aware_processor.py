@@ -14,7 +14,6 @@ Features:
 
 from typing import Optional
 import time
-import json
 import numpy as np
 
 from loguru import logger
@@ -157,12 +156,16 @@ class ToneAwareProcessor(FrameProcessor):
 
     async def initialize(self) -> None:
         """Initialize MSP-PODCAST wav2vec2 model (lazy loading)."""
+        logger.info(f"🎯 ToneAwareProcessor.initialize() called, enabled={self.enabled}")
         if self.enabled:
+            logger.info("🎯 Calling emotion_detector.connect()...")
             connected = await self.emotion_detector.connect()
             if connected:
-                logger.info("MSP-PODCAST wav2vec2 emotion detection ready (natural conversation, $0)")
+                logger.info("✅ MSP-PODCAST wav2vec2 emotion detection ready (natural conversation, $0)")
             else:
-                logger.warning("MSP-PODCAST initialization failed, using text fallback")
+                logger.warning("⚠️ MSP-PODCAST initialization failed, using text fallback")
+        else:
+            logger.info("⏸️ Emotion detection disabled in config, skipping MSP-PODCAST initialization")
 
     def set_tts_service(self, tts_service) -> None:
         """Set the TTS service reference for voice switching.
