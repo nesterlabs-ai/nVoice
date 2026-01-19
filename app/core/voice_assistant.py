@@ -30,6 +30,7 @@ from app.services.stt import SpeechToTextService
 from app.services.tts import TextToSpeechService
 from app.processors.tone_aware_processor import ToneAwareProcessor
 from app.processors.text_filter_processor import TextFilterProcessor
+from app.processors.visual_hint_processor import VisualHintProcessor
 
 
 class VoiceAssistant:
@@ -88,6 +89,14 @@ class VoiceAssistant:
 
         # Text filter processor to remove markdown before TTS
         self.text_filter = TextFilterProcessor(enabled=True)
+
+        # Visual hint processor for streaming text and dynamic visual cards
+        # DISABLED - visual cards removed from frontend
+        self.visual_hint_processor = VisualHintProcessor(
+            enabled=False,
+            stream_words=False,
+            detect_content=False,
+        )
 
         # Store LLM and context references for greeting injection
         self.llm = None
@@ -181,6 +190,7 @@ class VoiceAssistant:
 
         # Create pipeline
         # ToneAwareProcessor receives audio frames for SpeechBrain emotion detection
+        # VisualHintProcessor streams text word-by-word and emits visual hints
         # TextFilterProcessor removes markdown before TTS
         self.pipeline = Pipeline(
             [
@@ -191,6 +201,7 @@ class VoiceAssistant:
                 self.stt_mute_filter,         # Mute AFTER context sees frames
                 self.rtvi,
                 llm,
+                self.visual_hint_processor,   # Stream text and detect content for visual cards
                 self.text_filter,             # Remove markdown before TTS
                 tts,
                 transport.output(),

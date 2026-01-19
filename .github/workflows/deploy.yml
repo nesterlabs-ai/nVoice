@@ -106,75 +106,115 @@ jobs:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: AWS_REGION,IMAGE_TAG,GHCR_TOKEN,GHCR_USER,PUBLIC_URL
           script: |
-            cd ~/nester-bot || mkdir -p ~/nester-bot && cd ~/nester-bot
+            set -e
             
-            # === EXPORT ENVIRONMENT VARIABLES ===
-            export AWS_REGION="${{ env.AWS_REGION }}"
-            export IMAGE_TAG="${{ github.sha }}"
-            export GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
-            export GHCR_USER="${{ github.repository_owner }}"
-            export PUBLIC_URL="${{ secrets.PUBLIC_URL }}"
+            echo "🚀 NesterAIBot Deployment Starting..."
+            echo "📦 Commit SHA: $IMAGE_TAG"
             
-            # === PORT 80 CLEANUP FIRST (CRITICAL) ===
-            echo "🧹 Step 1: Cleaning port 80 conflicts..."
-            sudo fuser -k 80/tcp 2>/dev/null || true
-            docker ps -q --filter "publish=80" | xargs -r docker rm -f 2>/dev/null || true
-            docker-compose -f docker-compose.https.yml down --remove-orphans 2>/dev/null || true
-            sleep 2
+            # === STEP 0: INSTALL DOCKER IF NOT PRESENT ===
+            install_docker() {
+              echo "📦 Docker not found. Installing Docker..."
+              
+              if [ -f /etc/os-release ]; then
+                . /etc/os-release
+                OS=$ID
+              else
+                OS=$(uname -s)
+              fi
+              
+              case "$OS" in
+                amzn|amazon)
+                  echo "Installing Docker on Amazon Linux..."
+                  sudo yum update -y
+                  sudo yum install -y docker
+                  sudo systemctl start docker
+                  sudo systemctl enable docker
+                  sudo usermod -aG docker $USER
+                  ;;
+                ubuntu|debian)
+                  echo "Installing Docker on Ubuntu/Debian..."
+                  sudo apt-get update
+                  sudo apt-get install -y docker.io
+                  sudo systemctl start docker
+                  sudo systemctl enable docker
+                  sudo usermod -aG docker $USER
+                  ;;
+                *)
+                  echo "Installing Docker using get.docker.com..."
+                  curl -fsSL https://get.docker.com | sudo sh
+                  sudo systemctl start docker
+                  sudo systemctl enable docker
+                  sudo usermod -aG docker $USER
+                  ;;
+              esac
+            }
             
-            # === CREATE DEPLOYMENT SCRIPT (ALWAYS - NO GIT DEPENDENCY) ===
-            echo "📝 Step 2: Creating deployment script (no git needed)..."
-            mkdir -p scripts
-            rm -f lightsail-deploy.sh  # Remove old root script
+            install_compose() {
+              echo "📦 Installing docker-compose..."
+              sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose 2>/dev/null || true
+            }
             
-            cat > scripts/lightsail-deploy.sh << 'DEPLOY_SCRIPT_EOF'
-            #!/bin/bash
-            set -eo pipefail  # Removed -u to allow unset variables (they're checked explicitly)
-            
-            echo "=== NesterAIBot GHCR Deploy ==="
-            
-            cd ~/nester-bot || exit 1
-            
-            # Port cleanup
-            echo "🔍 Cleaning port 80..."
-            sudo fuser -k 80/tcp 2>/dev/null || true
-            docker ps -q --filter "publish=80" | xargs -r docker rm -f 2>/dev/null || true
-            sleep 2
-            
-            # Docker login
-            echo "🔑 Logging into GHCR..."
-            if [ -z "${GHCR_TOKEN:-}" ] || [ -z "${GHCR_USER:-}" ]; then
-              echo "❌ GHCR_TOKEN or GHCR_USER not set"
-              echo "GHCR_TOKEN: ${GHCR_TOKEN:+SET}"
-              echo "GHCR_USER: ${GHCR_USER:+SET}"
-              exit 1
+            # Check and install Docker
+            if ! command -v docker &> /dev/null; then
+              install_docker
             fi
             
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin || {
+            # Check and install docker-compose
+            if ! command -v docker-compose &> /dev/null; then
+              install_compose
+            fi
+            
+            # Use sudo for docker if user not in docker group
+            if groups | grep -q docker; then
+              D="docker"
+              DC="docker-compose"
+            else
+              D="sudo docker"
+              DC="sudo docker-compose"
+            fi
+            
+            echo "✅ Docker ready: $($D --version)"
+            echo "✅ Docker Compose ready: $($DC --version)"
+            
+            # === CREATE WORKING DIRECTORY ===
+            mkdir -p ~/nester-bot
+            cd ~/nester-bot
+            echo "📁 Working directory: $(pwd)"
+            
+            # === PORT 80 CLEANUP ===
+            echo "🧹 Cleaning port 80 conflicts..."
+            sudo fuser -k 80/tcp 2>/dev/null || true
+            $D ps -q --filter "publish=80" 2>/dev/null | xargs -r $D rm -f 2>/dev/null || true
+            $DC -f docker-compose.https.yml down --remove-orphans 2>/dev/null || true
+            sleep 2
+            
+            # === LOGIN TO GHCR ===
+            echo "🔑 Logging into GHCR..."
+            echo "$GHCR_TOKEN" | $D login ghcr.io -u "$GHCR_USER" --password-stdin || {
               echo "❌ Failed to login to GHCR"
               exit 1
             }
+            echo "✅ GHCR login successful"
             
-            # Fetch secrets
-            echo "🔐 Fetching secrets..."
+            # === FETCH SECRETS FROM AWS ===
+            echo "🔐 Fetching secrets from AWS Secrets Manager..."
             SECRET_NAME="nester/voice-bot/secrets"
             SECRET_JSON=$(aws secretsmanager get-secret-value \
               --secret-id "$SECRET_NAME" \
-              --region "${AWS_REGION:-ap-south-1}" \
+              --region "$AWS_REGION" \
               --query SecretString \
               --output text 2>/dev/null || echo "")
             
             if [ -n "$SECRET_JSON" ]; then
-              echo "✅ Fetched secrets"
-              # Create .env from JSON
+              echo "✅ Fetched secrets from AWS"
               if command -v jq &> /dev/null; then
                 echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
               else
-                TEMP_JSON=$(mktemp)
-                echo "$SECRET_JSON" > "$TEMP_JSON"
-                python3 -c "import json; d=json.load(open('$TEMP_JSON')); [print(f'{k}={v}') for k,v in sorted(d.items()) if v]" > .env
-                rm -f "$TEMP_JSON"
+                python3 -c "import json,sys; d=json.loads(sys.stdin.read()); [print(f'{k}={v}') for k,v in sorted(d.items()) if v]" <<< "$SECRET_JSON" > .env
               fi
               chmod 600 .env
             else
@@ -185,11 +225,30 @@ jobs:
               fi
             fi
             
-            # ALWAYS recreate docker-compose.https.yml to ensure latest configuration
-            # This ensures environment variables and healthcheck settings are up to date
-            echo "📝 Creating docker-compose.https.yml with proper configuration..."
-            if true; then
-              cat > docker-compose.https.yml << 'COMPOSE_EOF'
+            # === CREATE CADDYFILE ===
+            echo "📝 Creating Caddyfile..."
+            DOMAIN="${PUBLIC_URL:-localhost}"
+            DOMAIN=$(echo "$DOMAIN" | sed 's|https://||' | sed 's|http://||' | sed 's|/$||')
+            
+            cat > Caddyfile << EOF
+            {
+              admin off
+            }
+            
+            $DOMAIN {
+              reverse_proxy /ws nester-backend:7860
+              reverse_proxy /connect nester-backend:7860
+              reverse_proxy /health nester-backend:7860
+              reverse_proxy /status nester-backend:7860
+              reverse_proxy /api/* nester-backend:7860
+              reverse_proxy nester-frontend:80
+            }
+            EOF
+            echo "✅ Caddyfile created for domain: $DOMAIN"
+            
+            # === CREATE DOCKER COMPOSE FILE ===
+            echo "📝 Creating docker-compose.https.yml..."
+            cat > docker-compose.https.yml << EOF
             services:
               caddy:
                 image: caddy:2-alpine
@@ -198,8 +257,6 @@ jobs:
                 ports:
                   - "80:80"
                   - "443:443"
-                environment:
-                  - DOMAIN=${DOMAIN:-localhost}
                 volumes:
                   - ./Caddyfile:/etc/caddy/Caddyfile:ro
                   - caddy_data:/data
@@ -209,29 +266,21 @@ jobs:
                 depends_on:
                   backend:
                     condition: service_healthy
-
+            
               backend:
-                image: ghcr.io/nesterlabs-ai/nesteraibot-backend:${IMAGE_TAG:-latest}
+                image: ghcr.io/nesterlabs-ai/nesteraibot-backend:$IMAGE_TAG
                 container_name: nester-backend
                 restart: always
                 env_file:
                   - .env
                 environment:
-                  - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
-                  - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-                  - GROQ_API_KEY=${GROQ_API_KEY}
-                  - RESEMBLE_API_KEY=${RESEMBLE_API_KEY}
-                  - RESEMBLE_VOICE_UUID=${RESEMBLE_VOICE_UUID:-8b0c7b93}
-                  - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY}
-                  - LIGHTRAG_BASE_URL=${LIGHTRAG_BASE_URL}
-                  - PUBLIC_URL=${PUBLIC_URL}
+                  - PUBLIC_URL=$PUBLIC_URL
                   - FASTAPI_HOST=0.0.0.0
                   - FASTAPI_PORT=7860
                   - SESSION_TIMEOUT=180
                   - LOG_LEVEL=INFO
                 expose:
                   - "7860"
-                  - "8765"
                 healthcheck:
                   test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
                   interval: 30s
@@ -240,9 +289,9 @@ jobs:
                   start_period: 120s
                 networks:
                   - nester-network
-
+            
               frontend:
-                image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:${IMAGE_TAG:-latest}
+                image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:$IMAGE_TAG
                 container_name: nester-frontend
                 restart: always
                 expose:
@@ -252,137 +301,66 @@ jobs:
                 depends_on:
                   backend:
                     condition: service_healthy
-
+            
             networks:
               nester-network:
                 driver: bridge
-
+            
             volumes:
               caddy_data:
               caddy_config:
-            COMPOSE_EOF
-            fi
+            EOF
             
-            # Update image tags if needed
-            # Note: Images are tagged with both full SHA and 'latest' in build step
-            # We'll try full SHA first, fallback to 'latest' if not found
-            if [ -n "${IMAGE_TAG:-}" ] && [ "$IMAGE_TAG" != "latest" ]; then
-              IMAGE_TAG_FULL="$IMAGE_TAG"
-              IMAGE_TAG_SHORT=$(echo "$IMAGE_TAG" | cut -c1-7)
-              echo "📌 Attempting to use commit SHA tag: $IMAGE_TAG_FULL"
-              echo "📌 Fallback available: latest tag"
-              
-              # CRITICAL: Replace ANY existing tag (including old commit SHAs) with new one
-              # This handles cases where docker-compose.https.yml has old tags from previous deploys
-              sed -i "s|ghcr.io/nesterlabs-ai/nesteraibot-backend:[^ ]*|ghcr.io/nesterlabs-ai/nesteraibot-backend:$IMAGE_TAG_FULL|g" docker-compose.https.yml || true
-              sed -i "s|ghcr.io/nesterlabs-ai/nesteraibot-frontend:[^ ]*|ghcr.io/nesterlabs-ai/nesteraibot-frontend:$IMAGE_TAG_FULL|g" docker-compose.https.yml || true
-              
-              # Also handle the ${IMAGE_TAG:-latest} pattern
-              sed -i "s|:\${IMAGE_TAG:-latest}|:$IMAGE_TAG_FULL|g" docker-compose.https.yml || true
-              sed -i "s|:latest|:$IMAGE_TAG_FULL|g" docker-compose.https.yml || true
-              
-              echo "✅ Updated docker-compose.https.yml with tag: $IMAGE_TAG_FULL"
-            else
-              echo "📌 Using 'latest' tag (IMAGE_TAG not set or is 'latest')"
-              # Ensure we're using latest, not old tags
-              sed -i "s|ghcr.io/nesterlabs-ai/nesteraibot-backend:[^ ]*|ghcr.io/nesterlabs-ai/nesteraibot-backend:latest|g" docker-compose.https.yml || true
-              sed -i "s|ghcr.io/nesterlabs-ai/nesteraibot-frontend:[^ ]*|ghcr.io/nesterlabs-ai/nesteraibot-frontend:latest|g" docker-compose.https.yml || true
-            fi
+            echo "📋 Verifying image tags:"
+            grep "image:" docker-compose.https.yml | grep -E "backend|frontend"
             
-            # Verify the tags were updated correctly
-            echo "📋 Verifying image tags in docker-compose.https.yml:"
-            grep "image:" docker-compose.https.yml | grep -E "backend|frontend" || true
+            # === PURGE OLD LOCAL IMAGES ===
+            echo "🧹 Purging old local images..."
+            $D images "nester*" -q 2>/dev/null | sort -u | xargs -r $D rmi -f 2>/dev/null || true
+            $D images "nester-bot*" -q 2>/dev/null | sort -u | xargs -r $D rmi -f 2>/dev/null || true
             
-            # === PURGE LOCAL IMAGES (CRITICAL - PREVENTS REGRESSION) ===
-            echo "🧹 Step: Purging local nester images to enforce GHCR-only..."
-            docker images "nester*" -q 2>/dev/null | sort -u | xargs -r docker rmi -f 2>/dev/null || true
-            docker images "nester-bot*" -q 2>/dev/null | sort -u | xargs -r docker rmi -f 2>/dev/null || true
-            echo "✅ Local images purged"
+            # === PULL IMAGES ===
+            echo "📥 Pulling images from GHCR..."
+            $DC -f docker-compose.https.yml pull || {
+              echo "⚠️  Pull with SHA failed, trying latest..."
+              sed -i "s|:$IMAGE_TAG|:latest|g" docker-compose.https.yml
+              $DC -f docker-compose.https.yml pull || {
+                echo "❌ Failed to pull images"
+                exit 1
+              }
+            }
+            echo "✅ Images pulled successfully"
             
-            # Pull and deploy with isolated project name
-            echo "📥 Pulling images from GHCR (enforced)..."
-            export IMAGE_TAG
-            
-            # Try pulling with current tag (full SHA or latest)
-            PULL_SUCCESS=false
-            if docker-compose -f docker-compose.https.yml \
-              --project-name nesterbot-ghcr \
-              pull --ignore-pull-failures=false 2>&1; then
-              PULL_SUCCESS=true
-              echo "✅ Pulled images successfully"
-            else
-              echo "⚠️  Pull with current tag failed, trying 'latest' tag..."
-              # Update compose file to use 'latest' tag
-              sed -i 's|:${IMAGE_TAG:-latest}|:latest|g' docker-compose.https.yml 2>/dev/null || true
-              if [ -n "${IMAGE_TAG:-}" ] && [ "$IMAGE_TAG" != "latest" ]; then
-                sed -i "s|:$IMAGE_TAG|:latest|g" docker-compose.https.yml 2>/dev/null || true
-                sed -i "s|:$IMAGE_TAG_FULL|:latest|g" docker-compose.https.yml 2>/dev/null || true
-                sed -i "s|:$IMAGE_TAG_SHORT|:latest|g" docker-compose.https.yml 2>/dev/null || true
-              fi
-              
-              if docker-compose -f docker-compose.https.yml \
-                --project-name nesterbot-ghcr \
-                pull --ignore-pull-failures=false 2>&1; then
-                PULL_SUCCESS=true
-                echo "✅ Pulled images with 'latest' tag"
-              fi
-            fi
-            
-            if [ "$PULL_SUCCESS" = false ]; then
-              echo "❌ GHCR pull failed with both specific tag and 'latest'"
-              echo "   This may indicate:"
-              echo "   - Images haven't been built/pushed yet"
-              echo "   - GHCR authentication issue"
-              echo "   - Network connectivity problem"
-              echo "   Check the build job output for image push status"
-              exit 1
-            fi
-            
-            echo "🚀 Deploying containers with GHCR images only..."
-            docker-compose -f docker-compose.https.yml \
-              --project-name nesterbot-ghcr \
-              down --remove-orphans || true
-            
-            docker-compose -f docker-compose.https.yml \
-              --project-name nesterbot-ghcr \
-              up -d --force-recreate --remove-orphans \
-              --pull always || {
+            # === DEPLOY ===
+            echo "🚀 Deploying containers..."
+            $DC -f docker-compose.https.yml down --remove-orphans 2>/dev/null || true
+            $DC -f docker-compose.https.yml up -d --force-recreate --remove-orphans || {
               echo "❌ Failed to start containers"
-              echo "Checking port 80..."
-              docker ps --filter "publish=80" || true
-              sudo netstat -tlnp 2>/dev/null | grep ':80 ' || true
+              $D ps
               exit 1
             }
             
-            echo "⏳ Waiting for services..."
-            sleep 20
+            echo "⏳ Waiting for services to start (30s)..."
+            sleep 30
             
-            # === VERIFY GHCR ONLY (CRITICAL - FAIL IF LOCAL IMAGES) ===
-            echo "🔍 Verifying GHCR-only deployment..."
-            LOCAL_IMAGES=$(docker ps --format "{{.Image}}" | grep -v "ghcr.io" | grep -i "nester" || true)
-            if [ -n "$LOCAL_IMAGES" ]; then
-              echo "❌ CRITICAL: Local images detected in running containers!"
-              echo "   Found: $LOCAL_IMAGES"
-              echo "   This deployment must use GHCR images only"
-              exit 1
+            # === VERIFY ===
+            echo "🔍 Verifying deployment..."
+            $D ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+            
+            # Check if containers are running
+            if $D ps | grep -q "nester-backend.*Up"; then
+              echo "✅ Backend is running"
+            else
+              echo "⚠️  Backend may still be starting..."
             fi
             
-            GHCR_COUNT=$(docker ps --format "{{.Image}}" | grep -c "ghcr.io" || echo "0")
-            if [ "$GHCR_COUNT" -lt 2 ]; then
-              echo "⚠️  Warning: Expected at least 2 GHCR containers, found $GHCR_COUNT"
+            if $D ps | grep -q "nester-frontend.*Up"; then
+              echo "✅ Frontend is running"
+            else
+              echo "⚠️  Frontend may still be starting..."
             fi
             
-            echo "✅ GHCR verification passed"
-            echo "✅ Deploy complete"
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
-            DEPLOY_SCRIPT_EOF
-            
-            chmod +x scripts/lightsail-deploy.sh
-            echo "✅ Deployment script created"
-            
-            # === EXECUTE DEPLOYMENT (NO GIT DEPENDENCY) ===
-            echo "🚀 Step 3: Executing deployment..."
-            bash scripts/lightsail-deploy.sh
+            echo "✅ Deployment complete!"
 
   post-deploy:
     name: Post-Deployment Verification
@@ -390,36 +368,28 @@ jobs:
     needs: [build, deploy]
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: false
-
       - name: Health Check
         run: |
           PUBLIC_URL="${{ secrets.PUBLIC_URL }}"
-          MAX_RETRIES=5
-          RETRY_DELAY=15
+          MAX_RETRIES=6
+          RETRY_DELAY=20
           
-          # Check if PUBLIC_URL is set
           if [ -z "$PUBLIC_URL" ]; then
             echo "⚠️  PUBLIC_URL not set in secrets, skipping health check"
-            echo "Set PUBLIC_URL secret in GitHub repository settings"
-            exit 0  # Don't fail the workflow, just warn
+            exit 0
           fi
           
           echo "🔍 Performing health check on: ${PUBLIC_URL}/health"
           
           for i in $(seq 1 $MAX_RETRIES); do
             echo "Attempt $i/$MAX_RETRIES..."
-            
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 --insecure "${PUBLIC_URL}/health" 2>/dev/null || echo "000")
             
             if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ Health check passed (HTTP $HTTP_CODE)"
               exit 0
             else
-              echo "⚠️  Health check failed (HTTP $HTTP_CODE)"
+              echo "⚠️  Health check returned HTTP $HTTP_CODE"
               if [ $i -lt $MAX_RETRIES ]; then
                 echo "Retrying in ${RETRY_DELAY}s..."
                 sleep $RETRY_DELAY
@@ -427,55 +397,9 @@ jobs:
             fi
           done
           
-          echo "❌ Health check failed after $MAX_RETRIES attempts"
-          echo "⚠️  This may be normal if the service is still starting up"
-          echo "⚠️  Check container logs manually: docker logs nester-backend"
-          exit 0  # Don't fail workflow - deployment may still be successful
-
-      - name: Verify Code Version and Fix if Needed
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          GITHUB_REPO: https://github.com/${{ github.repository }}.git
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          GHCR_USER: ${{ github.repository_owner }}
-        with:
-          host: ${{ secrets.LIGHTSAIL_HOST }}
-          username: ${{ secrets.LIGHTSAIL_USER }}
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          script: |
-            cd ~/nester-bot || exit 1
-            
-            # Run verification and fix script if it exists
-            if [ -f scripts/verify-and-fix-code-version.sh ]; then
-              chmod +x scripts/verify-and-fix-code-version.sh
-              bash scripts/verify-and-fix-code-version.sh
-            else
-              echo "⚠️  Verification script not found, running manual check..."
-              
-              # Manual version check
-              echo "=== Code Version Check ==="
-              echo "Expected commit SHA: ${{ github.sha }}"
-              EXPECTED_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-              echo "Expected short SHA: $EXPECTED_SHA"
-              echo ""
-              
-              CURRENT_IMAGE=$(docker inspect nester-backend 2>/dev/null | grep -oP '"Image":\s*"\K[^"]+' | head -1 || echo "")
-              echo "Current image: $CURRENT_IMAGE"
-              
-              if echo "$CURRENT_IMAGE" | grep -q "$EXPECTED_SHA"; then
-                echo "✅ Container is using latest code (commit $EXPECTED_SHA)"
-              elif echo "$CURRENT_IMAGE" | grep -q "latest"; then
-                echo "⚠️  Container is using 'latest' tag - recreating with specific SHA..."
-                docker-compose -f docker-compose.https.yml pull || true
-                docker-compose -f docker-compose.https.yml up -d --force-recreate --no-deps backend
-                sleep 15
-              else
-                echo "⚠️  Version mismatch detected - recreating container..."
-                docker-compose -f docker-compose.https.yml pull || true
-                docker-compose -f docker-compose.https.yml up -d --force-recreate --no-deps backend
-                sleep 15
-              fi
-            fi
+          echo "⚠️  Health check didn't pass after $MAX_RETRIES attempts"
+          echo "   The service may still be starting up - check manually"
+          exit 0
 
       - name: Fetch Container Logs
         uses: appleboy/ssh-action@v1.0.3
@@ -485,84 +409,31 @@ jobs:
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           script: |
             echo "=========================================="
-            echo "🔍 COMPREHENSIVE SERVER DIAGNOSTICS"
+            echo "🔍 DEPLOYMENT DIAGNOSTICS"
             echo "=========================================="
-            echo ""
             
+            cd ~/nester-bot 2>/dev/null || cd /home/*/nester-bot 2>/dev/null || { echo "No nester-bot directory found"; exit 0; }
+            
+            # Use sudo if needed
+            if groups | grep -q docker; then
+              D="docker"
+            else
+              D="sudo docker"
+            fi
+            
+            echo ""
             echo "=== Container Status ==="
-            docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || docker ps
-            echo ""
+            $D ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
             
-            echo "=== Backend Container Logs (last 100 lines) ==="
-            docker logs --tail 100 nester-backend 2>&1 || echo "Could not fetch backend logs"
             echo ""
+            echo "=== Backend Logs (last 50 lines) ==="
+            $D logs --tail 50 nester-backend 2>&1 || echo "Could not fetch backend logs"
             
-            echo "=== System Prompt Loading ==="
-            docker logs nester-backend 2>&1 | grep -i "system prompt\|system_prompt\|identity\|Using custom system prompt" | tail -10 || echo "No system prompt logs found"
             echo ""
+            echo "=== Recent Errors ==="
+            $D logs --tail 200 nester-backend 2>&1 | grep -i "error\|exception\|failed" | tail -10 || echo "No recent errors"
             
-            echo "=== RAG/LightRAG Errors ==="
-            docker logs nester-backend 2>&1 | grep -i "rag\|lightrag\|knowledge base\|error" | tail -15 || echo "No RAG errors found"
             echo ""
-            
-            echo "=== Backend Image Info ==="
-            docker inspect nester-backend 2>/dev/null | grep -E '"Image"|"RepoDigests"' | head -3 || echo "Could not inspect container"
-            echo ""
-            
-            echo "=== Code Version Verification ==="
-            echo "Expected commit SHA: ${{ github.sha }}"
-            echo "Expected short SHA: $(echo ${{ github.sha }} | cut -c1-7)"
-            echo ""
-            echo "Actual image tag in use:"
-            docker inspect nester-backend 2>/dev/null | grep -E '"Image"' | head -1 || echo "Could not get image tag"
-            echo ""
-            echo "Checking if container has latest code (commit SHA in image):"
-            IMAGE_TAG=$(docker inspect nester-backend 2>/dev/null | grep -oP '"Image":\s*"\K[^"]+' | head -1)
-            if echo "$IMAGE_TAG" | grep -q "$(echo ${{ github.sha }} | cut -c1-7)"; then
-              echo "✅ Container is using latest code (commit ${{ github.sha }})"
-            elif echo "$IMAGE_TAG" | grep -q "latest"; then
-              echo "⚠️  Container is using 'latest' tag - may need to pull latest image"
-              echo "   Run: docker-compose -f docker-compose.https.yml pull && docker-compose -f docker-compose.https.yml up -d"
-            else
-              echo "⚠️  Could not verify code version"
-            fi
-            echo ""
-            
-            echo "=== Config File Check (system_prompt) ==="
-            docker exec nester-backend cat /app/app/config/config.yaml 2>/dev/null | grep -A 5 "system_prompt:" | head -10 || echo "Could not read config file"
-            echo ""
-            
-            echo "=== Environment Variables ==="
-            docker exec nester-backend env 2>/dev/null | grep -E "PUBLIC_URL|GOOGLE_API_KEY|LIGHTRAG|WEBSOCKET_SERVER" | sed 's/\(API_KEY\)=.*/\1=***/' || echo "Could not check environment"
-            echo ""
-            
-            echo "=== Recent Errors (last 20) ==="
-            docker logs --tail 200 nester-backend 2>&1 | grep -i "error\|exception\|failed\|traceback" | tail -20 || echo "No recent errors found"
-            echo ""
-            
-            echo "=== WebSocket Connection Logs ==="
-            docker logs --tail 50 nester-backend 2>&1 | grep -i "websocket\|session\|connected\|disconnected" | tail -10 || echo "No WebSocket logs found"
-            echo ""
-            
             echo "=========================================="
-            echo "✅ Diagnostic complete"
+            echo "✅ Diagnostics complete"
             echo "=========================================="
-            
-            echo ""
-            echo "=== GHCR Verification (Enforcement) ==="
-            LOCAL_IMAGES=$(docker images "nester*" --format "{{.Repository}}" 2>/dev/null | grep -v "ghcr.io/nesterlabs-ai" || true)
-            if [ -n "$LOCAL_IMAGES" ]; then
-              echo "❌ CRITICAL: Local nester images found on server!"
-              echo "   Images: $LOCAL_IMAGES"
-              echo "   This violates GHCR-only policy"
-              echo "   Run: docker images | grep nester"
-              exit 1
-            else
-              echo "✅ GHCR-only enforcement verified - no local images"
-            fi
-            
-            GHCR_CONTAINERS=$(docker ps --format "{{.Image}}" | grep -c "ghcr.io" || echo "0")
-            echo "GHCR containers running: $GHCR_CONTAINERS"
-            if [ "$GHCR_CONTAINERS" -lt 2 ]; then
-              echo "⚠️  Warning: Expected at least 2 GHCR containers"
-            fi

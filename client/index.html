@@ -10,7 +10,7 @@
   <link href="https://fonts.cdnfonts.com/css/thegoodmonolith" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 
 <body>
@@ -39,172 +39,202 @@
   <!-- Voice Wave Ring -->
   <div class="audio-wave" id="audio-wave"></div>
 
-  <!-- Main Interface Container -->
-  <div class="interface-container">
-    <!-- Header -->
-    <div class="header">
-      <div class="header-item">
-        <img src="/nester-icon.png" alt="Nester AI" class="header-logo" onerror="this.style.display='none'">
-        <span class="brand-text">NESTER.AI</span>
-      </div>
-      <div class="header-item">VOICE.INTELLIGENCE.SCANNER<br />v2.0.0</div>
-      <div class="header-item" id="timestamp">TIME: 00:00:00</div>
+  <!-- ===== REDESIGNED LAYOUT ===== -->
+
+  <!-- Header Bar -->
+  <header class="header-bar">
+    <div class="header-left">
+      <img src="/nester-icon.png" alt="Nester AI" class="header-logo" onerror="this.style.display='none'">
+      <span class="brand-text">NESTER.AI</span>
     </div>
+    <div class="header-center">
+      <span class="header-title">VOICE.INTELLIGENCE.SCANNER</span>
+      <span class="header-version">v2.0.0</span>
+    </div>
+    <div class="header-right">
+      <span id="timestamp">TIME: 00:00:00</span>
+    </div>
+  </header>
 
-    <!-- Scanner Frame (Center Voice Orb) -->
-    <div class="scanner-frame" id="scanner-frame">
-      <div class="corner-tl"></div>
-      <div class="corner-tr"></div>
-      <div class="corner-bl"></div>
-      <div class="corner-br"></div>
-      <div class="scanner-line"></div>
+  <!-- Main Layout Grid -->
+  <main class="main-layout">
 
-      <!-- 3D Voice Orb Inside Scanner -->
-      <div class="voice-orb-container" id="voice-orb-container">
-        <!-- Outer rotating rings -->
-        <div class="orb-ring-container">
-          <div class="orb-ring ring-outer"></div>
-          <div class="orb-ring ring-middle"></div>
-          <div class="orb-ring ring-inner"></div>
+    <!-- LEFT COLUMN: Emotion Metrics + Terminal -->
+    <aside class="left-column">
+      <!-- Emotion Metrics Panel -->
+      <div class="panel emotion-panel glass-panel" id="emotion-panel">
+        <div class="panel-header">
+          <span class="panel-title">EMOTION METRICS</span>
+          <span id="status-indicator" class="live-indicator">● LIVE</span>
         </div>
-
-        <!-- Glow effects -->
-        <div class="orb-glow-ring ring-1"></div>
-        <div class="orb-glow-ring ring-2"></div>
-        <div class="orb-glow-ring ring-3"></div>
-
-        <!-- Main 3D Orb -->
-        <div class="voice-orb" id="voice-orb">
-          <!-- 3D sphere layers -->
-          <div class="orb-sphere">
-            <div class="sphere-layer layer-1"></div>
-            <div class="sphere-layer layer-2"></div>
-            <div class="sphere-layer layer-3"></div>
-            <div class="sphere-highlight"></div>
-          </div>
-
-          <div class="orb-gradient"></div>
-          <div class="orb-inner">
-            <!-- Mic icon -->
-            <svg class="orb-icon icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-            <!-- Wave bars -->
-            <div class="orb-waves">
-              <span class="wave-bar" style="--i: 0"></span>
-              <span class="wave-bar" style="--i: 1"></span>
-              <span class="wave-bar" style="--i: 2"></span>
-              <span class="wave-bar" style="--i: 3"></span>
-              <span class="wave-bar" style="--i: 4"></span>
-            </div>
-            <!-- Thinking dots -->
-            <div class="orb-thinking">
-              <span class="thinking-dot"></span>
-              <span class="thinking-dot"></span>
-              <span class="thinking-dot"></span>
+        <div class="panel-body">
+          <!-- Current Emotion Display -->
+          <div class="emotion-display">
+            <span class="emotion-emoji" id="emotion-emoji">😊</span>
+            <div class="emotion-info">
+              <span class="emotion-label" id="emotion-label">NEUTRAL</span>
+              <span class="emotion-confidence">CONFIDENCE: <span id="emotion-confidence">0%</span></span>
             </div>
           </div>
+
+          <!-- Dimension Bars -->
+          <div class="metrics-section">
+            <div class="metric-row">
+              <span class="metric-label">AROUSAL</span>
+              <div class="metric-bar">
+                <div class="metric-bar-fill arousal" id="arousal-bar" style="width: 50%;"></div>
+              </div>
+              <span class="metric-value" id="arousal-value">0.50</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">DOMINANCE</span>
+              <div class="metric-bar">
+                <div class="metric-bar-fill dominance" style="width: 50%;"></div>
+              </div>
+              <span class="metric-value" id="dominance-value">0.50</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">VALENCE</span>
+              <div class="metric-bar">
+                <div class="metric-bar-fill valence" style="width: 50%;"></div>
+              </div>
+              <span class="metric-value" id="valence-value">0.50</span>
+            </div>
+          </div>
+
+          <!-- Voice Tone -->
+          <div class="tone-display">
+            <span class="tone-label">VOICE TONE:</span>
+            <span class="tone-value" id="tone-label">NEUTRAL</span>
+          </div>
+
+          <!-- Emotion Timeline -->
+          <div class="timeline-section">
+            <span class="timeline-label">EMOTION TIMELINE</span>
+            <div class="timeline-track" id="emotion-timeline"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- System Terminal Panel -->
+      <div class="panel terminal-panel glass-panel">
+        <div class="panel-header terminal-header">
+          <span class="panel-title">SYSTEM TERMINAL</span>
+          <span id="terminal-status" class="terminal-status">● ONLINE</span>
+        </div>
+        <div class="terminal-body" id="terminal-content">
+          <div class="terminal-line">NESTER.AI v2.0.0 INITIALIZED.</div>
+          <div class="terminal-line cmd">voice.scanner.init({emotion: true});</div>
+          <div class="terminal-line success">Emotion detection: MSP-PODCAST model loaded.</div>
+          <div class="terminal-line cmd">tts.connect('chatterbox');</div>
+          <div class="terminal-line typing" id="typing-line"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CENTER: Voice Orb Scanner -->
+    <section class="center-column">
+      <div class="scanner-frame" id="scanner-frame">
+        <div class="corner-tl"></div>
+        <div class="corner-tr"></div>
+        <div class="corner-bl"></div>
+        <div class="corner-br"></div>
+        <div class="scanner-line"></div>
+
+        <!-- 3D Voice Orb Inside Scanner -->
+        <div class="voice-orb-container" id="voice-orb-container">
+          <!-- Outer rotating rings -->
+          <div class="orb-ring-container">
+            <div class="orb-ring ring-outer"></div>
+            <div class="orb-ring ring-middle"></div>
+            <div class="orb-ring ring-inner"></div>
+          </div>
+
+          <!-- Glow effects -->
+          <div class="orb-glow-ring ring-1"></div>
+          <div class="orb-glow-ring ring-2"></div>
+          <div class="orb-glow-ring ring-3"></div>
+
+          <!-- Main 3D Orb -->
+          <div class="voice-orb" id="voice-orb">
+            <!-- Canvas overlays for waveform and circular visualizer -->
+            <canvas id="waveform-canvas" class="orb-canvas waveform-canvas" aria-hidden="true"></canvas>
+            <canvas id="circular-canvas" class="orb-canvas circular-canvas" aria-hidden="true"></canvas>
+            <!-- 3D sphere layers -->
+            <div class="orb-sphere">
+              <div class="sphere-layer layer-1"></div>
+              <div class="sphere-layer layer-2"></div>
+              <div class="sphere-layer layer-3"></div>
+              <div class="sphere-highlight"></div>
+            </div>
+
+            <div class="orb-gradient"></div>
+            <div class="orb-inner">
+              <!-- Mic icon -->
+              <svg class="orb-icon icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+              <!-- Wave bars -->
+              <div class="orb-waves">
+                <span class="wave-bar" style="--i: 0"></span>
+                <span class="wave-bar" style="--i: 1"></span>
+                <span class="wave-bar" style="--i: 2"></span>
+                <span class="wave-bar" style="--i: 3"></span>
+                <span class="wave-bar" style="--i: 4"></span>
+              </div>
+              <!-- Thinking dots -->
+              <div class="orb-thinking">
+                <span class="thinking-dot"></span>
+                <span class="thinking-dot"></span>
+                <span class="thinking-dot"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pulse rings for speaking state -->
+          <div class="pulse-ring pulse-1"></div>
+          <div class="pulse-ring pulse-2"></div>
+          <div class="pulse-ring pulse-3"></div>
         </div>
 
-        <!-- Pulse rings for speaking state -->
-        <div class="pulse-ring pulse-1"></div>
-        <div class="pulse-ring pulse-2"></div>
-        <div class="pulse-ring pulse-3"></div>
-      </div>
-
-      <div class="scanner-id">NESTER.VOICE({MODE: 'ADAPTIVE_EMOTION'})</div>
-      <div class="scanner-id-right" id="orb-status">TAP TO INITIALIZE</div>
-    </div>
-  </div>
-
-  <!-- Emotion Metrics Panel (Top Left) -->
-  <div class="data-panel emotion-metrics-panel" id="emotion-panel">
-    <div class="data-panel-title">
-      <span>EMOTION METRICS</span>
-      <span id="status-indicator" class="live-dot">●</span>
-    </div>
-
-    <!-- Current Emotion Display -->
-    <div class="emotion-hero">
-      <span class="emotion-emoji" id="emotion-emoji">😊</span>
-      <div class="emotion-info">
-        <span class="emotion-label" id="emotion-label">NEUTRAL</span>
-        <span class="emotion-confidence">CONFIDENCE: <span id="emotion-confidence">0%</span></span>
-      </div>
-    </div>
-
-    <!-- Dimension Bars -->
-    <div class="data-bar">
-      <div class="data-bar-fill arousal-bar" id="arousal-bar" style="width: 50%;"></div>
-    </div>
-    <div class="data-readouts">
-      <div class="data-row">
-        <span class="data-label">AROUSAL INDEX:</span>
-        <span class="data-value" id="arousal-value">0.50</span>
-      </div>
-      <div class="data-row">
-        <span class="data-label">DOMINANCE:</span>
-        <span class="data-value" id="dominance-value">0.50</span>
-      </div>
-      <div class="data-row">
-        <span class="data-label">VALENCE:</span>
-        <span class="data-value" id="valence-value">0.50</span>
-      </div>
-      <div class="data-row">
-        <span class="data-label">VOICE TONE:</span>
-        <span class="data-value" id="tone-label">NEUTRAL</span>
-      </div>
-    </div>
-
-    <!-- Emotion Timeline -->
-    <div class="emotion-timeline-container">
-      <div class="timeline-label">EMOTION TIMELINE</div>
-      <div class="history-timeline" id="emotion-timeline"></div>
-    </div>
-  </div>
-
-  <!-- Terminal Panel (Bottom Left) -->
-  <div class="terminal-panel">
-    <div class="terminal-header">
-      <span>SYSTEM TERMINAL</span>
-      <span id="terminal-status">ONLINE</span>
-    </div>
-    <div class="terminal-content" id="terminal-content">
-      <div class="terminal-line">NESTER.AI v2.0.0 INITIALIZED. SECURE CONNECTION READY.</div>
-      <div class="terminal-line command-line">voice.scanner.init({emotion: true, adaptive: true});</div>
-      <div class="terminal-line regular-line">Emotion detection: MSP-PODCAST wav2vec2 model loaded.</div>
-      <div class="terminal-line command-line">tts.service.connect('chatterbox', {emotion_control: true});</div>
-      <div class="terminal-line typing" id="typing-line"></div>
-    </div>
-  </div>
-
-  <!-- Conversation Transcript Panel (Right Side - Full Height) -->
-  <div class="transcript-panel">
-    <div class="panel-header">
-      <span class="data-panel-title">CONVERSATION LOG</span>
-      <span class="transcript-status" id="transcript-status">READY</span>
-    </div>
-    <div class="transcript-content" id="transcript-list">
-      <div class="welcome-message" id="welcome-message">
-        <div class="welcome-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
+        <div class="scanner-labels">
+          <span class="scanner-id">NESTER.VOICE({MODE: 'ADAPTIVE'})</span>
+          <span class="scanner-status" id="orb-status">TAP TO INITIALIZE</span>
         </div>
-        <div class="welcome-text">VOICE INTERFACE READY</div>
-        <div class="welcome-sub">TAP THE SCANNER TO INITIALIZE CONNECTION</div>
       </div>
-    </div>
-  </div>
+    </section>
 
-  <!-- Debug Panel (Hidden) -->
-  <div class="debug-panel" id="debug-panel">
+    <!-- RIGHT COLUMN: Conversation Log -->
+    <aside class="right-column">
+      <div class="panel conversation-panel glass-panel">
+        <div class="panel-header">
+          <span class="panel-title">CONVERSATION LOG</span>
+          <span class="panel-status" id="transcript-status">● READY</span>
+        </div>
+        <div class="conversation-body" id="transcript-list">
+          <div class="welcome-message" id="welcome-message">
+            <div class="welcome-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </div>
+            <div class="welcome-text">VOICE INTERFACE READY</div>
+            <div class="welcome-sub">TAP THE SCANNER TO BEGIN</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- Debug Panel (Hidden by default) -->
+  <div class="debug-panel glass-panel" id="debug-panel">
     <div class="debug-header">
       <span>DEBUG LOG</span>
       <button class="debug-close" id="debug-close">&times;</button>
@@ -213,22 +243,23 @@
   </div>
 
   <!-- Toggle Buttons -->
-  <button class="debug-toggle" id="debug-toggle" aria-label="Toggle Debug Log">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M12 20V10"/>
-      <path d="M18 20V4"/>
-      <path d="M6 20v-4"/>
-    </svg>
-  </button>
-
-  <button class="emotion-toggle" id="emotion-toggle" aria-label="Toggle Emotion Panel">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
-      <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-      <circle cx="9" cy="9" r="1.5" fill="currentColor"/>
-      <circle cx="15" cy="9" r="1.5" fill="currentColor"/>
-    </svg>
-  </button>
+  <div class="toggle-buttons">
+    <button class="toggle-btn" id="debug-toggle" aria-label="Toggle Debug Log">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 20V10"/>
+        <path d="M18 20V4"/>
+        <path d="M6 20v-4"/>
+      </svg>
+    </button>
+    <button class="toggle-btn" id="emotion-toggle" aria-label="Toggle Emotion Panel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+        <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+        <circle cx="9" cy="9" r="1.5" fill="currentColor"/>
+        <circle cx="15" cy="9" r="1.5" fill="currentColor"/>
+      </svg>
+    </button>
+  </div>
 
   <!-- Hidden Elements -->
   <audio id="bot-audio" autoplay></audio>

@@ -61,9 +61,9 @@ rag:
 
 conversation:
   llm:
-    provider: "groq"  # Using Groq (Llama 3.3 70B)
-    model: "llama-3.3-70b-versatile"  # Llama 3.3 70B - Fast and powerful
-    api_key: "${GROQ_API_KEY}"
+    provider: "google"  # Using Google Gemini
+    model: "gemini-2.0-flash-exp"  # Gemini 2.0 Flash - Fast and capable
+    api_key: "${GOOGLE_API_KEY}"
     temperature: 0.7  # Balanced - natural but focused responses
     max_tokens: 512  # Allow longer, more complete responses
 
