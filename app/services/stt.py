@@ -146,7 +146,10 @@ class SpeechToTextService:
                 "endpointing": self.config.get("endpointing", 500),
                 "utterance_end_ms": self.config.get("utterance_end_ms", 1200),
                 "interim_results": self.config.get("interim_results", True),
-                "vad_events": self.config.get("vad_events", True),
+                # CRITICAL: Disable Deepgram VAD events to prevent false interruptions
+                # The local Silero VAD handles speech detection with tuned parameters
+                # Deepgram VAD was causing bot to be cut off on deployed version
+                "vad_events": self.config.get("vad_events", False),
             }
 
             if detect_language:
