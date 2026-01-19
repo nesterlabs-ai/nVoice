@@ -121,7 +121,31 @@ jobs:
             echo "🚀 NesterAIBot Deployment Starting..."
             echo "📦 Commit SHA: $IMAGE_TAG"
             
-            # === STEP 0: INSTALL DOCKER IF NOT PRESENT ===
+            # === STEP 0: SETUP SWAP FOR 4GB RAM INSTANCE ===
+            setup_swap() {
+              if [ -f /swapfile ]; then
+                echo "✅ Swap already exists"
+                return 0
+              fi
+              
+              echo "📦 Creating 2GB swap file for burst handling..."
+              sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile
+              
+              # Make permanent
+              if ! grep -q "/swapfile" /etc/fstab; then
+                echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+              fi
+              
+              echo "✅ Swap configured: $(free -h | grep Swap)"
+            }
+            
+            # Setup swap first (prevents OOM during model loading)
+            setup_swap
+            
+            # === STEP 1: INSTALL DOCKER IF NOT PRESENT ===
             install_docker() {
               echo "📦 Docker not found. Installing Docker..."
               

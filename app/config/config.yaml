@@ -218,9 +218,10 @@ server:
   fastapi_host: "0.0.0.0"
   fastapi_port: 7860
   session_timeout: 180
-  # Emotion detection toggle - set to false to disable wav2vec2 for performance testing
-  # When disabled, the bot won't adapt voice tone based on user emotions
-  emotion_detection_enabled: false  # TEMPORARILY DISABLED for performance testing
+  # Emotion detection toggle
+  # OPTIMIZED: Now uses INT8 quantization + thread tuning for 2-3x faster inference
+  # Safe to enable on 4GB RAM / 2 vCPU Lightsail with optimizations applied
+  emotion_detection_enabled: true  # ENABLED - optimizations applied to wav2vec2
   
   # VAD settings - tuned to prevent false interruptions on deployed version
   vad:
