@@ -223,9 +223,10 @@ server:
   # Safe to enable on 4GB RAM / 2 vCPU Lightsail with optimizations applied
   emotion_detection_enabled: true  # ENABLED - optimizations applied to wav2vec2
   
-  # VAD settings - tuned to prevent false interruptions on deployed version
+  # VAD settings - TUNED TO PREVENT ECHO-BASED FALSE INTERRUPTIONS
+  # The bot's audio output can be picked up by user's mic, causing false interruptions
   vad:
-    confidence: 0.85       # Higher confidence to prevent false positives from echo/noise
-    start_secs: 0.35       # Require longer speech duration before detecting (was 0.2)
-    stop_secs: 1.2         # Wait 1.2 seconds of silence before ending (prevents cutoffs)
-    min_volume: 0.7        # Higher volume threshold to ignore background noise (was 0.6)
+    confidence: 0.92       # VERY HIGH confidence to prevent echo detection (was 0.85)
+    start_secs: 0.5        # Require 500ms of speech before detecting (was 0.35)
+    stop_secs: 1.5         # Wait 1.5s of silence before ending (was 1.2)
+    min_volume: 0.8        # Higher volume threshold to ignore echo/noise (was 0.7)
