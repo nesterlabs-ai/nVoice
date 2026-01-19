@@ -64,8 +64,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
 
         # Create transport parameters for this connection
-        # CRITICAL: enable_interruptions=False prevents bot from being cut off mid-sentence
-        # on deployed version where network latency causes false interruption detection
         transport_params = FastAPIWebsocketParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
@@ -74,7 +72,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             vad_analyzer=vad_analyzer,
             vad_audio_passthrough=True,
             serializer=ProtobufFrameSerializer(),
-            enable_interruptions=False,  # Disable interruptions to let bot complete responses
         )
 
         # Create transport for this specific connection

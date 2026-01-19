@@ -81,10 +81,14 @@ class VoiceAssistant:
 
         # Tone-aware processor for dynamic voice selection using MSP-PODCAST + LLM text sentiment
         # Uses Google API key for Gemini-based text sentiment detection
+        # Can be disabled via config for performance testing (wav2vec2 is CPU-intensive)
         google_api_key = self.config.get("conversation", {}).get("llm", {}).get("api_key")
+        server_config = self.config.get("server", {})
+        emotion_enabled = server_config.get("emotion_detection_enabled", True)
+        logger.info(f"Emotion detection enabled: {emotion_enabled}")
         self.tone_processor = ToneAwareProcessor(
             cooldown_seconds=3.0,  # Cooldown between voice switches
-            enabled=True,
+            enabled=emotion_enabled,  # Read from config - can disable for performance
             groq_api_key=google_api_key,  # Pass Google API key for LLM text sentiment (Gemini)
         )
 
