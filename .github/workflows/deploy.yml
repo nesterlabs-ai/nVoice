@@ -307,6 +307,8 @@ jobs:
                 image: ghcr.io/nesterlabs-ai/nesteraibot-frontend:$IMAGE_TAG
                 container_name: nester-frontend
                 restart: always
+                environment:
+                  - BACKEND_URL=$PUBLIC_URL
                 expose:
                   - "80"
                 networks:
