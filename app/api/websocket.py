@@ -46,14 +46,23 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.audio.vad.vad_analyzer import VADParams
 
-        # Get VAD configuration - using config.yaml values as defaults
+        # Get VAD configuration from config.yaml
+        # IMPORTANT: Defaults are SENSITIVE to ensure speech detection works
+        # If VAD is too strict, user speech won't be detected at all
         server_config = voice_assistant_server.server_config
         vad_config = server_config.get("vad", {})
+
+        # Log raw config to debug why config values aren't being applied
+        logger.info(f"[Session {session_id}] 📋 Raw server_config keys: {list(server_config.keys())}")
+        logger.info(f"[Session {session_id}] 📋 Raw vad_config: {vad_config}")
+
+        # Use SENSITIVE defaults - web audio needs lower thresholds
+        # These defaults ensure speech is detected even if config isn't loaded
         vad_params = VADParams(
-            confidence=vad_config.get("confidence", 0.8),
-            start_secs=vad_config.get("start_secs", 0.25),
-            stop_secs=vad_config.get("stop_secs", 0.8),
-            min_volume=vad_config.get("min_volume", 0.7),
+            confidence=vad_config.get("confidence", 0.5),      # LOW - detect most speech
+            start_secs=vad_config.get("start_secs", 0.2),      # FAST - quick response
+            stop_secs=vad_config.get("stop_secs", 0.8),        # REASONABLE wait
+            min_volume=vad_config.get("min_volume", 0.4),      # LOW - detect quiet speech
         )
         vad_analyzer = SileroVADAnalyzer(params=vad_params)
 
