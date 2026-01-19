@@ -80,11 +80,12 @@ class VoiceAssistant:
         )
 
         # Tone-aware processor for dynamic voice selection using MSP-PODCAST + LLM text sentiment
-        groq_api_key = self.config.get("conversation", {}).get("llm", {}).get("api_key")
+        # Uses Google API key for Gemini-based text sentiment detection
+        google_api_key = self.config.get("conversation", {}).get("llm", {}).get("api_key")
         self.tone_processor = ToneAwareProcessor(
             cooldown_seconds=3.0,  # Cooldown between voice switches
             enabled=True,
-            groq_api_key=groq_api_key,  # Pass Groq API key for LLM text sentiment
+            groq_api_key=google_api_key,  # Pass Google API key for LLM text sentiment (Gemini)
         )
 
         # Text filter processor to remove markdown before TTS
@@ -232,6 +233,8 @@ class VoiceAssistant:
             params=PipelineParams(
                 enable_metrics=enable_metrics,
                 enable_usage_metrics=enable_metrics,
+                idle_timeout_secs=60,  # Increased from default ~5s to prevent premature cancellation
+                report_only_initial_ttfb=True,  # Only report first TTFB for cleaner metrics
             ),
             observers=[RTVIObserver(self.rtvi)],
         )

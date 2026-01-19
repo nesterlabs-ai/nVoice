@@ -1,23 +1,29 @@
 """
-LLM-based text sentiment detector using Groq/Llama.
+LLM-based text sentiment detector using Google Gemini.
 
 This module provides contextual emotion detection from text using an LLM,
 replacing the BERT model for better accuracy and contextual understanding.
 
-Model: Llama 3.3 70B via Groq API
+Model: Gemini 2.0 Flash via Google AI API
 Classes: frustrated, excited, sad, neutral
-Cost: ~20-50 tokens per detection
-Latency: 50-100ms (Groq is extremely fast)
+Cost: Very low (Gemini Flash is cost-effective)
+Latency: 100-200ms
 Accuracy: ~95%+ with contextual understanding
 """
 
 from typing import Dict, Optional
 from loguru import logger
-from openai import OpenAI
+
+try:
+    import google.generativeai as genai
+    GOOGLE_AI_AVAILABLE = True
+except ImportError:
+    GOOGLE_AI_AVAILABLE = False
+    logger.warning("google-generativeai not installed. Run: pip install google-generativeai")
 
 
 class LLMTextSentiment:
-    """Contextual text sentiment detector using Groq/Llama LLM."""
+    """Contextual text sentiment detector using Google Gemini."""
 
     # Map LLM emotions to our 4 core emotions with dimensional scores
     EMOTION_DIMENSIONS = {
@@ -30,22 +36,27 @@ class LLMTextSentiment:
     def __init__(
         self,
         api_key: str,
-        model: str = "llama-3.3-70b-versatile",
-        base_url: str = "https://api.groq.com/openai/v1"
+        model: str = "gemini-2.0-flash",
     ):
         """Initialize the LLM sentiment detector.
 
         Args:
-            api_key: Groq API key
-            model: Model name (default: llama-3.3-70b-versatile)
-            base_url: Groq API base URL
+            api_key: Google AI API key
+            model: Model name (default: gemini-2.0-flash)
         """
         self.api_key = api_key
         self.model = model
-        self.base_url = base_url
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.client = None
 
-        logger.info(f"LLM Text Sentiment initialized (model: {model}, provider: Groq)")
+        if not GOOGLE_AI_AVAILABLE:
+            logger.error("Google AI SDK not available. Text sentiment will fail.")
+            return
+
+        # Configure Google AI
+        genai.configure(api_key=api_key)
+        self.client = genai.GenerativeModel(model)
+
+        logger.info(f"LLM Text Sentiment initialized (model: {model}, provider: Google AI)")
 
     def detect_emotion(self, text: str) -> Dict:
         """Detect emotion from text using LLM.
@@ -66,9 +77,12 @@ class LLMTextSentiment:
         if not text or not text.strip():
             return self._neutral_result("Empty text")
 
+        if not self.client:
+            return self._neutral_result("Google AI client not initialized")
+
         try:
             # Craft prompt for emotion detection
-            system_prompt = """You are an emotion detection expert. Analyze the emotional tone of user messages.
+            prompt = """You are an emotion detection expert. Analyze the emotional tone of user messages.
 Respond with ONLY ONE WORD from these options: frustrated, excited, sad, neutral
 
 Examples:
@@ -77,25 +91,26 @@ Examples:
 - "I'm feeling down today" → sad
 - "Okay, thanks" → neutral
 
-Analyze the OVERALL emotional tone, considering context and word choice."""
+Analyze the OVERALL emotional tone, considering context and word choice.
 
-            user_prompt = f'Analyze the emotion in this text: "{text}"'
+Analyze the emotion in this text: "{text}"
 
-            # Call LLM
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.3,  # Low temperature for consistent results
-                max_tokens=10,  # Only need 1 word
-                top_p=1.0
+Your response (one word only):"""
+
+            # Call Google Gemini
+            response = self.client.generate_content(
+                prompt.format(text=text),
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,  # Low temperature for consistent results
+                    max_output_tokens=10,  # Only need 1 word
+                )
             )
 
             # Extract emotion
-            raw_response = response.choices[0].message.content.strip().lower()
-            tokens_used = response.usage.total_tokens
+            raw_response = response.text.strip().lower()
+
+            # Estimate tokens (Google doesn't always return token count directly)
+            tokens_used = len(text.split()) + len(raw_response.split()) + 50  # Rough estimate
 
             # Parse emotion (handle extra text)
             detected_emotion = "neutral"
@@ -112,7 +127,7 @@ Analyze the OVERALL emotional tone, considering context and word choice."""
 
             logger.debug(
                 f"LLM sentiment: '{text[:50]}...' → {detected_emotion} "
-                f"(tokens: {tokens_used}, conf: {confidence:.2f})"
+                f"(tokens: ~{tokens_used}, conf: {confidence:.2f})"
             )
 
             return {
@@ -165,9 +180,9 @@ Analyze the OVERALL emotional tone, considering context and word choice."""
         """Get detector status."""
         return {
             "model": self.model,
-            "provider": "groq",
-            "base_url": self.base_url,
-            "cost": "~$0.05-0.10 per 1000 detections",
+            "provider": "google_ai",
+            "available": GOOGLE_AI_AVAILABLE and self.client is not None,
+            "cost": "Very low (Gemini Flash)",
             "tokens_per_detection": "~20-50"
         }
 
@@ -180,11 +195,11 @@ def get_llm_detector(api_key: str = None) -> LLMTextSentiment:
     """Get or create global LLM detector instance.
 
     Args:
-        api_key: Groq API key (required on first call)
+        api_key: Google AI API key (required on first call)
     """
     global _llm_detector
     if _llm_detector is None:
         if api_key is None:
-            raise ValueError("API key required to initialize LLM detector")
+            raise ValueError("Google API key required to initialize LLM detector")
         _llm_detector = LLMTextSentiment(api_key=api_key)
     return _llm_detector

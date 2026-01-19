@@ -3,13 +3,13 @@ Hybrid Emotion Detector - Combines Audio + Text Sentiment Analysis.
 
 This module implements a sophisticated emotion detection system that fuses:
 1. Audio emotion from MSP-PODCAST wav2vec2 (70% weight)
-2. Text sentiment from BERT boltuix/bert-emotion (30% weight)
+2. Text sentiment from Google Gemini LLM (30% weight)
 
 Features:
 - Dynamic weight adjustment based on confidence scores
 - Emotion mismatch detection (sarcasm, politeness masking)
 - Dimensional emotion fusion (arousal, valence, dominance)
-- Zero LLM token usage for text sentiment
+- Fast LLM inference via Google Gemini Flash
 """
 
 import math
@@ -35,7 +35,7 @@ class HybridEmotionDetector:
 
         Args:
             audio_detector: Audio emotion detector (MSP or SpeechBrain)
-            llm_api_key: Groq API key for LLM text sentiment
+            llm_api_key: Google AI API key for Gemini text sentiment
             default_audio_weight: Default weight for audio emotion (0-1)
             default_text_weight: Default weight for text sentiment (0-1)
             min_confidence: Minimum confidence threshold

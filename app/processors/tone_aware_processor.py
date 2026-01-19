@@ -77,7 +77,7 @@ class ToneAwareProcessor(FrameProcessor):
         cooldown_seconds: float = 2.0,  # Slightly longer for stability
         enabled: bool = True,
         use_hybrid_mode: bool = True,  # NEW: Enable hybrid audio+text detection
-        groq_api_key: str = None,  # NEW: Groq API key for LLM text sentiment
+        groq_api_key: str = None,  # LLM API key for text sentiment (supports Google Gemini)
         **kwargs
     ):
         """Initialize the ToneAwareProcessor.
@@ -87,7 +87,7 @@ class ToneAwareProcessor(FrameProcessor):
             cooldown_seconds: Minimum time between voice switches
             enabled: Whether to enable tone-aware voice switching
             use_hybrid_mode: Use hybrid audio+text emotion detection (default: True)
-            groq_api_key: Groq API key for LLM-based text sentiment (required for hybrid mode)
+            groq_api_key: LLM API key for text sentiment (Google Gemini API key)
             **kwargs: Additional arguments passed to FrameProcessor
         """
         super().__init__(**kwargs)
@@ -98,11 +98,11 @@ class ToneAwareProcessor(FrameProcessor):
         # Text-based fallback detector
         self.tone_detector = ToneDetector(cooldown_seconds=cooldown_seconds)
 
-        # NEW: Hybrid emotion detector (audio + LLM text sentiment)
+        # NEW: Hybrid emotion detector (audio + LLM text sentiment via Google Gemini)
         self.use_hybrid_mode = use_hybrid_mode
         self.hybrid_detector = HybridEmotionDetector(
             audio_detector=self.emotion_detector,
-            llm_api_key=groq_api_key
+            llm_api_key=groq_api_key  # Now uses Google Gemini API
         ) if use_hybrid_mode else None
 
         self.tts_service = tts_service

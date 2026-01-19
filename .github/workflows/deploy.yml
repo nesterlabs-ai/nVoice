@@ -257,7 +257,7 @@ jobs:
               reverse_proxy nester-frontend:80
             }
             EOF
-            echo "✅ Caddyfile created for domain: $DOMAIN"
+            echo "✅ Caddyfile created for domain: $DOMAIN (HTTPS enabled)"
             
             # === CREATE DOCKER COMPOSE FILE ===
             echo "📝 Creating docker-compose.https.yml..."
