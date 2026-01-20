@@ -222,11 +222,11 @@ server:
   # Uses MSP-PODCAST wav2vec2 + Google Gemini for hybrid audio+text sentiment
   emotion_detection_enabled: true
 
-  # VAD settings - SENSITIVE to ensure speech detection works
-  # Web audio from browsers needs lower thresholds than local mic
-  # If these are too strict, the bot won't hear the user at all
+  # VAD settings - BALANCED to reduce false interruptions from background noise
+  # Higher values = stricter (less sensitive to noise, but may miss quiet speech)
+  # Lower values = more sensitive (catches quiet speech, but may pick up noise)
   vad:
-    confidence: 0.5        # LOW - detect most speech patterns
-    start_secs: 0.2        # FAST - respond quickly to speech
-    stop_secs: 0.8         # Wait 800ms of silence before ending
-    min_volume: 0.4        # LOW - detect quieter speech from web mics
+    confidence: 0.85       # HIGH - only trigger on clear speech (reduces noise triggers)
+    start_secs: 0.4        # SLOWER - require 400ms of speech before triggering (filters short noises)
+    stop_secs: 1.0         # Wait 1s of silence before ending utterance
+    min_volume: 0.6        # MEDIUM - ignore quiet background noise
