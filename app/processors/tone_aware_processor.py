@@ -148,6 +148,9 @@ class ToneAwareProcessor(FrameProcessor):
         # VAD threshold for silence detection
         self._vad_threshold: int = 500  # Skip audio below this amplitude
 
+        # A2UI query capture - forward user queries to VisualHintProcessor
+        self._visual_hint_processor = None
+
         mode_str = "HYBRID (Audio 70% + LLM Text 30%)" if use_hybrid_mode else "AUDIO-ONLY"
         logger.info(
             f"ToneAwareProcessor {mode_str}: MSP-PODCAST, conf=0.25, buffer=1000ms, "
@@ -175,6 +178,15 @@ class ToneAwareProcessor(FrameProcessor):
         """
         self.tts_service = tts_service
         logger.info("TTS service connected to ToneAwareProcessor")
+
+    def set_visual_hint_processor(self, visual_hint_processor) -> None:
+        """Set the VisualHintProcessor reference for A2UI query capture.
+
+        Args:
+            visual_hint_processor: The VisualHintProcessor instance
+        """
+        self._visual_hint_processor = visual_hint_processor
+        logger.info("🎨 VisualHintProcessor connected to ToneAwareProcessor for A2UI query capture")
 
     def _can_switch_cooldown(self) -> bool:
         """Check if cooldown period has passed since last switch."""
@@ -278,6 +290,11 @@ class ToneAwareProcessor(FrameProcessor):
             if text and text.strip():
                 self._latest_transcript = text
                 logger.info(f"💾 Stored transcript for hybrid: '{text[:50]}'...")
+
+                # Forward to VisualHintProcessor for A2UI query capture
+                if self._visual_hint_processor is not None:
+                    self._visual_hint_processor.set_current_query(text)
+                    logger.debug(f"🎨 Forwarded query to VisualHintProcessor: '{text[:50]}...'")
 
             # If MSP-PODCAST not connected, use text-based detection
             if not self.emotion_detector.is_connected and text and text.strip():

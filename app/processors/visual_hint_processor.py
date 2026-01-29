@@ -1,10 +1,11 @@
 """
-Visual Hint Processor - Streaming text and content-aware visual hints.
+Visual Hint Processor - Streaming text and A2UI visual generation.
 
 This processor intercepts LLM text output and:
 1. Emits streaming_text events word-by-word for animated display
-2. Detects content types (contact, services, greeting, pricing, projects)
-3. Emits visual_hint events to trigger frontend card templates
+2. Uses A2UI 3-tier orchestrator to detect appropriate visual templates
+3. Generates A2UI JSON for rich visual card rendering in frontend
+4. Emits visual_hint events (legacy) and a2ui_update events (new)
 """
 
 import re
@@ -15,6 +16,20 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 from pipecat.frames.frames import Frame, TextFrame, OutputTransportMessageFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+
+# Import A2UI system
+try:
+    from app.services.a2ui import A2UIGenerator, detect_tier, get_tier_metadata
+    A2UI_AVAILABLE = True
+    logger.info("=" * 60)
+    logger.info("🎨 A2UI SYSTEM IMPORTED SUCCESSFULLY")
+    logger.info("=" * 60)
+except ImportError as e:
+    A2UI_AVAILABLE = False
+    logger.warning("=" * 60)
+    logger.warning(f"⚠️ A2UI system not available: {e}")
+    logger.warning("   Using legacy visual hints only")
+    logger.warning("=" * 60)
 
 
 class VisualHintProcessor(FrameProcessor):
@@ -178,6 +193,7 @@ class VisualHintProcessor(FrameProcessor):
         stream_words: bool = True,
         detect_content: bool = True,
         min_confidence: float = 0.5,  # Increased threshold for more precise triggering
+        use_a2ui: bool = True,  # Enable A2UI system for visual generation
         **kwargs
     ):
         """Initialize the Visual Hint Processor.
@@ -187,23 +203,38 @@ class VisualHintProcessor(FrameProcessor):
             stream_words: Whether to emit streaming text events
             detect_content: Whether to detect content for visual hints
             min_confidence: Minimum confidence for content detection
+            use_a2ui: Enable A2UI 3-tier visual generation system
         """
         super().__init__(**kwargs)
         self.enabled = enabled
         self.stream_words = stream_words
         self.detect_content = detect_content
         self.min_confidence = min_confidence
+        self.use_a2ui = use_a2ui and A2UI_AVAILABLE
+
+        # Initialize A2UI generator if enabled
+        self._a2ui_generator: Optional[A2UIGenerator] = None
+        if self.use_a2ui:
+            logger.info("🎨 Initializing A2UI Generator...")
+            self._a2ui_generator = A2UIGenerator(enabled=True)
+            logger.info("✅ A2UI Generator initialized successfully")
+            logger.info("   A2UI will generate visual cards from LLM responses")
+        else:
+            logger.info("⚠️ A2UI Generator NOT initialized (use_a2ui=False or not available)")
 
         # State tracking
         self._current_utterance_id: Optional[str] = None
         self._sequence_counter: int = 0
         self._text_buffer: str = ""
+        self._current_query: str = ""  # Store the user's query for A2UI
         self._last_hint_times: Dict[str, float] = {}  # Track cooldowns per content type
         self._emitted_hints_this_utterance: set = set()  # Prevent duplicate hints
+        self._a2ui_emitted_this_utterance: bool = False  # Prevent duplicate A2UI
 
         logger.info(
             f"VisualHintProcessor initialized: "
-            f"enabled={enabled}, stream_words={stream_words}, detect_content={detect_content}"
+            f"enabled={enabled}, stream_words={stream_words}, detect_content={detect_content}, "
+            f"use_a2ui={self.use_a2ui}"
         )
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
@@ -235,9 +266,14 @@ class VisualHintProcessor(FrameProcessor):
                 # Buffer text for content detection
                 self._text_buffer += text
 
-                # Detect content patterns and emit visual hints
+                # Detect content patterns and emit visual hints (legacy)
                 if self.detect_content:
                     await self._detect_and_emit_hints()
+
+                # NOTE: A2UI generation is now handled ONLY via RAG calls
+                # The ConversationManager triggers A2UI when call_rag_system is invoked
+                # This prevents A2UI from triggering on every LLM response
+                # See: ConversationManager._handle_rag_call() -> A2UIRAGService.query()
 
         # Always pass frame downstream to TTS
         await self.push_frame(frame, direction)
@@ -458,6 +494,107 @@ class VisualHintProcessor(FrameProcessor):
             self._sequence_counter = 0
             self._text_buffer = ""
             self._emitted_hints_this_utterance = set()
+            self._a2ui_emitted_this_utterance = False
+
+    def set_current_query(self, query: str) -> None:
+        """Set the current user query for A2UI generation.
+
+        Call this when a new user query is received, before LLM response.
+
+        Args:
+            query: The user's question/query text
+        """
+        self._current_query = query
+        self._a2ui_emitted_this_utterance = False
+        logger.debug(f"Set current query for A2UI: {query[:50]}...")
+
+    async def _generate_and_emit_a2ui(self) -> None:
+        """Generate A2UI visual component and emit to frontend.
+
+        Called when enough text has been buffered to generate a meaningful visual.
+        """
+        logger.debug("🎨 _generate_and_emit_a2ui called")
+        logger.debug(f"   use_a2ui: {self.use_a2ui}")
+        logger.debug(f"   generator exists: {self._a2ui_generator is not None}")
+        logger.debug(f"   already emitted: {self._a2ui_emitted_this_utterance}")
+        logger.debug(f"   buffer length: {len(self._text_buffer)}")
+        
+        if not self.use_a2ui or not self._a2ui_generator:
+            logger.debug("   ⏭️ Skipping: A2UI not enabled or generator not available")
+            return
+
+        if self._a2ui_emitted_this_utterance:
+            logger.debug("   ⏭️ Skipping: A2UI already emitted for this utterance")
+            return
+
+        # Only generate if we have enough context
+        if len(self._text_buffer) < 50:
+            logger.debug(f"   ⏭️ Skipping: Buffer too small ({len(self._text_buffer)} < 50)")
+            return
+
+        # Generate A2UI document
+        logger.info("=" * 60)
+        logger.info("🎨 A2UI GENERATION TRIGGERED")
+        logger.info(f"   Query: '{self._current_query[:50] if self._current_query else 'N/A'}...'")
+        logger.info(f"   Buffer: {len(self._text_buffer)} chars")
+        logger.info("=" * 60)
+        
+        try:
+            a2ui_doc = self._a2ui_generator.generate(
+                query=self._current_query or "Information",
+                llm_response=self._text_buffer
+            )
+
+            if a2ui_doc:
+                logger.info("✅ A2UI document generated successfully!")
+                logger.info(f"   Template: {a2ui_doc.get('root', {}).get('type', 'unknown')}")
+                logger.info(f"   Tier: {a2ui_doc.get('_metadata', {}).get('tier_name', 'unknown')}")
+                await self._emit_a2ui_update(a2ui_doc)
+                self._a2ui_emitted_this_utterance = True
+            else:
+                logger.warning("⚠️ A2UI generator returned None")
+
+        except Exception as e:
+            logger.error(f"❌ A2UI generation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    async def _emit_a2ui_update(self, a2ui_doc: Dict[str, Any]) -> None:
+        """Emit A2UI update event to frontend.
+
+        Args:
+            a2ui_doc: A2UI document structure
+        """
+        logger.info("📤 EMITTING A2UI UPDATE TO FRONTEND")
+        
+        message = {
+            "label": "rtvi-ai",
+            "type": "server-message",
+            "data": {
+                "message_type": "a2ui_update",
+                "a2ui": a2ui_doc,
+                "utterance_id": self._current_utterance_id,
+                "timestamp": time.time(),
+            }
+        }
+
+        template_type = a2ui_doc.get('root', {}).get('type', 'unknown')
+        tier = a2ui_doc.get('_metadata', {}).get('tier', 'unknown')
+        tier_name = a2ui_doc.get('_metadata', {}).get('tier_name', 'unknown')
+        
+        logger.info(f"   Message type: a2ui_update")
+        logger.info(f"   Template: {template_type}")
+        logger.info(f"   Tier: {tier} ({tier_name})")
+        logger.info(f"   Utterance ID: {self._current_utterance_id}")
+
+        try:
+            data_frame = OutputTransportMessageFrame(message=message)
+            await self.push_frame(data_frame)
+            logger.info("✅ A2UI update pushed to transport successfully!")
+        except Exception as e:
+            logger.error(f"❌ Failed to emit A2UI update: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def get_status(self) -> Dict[str, Any]:
         """Get processor status.
@@ -469,8 +606,10 @@ class VisualHintProcessor(FrameProcessor):
             "enabled": self.enabled,
             "stream_words": self.stream_words,
             "detect_content": self.detect_content,
+            "use_a2ui": self.use_a2ui,
             "current_utterance_id": self._current_utterance_id,
             "sequence_counter": self._sequence_counter,
             "buffer_length": len(self._text_buffer),
+            "current_query": self._current_query[:50] if self._current_query else None,
             "content_types": list(self.CONTENT_PATTERNS.keys()),
         }

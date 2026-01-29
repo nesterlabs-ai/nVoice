@@ -93,6 +93,12 @@ class TextFilterProcessor(FrameProcessor):
         # Clean up multiple newlines
         text = re.sub(r'\n\s*\n', '\n', text)
 
+        # Escape XML/SSML special characters to prevent TTS errors
+        # The & character must be escaped FIRST (before other escapes that use &)
+        text = text.replace('&', ' and ')  # Replace & with "and" for natural speech
+        text = text.replace('<', '')  # Remove < (could break SSML)
+        text = text.replace('>', '')  # Remove > (could break SSML)
+
         # Strip leading/trailing whitespace
         text = text.strip()
 

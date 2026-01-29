@@ -267,8 +267,21 @@
     <div class="rich-content-inner" id="rich-content-inner"></div>
   </div>
 
+  <!-- A2UI Visual Cards Container -->
+  <div class="a2ui-panel glass-panel" id="a2ui-panel">
+    <button class="a2ui-panel-close" id="a2ui-close" aria-label="Close visual panel">&times;</button>
+    <div class="panel-header">
+      <span class="panel-title">VISUAL RESPONSE</span>
+      <span class="panel-status" id="a2ui-status">READY</span>
+    </div>
+    <div class="a2ui-content" id="a2ui-container">
+      <!-- A2UI components will be rendered here -->
+    </div>
+  </div>
+
   <script type="module" src="/src/app.ts"></script>
   <link rel="stylesheet" href="/src/style.css">
+  <link rel="stylesheet" href="/src/components/a2ui/a2ui-styles.css">
 </body>
 
 </html>

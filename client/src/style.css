@@ -1424,3 +1424,159 @@ body {
 .live-dot { color: var(--success-color); animation: live-blink 1.5s infinite; }
 .emotion-timeline-container { margin-top: 12px; }
 .timeline-label { font-size: 0.6rem; color: var(--text-secondary); }
+
+/* ===== A2UI PANEL ===== */
+.a2ui-panel {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 800px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  z-index: 80;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.a2ui-panel.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.a2ui-panel .panel-header {
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.5);
+  border-bottom: 1px solid rgba(55, 182, 255, 0.2);
+  border-radius: var(--panel-radius) var(--panel-radius) 0 0;
+}
+
+.a2ui-panel .panel-title {
+  font-size: 0.7rem;
+  color: var(--accent-primary);
+  letter-spacing: 1.5px;
+  font-weight: 600;
+}
+
+.a2ui-panel .panel-status {
+  font-size: 0.6rem;
+  color: var(--success-color);
+  letter-spacing: 1px;
+  transition: color 0.3s ease;
+}
+
+.a2ui-panel .panel-status.active {
+  color: var(--accent-primary);
+  animation: status-pulse 1s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.a2ui-content {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(60vh - 50px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-border) transparent;
+}
+
+.a2ui-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.a2ui-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.a2ui-content::-webkit-scrollbar-thumb {
+  background: var(--panel-border);
+  border-radius: 3px;
+}
+
+.a2ui-content::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
+}
+
+/* A2UI Empty State */
+.a2ui-content:empty::before {
+  content: 'Visual response will appear here';
+  display: block;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  padding: 32px 16px;
+  opacity: 0.6;
+}
+
+/* A2UI Panel Close Button */
+.a2ui-panel-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.a2ui-panel-close:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: var(--error-color);
+  color: var(--error-color);
+}
+
+/* Responsive A2UI Panel */
+@media (max-width: 1024px) {
+  .a2ui-panel {
+    width: 95%;
+    max-width: none;
+    bottom: 60px;
+    max-height: 50vh;
+  }
+
+  .a2ui-content {
+    max-height: calc(50vh - 50px);
+    padding: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .a2ui-panel {
+    width: 100%;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    border-radius: var(--panel-radius) var(--panel-radius) 0 0;
+    max-height: 45vh;
+  }
+
+  .a2ui-panel .panel-header {
+    border-radius: var(--panel-radius) var(--panel-radius) 0 0;
+  }
+
+  .a2ui-content {
+    max-height: calc(45vh - 50px);
+  }
+}

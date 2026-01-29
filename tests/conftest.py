@@ -66,5 +66,3 @@ def mock_env_vars(monkeypatch):
     """Set up mock environment variables for testing."""
     monkeypatch.setenv("DEEPGRAM_API_KEY", "test_deepgram_key")
     monkeypatch.setenv("OPENAI_API_KEY", "test_openai_key")
-    monkeypatch.setenv("PINECONE_API_KEY", "test_pinecone_key")
-    monkeypatch.setenv("PINECONE_INDEX", "test_index")

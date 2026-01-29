@@ -2,15 +2,19 @@
 
 This module orchestrates the conversation flow and manages LLM interactions,
 coordinating between input analysis, RAG processing, and response generation.
+
+A2UI Integration:
+- When RAG is called, A2UI templates can be filled from knowledge base
+- A2UI updates are emitted to frontend for visual rendering
 """
 
 import re
-from typing import Dict, Any
+from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
-from pipecat.frames.frames import TTSSpeakFrame, EndFrame
+from pipecat.frames.frames import TTSSpeakFrame, EndFrame, OutputTransportMessageFrame
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.google.llm import GoogleLLMService
@@ -18,7 +22,15 @@ from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.services.llm_service import FunctionCallParams, LLMService
 
 from app.services.input_analyzer import InputAnalyzer
-from app.services.rag import RAGService
+from app.services.rag import RAGService, LightRAGService, A2UIResponse
+
+# Import A2UI system
+try:
+    from app.services.a2ui import A2UIRAGService, get_a2ui_rag_service
+    A2UI_AVAILABLE = True
+except ImportError as e:
+    A2UI_AVAILABLE = False
+    logger.warning(f"A2UI system not available: {e}")
 
 # Voice constant (default only - actual voice is controlled by ToneAwareProcessor)
 DEFAULT_VOICE = "aura-2-athena-en"  # Natural, clear female voice - default
@@ -59,14 +71,16 @@ class ConversationManager:
                  input_analyzer: InputAnalyzer,
                  rag_service: RAGService,
                  llm_config: Dict[str, Any] = None,
-                 language_config: Dict[str, Any] = None):
+                 language_config: Dict[str, Any] = None,
+                 a2ui_enabled: bool = True):
         """Initialize the Conversation Manager.
-        
+
         Args:
             input_analyzer: Input analyzer service instance
             rag_service: RAG service instance
             llm_config: Configuration for the LLM service
             language_config: Language configuration settings
+            a2ui_enabled: Enable A2UI visual generation from RAG responses
         """
         self.input_analyzer = input_analyzer
         self.rag_service = rag_service
@@ -77,6 +91,25 @@ class ConversationManager:
         self.context_aggregator = None
         self.context = None  # Store OpenAILLMContext for greeting access
         self._thinking_phrase_index = 0  # Counter for cycling through phrases
+
+        # A2UI integration
+        self._a2ui_enabled = a2ui_enabled and A2UI_AVAILABLE
+        self._a2ui_rag_service: Optional[A2UIRAGService] = None
+        self._a2ui_callback: Optional[Callable] = None  # Callback to emit A2UI to frontend
+
+        if self._a2ui_enabled:
+            logger.info("🎨 A2UI enabled for RAG responses")
+            if isinstance(rag_service, LightRAGService):
+                self._a2ui_rag_service = get_a2ui_rag_service(
+                    rag_service=rag_service,
+                    enabled=True,
+                    tier_mode="auto",
+                )
+                logger.info("✅ A2UI RAG Service initialized with full LightRAG support")
+            else:
+                logger.warning("⚠️ RAG service is not LightRAG - A2UI will use local generation only")
+        else:
+            logger.info("A2UI disabled or not available")
 
         logger.info("Initialized Conversation Manager")
 
@@ -123,9 +156,20 @@ class ConversationManager:
 
         return self.llm_service
 
+    def set_a2ui_callback(self, callback: Callable) -> None:
+        """Set the callback function for emitting A2UI updates to frontend.
+
+        The callback receives an A2UI document dict and should emit it to the transport.
+
+        Args:
+            callback: Async function that takes (a2ui_doc: Dict, query: str) and emits to frontend
+        """
+        self._a2ui_callback = callback
+        logger.info("🎨 A2UI callback registered for frontend updates")
+
     def _get_next_thinking_phrase(self) -> str:
         """Get the next thinking phrase in the cycle.
-        
+
         Returns:
             The next thinking phrase, cycling through the list linearly.
         """
@@ -196,27 +240,85 @@ class ConversationManager:
         
         return text
 
+    def _is_error_response(self, text: str) -> bool:
+        """Heuristic to detect RAG error responses."""
+        if not text:
+            return True
+        normalized = text.strip().lower()
+        return (
+            "i encountered an error while searching the knowledge base" in normalized
+            or "i apologize, but i encountered an error" in normalized
+            or "error while searching the knowledge base" in normalized
+            or normalized.startswith("i encountered an error")
+            or normalized.startswith("i apologize, but i encountered an error")
+        )
+
     async def _handle_rag_call(self, params: FunctionCallParams) -> None:
-        """Handle RAG system function calls.
+        """Handle RAG system function calls with A2UI support.
+
+        Uses a single sequential query that retrieves both text and A2UI template
+        from the same LightRAG call. This avoids connection pooling issues that
+        occur with parallel requests.
 
         Args:
             params: Function call parameters
         """
+        import time
         question = params.arguments.get("question", "")
 
         try:
             logger.info(f"Processing RAG call for: {question}")
+            start_time = time.time()
 
-            # TODO: Voice switching during function calls breaks the pipeline
-            # Need to implement via TTSUpdateSettingsFrame or similar mechanism
-            # For now, RAG responses use the current voice set by ToneAwareProcessor
+            # If A2UI is enabled, use the A2UI RAG service for combined query
+            if self._a2ui_enabled and self._a2ui_rag_service:
+                logger.info("🎨 Using SEQUENTIAL RAG + A2UI pipeline...")
 
-            response = await self.rag_service.get_response(question)
-            # Strip markdown formatting for voice output
-            cleaned_response = self._strip_markdown(response)
-            await params.result_callback(cleaned_response)
+                # Single query that returns both text and A2UI template
+                a2ui_response: A2UIResponse = await self._a2ui_rag_service.query(
+                    query=question,
+                    force_text_only=False,
+                )
+
+                elapsed_ms = (time.time() - start_time) * 1000
+                logger.info(f"⏱️ RAG+A2UI query completed in {elapsed_ms:.1f}ms")
+
+                # Check for error responses
+                if self._is_error_response(a2ui_response.text):
+                    logger.warning("⚠️ RAG returned error text")
+                    await params.result_callback(a2ui_response.text)
+                    return
+
+                # Strip markdown for voice output
+                cleaned_response = self._strip_markdown(a2ui_response.text)
+
+                # Send text response to LLM -> TTS
+                await params.result_callback(cleaned_response)
+
+                # If we got an A2UI document, emit it to frontend
+                if a2ui_response.a2ui and self._a2ui_callback:
+                    logger.info(f"📤 Emitting A2UI update to frontend: {a2ui_response.template_type}")
+                    try:
+                        await self._a2ui_callback(a2ui_response.a2ui, question)
+                        logger.info("✅ A2UI emitted successfully")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to emit A2UI update: {e}")
+                else:
+                    logger.info("ℹ️ No A2UI template generated for this query")
+
+            else:
+                # Standard RAG query without A2UI
+                response = await self.rag_service.get_response(question)
+                # Strip markdown formatting for voice output
+                cleaned_response = self._strip_markdown(response)
+                await params.result_callback(cleaned_response)
+
+            logger.info(f"✅ RAG call completed for: {question[:50]}...")
+
         except Exception as e:
             logger.error(f"Error in RAG call: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             error_response = f"I apologize, but I encountered an error while processing your question: {str(e)}"
             await params.result_callback(error_response)
 
@@ -312,11 +414,12 @@ RESPONSE RULES:
 - RESPOND DIRECTLY for: greetings, how are you, thank you, goodbye
 - USE call_rag_system for: questions about specific topics, facts, or information
 
-CRITICAL RAG RULES:
-- When you receive function results, summarize the key points BRIEFLY
-- Extract only the most relevant information from RAG results
-- Never give long explanations - keep it conversational
-- If RAG returns detailed info, pick the 2-3 most important points only
+CRITICAL RAG RULES (SPEED IS IMPORTANT):
+- When you receive RAG function results, READ THEM DIRECTLY to the user
+- Do NOT rephrase, summarize, or reprocess RAG results - just speak them naturally
+- The RAG system already provides well-formatted answers - trust them
+- Only add a brief intro like "Here's what I found:" if needed
+- NEVER delay speaking by over-processing the RAG response
 """
         
         # CRITICAL: Add explicit identity enforcement at the start

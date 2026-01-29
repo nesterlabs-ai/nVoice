@@ -56,13 +56,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         logger.info(f"[Session {session_id}] 📋 Raw server_config keys: {list(server_config.keys())}")
         logger.info(f"[Session {session_id}] 📋 Raw vad_config: {vad_config}")
 
-        # Use STRICTER defaults to reduce false interruptions from background noise
-        # These defaults prevent the bot from being interrupted by noise
+        # Balanced VAD settings for interruption support
+        # Lower thresholds allow barge-in, MinWordsInterruptionStrategy filters backchanneling
+        # Note: start_secs must be low enough to catch short words like "hello" (~0.5s)
         vad_params = VADParams(
-            confidence=vad_config.get("confidence", 0.85),     # HIGH - only clear speech triggers
-            start_secs=vad_config.get("start_secs", 0.4),      # SLOWER - filter short noises
-            stop_secs=vad_config.get("stop_secs", 1.0),        # Wait 1s before ending
-            min_volume=vad_config.get("min_volume", 0.6),      # MEDIUM - ignore quiet noise
+            confidence=vad_config.get("confidence", 0.6),      # MEDIUM-LOW - detect speech including soft "hello"
+            start_secs=vad_config.get("start_secs", 0.15),     # FAST - catch short words like "hello"
+            stop_secs=vad_config.get("stop_secs", 0.6),        # Shorter pause to end speech quickly
+            min_volume=vad_config.get("min_volume", 0.5),      # LOW - catch softer speech
         )
         vad_analyzer = SileroVADAnalyzer(params=vad_params)
 

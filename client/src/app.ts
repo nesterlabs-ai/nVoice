@@ -22,6 +22,10 @@ import {
   WebSocketTransport
 } from "@pipecat-ai/websocket-transport";
 
+// A2UI imports
+import { A2UIRenderer } from './components/a2ui/A2UIRenderer';
+import { A2UIDocument, isA2UIUpdate } from './types/a2ui';
+
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 class VoiceScannerApp {
@@ -88,6 +92,11 @@ class VoiceScannerApp {
   // Visual cards state
   private activeVisualCard: HTMLElement | null = null;
   private visualCardsContainer: HTMLElement | null = null;
+
+  // A2UI state
+  private a2uiRenderer: A2UIRenderer | null = null;
+  private a2uiPanel: HTMLElement | null = null;
+  private a2uiStatus: HTMLElement | null = null;
 
   // Emotion-reactive UI state
   private lastEmotionUpdate: number = 0;
@@ -160,6 +169,13 @@ class VoiceScannerApp {
     this.waveformCanvas = document.getElementById('waveform-canvas') as HTMLCanvasElement;
     this.circularCanvas = document.getElementById('circular-canvas') as HTMLCanvasElement;
     this.preloaderCanvas = document.getElementById('preloader-canvas') as HTMLCanvasElement;
+
+    // A2UI elements
+    this.a2uiPanel = document.getElementById('a2ui-panel');
+    this.a2uiStatus = document.getElementById('a2ui-status');
+
+    // Initialize A2UI renderer
+    this.initializeA2UIRenderer();
   }
 
   private setupEventListeners(): void {
@@ -172,6 +188,10 @@ class VoiceScannerApp {
 
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
+
+    // A2UI panel close button
+    const a2uiClose = document.getElementById('a2ui-close');
+    a2uiClose?.addEventListener('click', () => this.hideA2UIPanel());
   }
 
   /**
@@ -1095,6 +1115,20 @@ class VoiceScannerApp {
                   console.log('[Visual Hint] Received:', messageData.hint_type);
                   this.handleVisualHint(messageData);
                   break;
+                case 'a2ui_update':
+                  console.log('='.repeat(60));
+                  console.log('🎨 [A2UI] *** A2UI_UPDATE MESSAGE RECEIVED ***');
+                  console.log('   Raw messageData:', messageData);
+                  console.log('   isA2UIUpdate check:', isA2UIUpdate(messageData));
+                  if (isA2UIUpdate(messageData)) {
+                    console.log('✅ [A2UI] Valid A2UI update - calling handleA2UIUpdate');
+                    this.handleA2UIUpdate(messageData);
+                  } else {
+                    console.warn('⚠️ [A2UI] Invalid A2UI update format');
+                    console.warn('   Expected: message_type="a2ui_update" and a2ui object');
+                  }
+                  console.log('='.repeat(60));
+                  break;
               }
             } catch (e) {
               console.error('[Visual] Error handling server message:', e);
@@ -1154,6 +1188,9 @@ class VoiceScannerApp {
       }
 
       this.stopAudioVisualization();
+
+      // Clear A2UI display
+      this.clearA2UI();
 
       this.isConnecting = false;
       this.isConnected = false;
@@ -1963,6 +2000,139 @@ class VoiceScannerApp {
         card.remove();
       }, 300);
       this.activeVisualCard = null;
+    }
+  }
+
+  // ===== A2UI RENDERING METHODS =====
+
+  /**
+   * Initialize the A2UI renderer
+   */
+  private initializeA2UIRenderer(): void {
+    console.log('='.repeat(60));
+    console.log('🎨 [A2UI] Initializing A2UI Renderer...');
+    try {
+      this.a2uiRenderer = new A2UIRenderer('a2ui-container');
+      this.log('A2UI renderer initialized');
+      this.addTerminalMessage('a2ui.renderer.init();', 'command');
+      console.log('✅ [A2UI] A2UIRenderer created successfully');
+      console.log('   Panel element:', this.a2uiPanel);
+      console.log('   Status element:', this.a2uiStatus);
+      console.log('='.repeat(60));
+    } catch (error) {
+      console.error('='.repeat(60));
+      console.error('❌ [A2UI] Failed to initialize A2UI renderer:', error);
+      console.error('='.repeat(60));
+      this.log('A2UI renderer initialization failed');
+    }
+  }
+
+  /**
+   * Handle A2UI update events from the backend
+   */
+  private handleA2UIUpdate(data: {
+    a2ui: A2UIDocument;
+    query?: string;
+    tier?: string;
+    template_type?: string;
+    timestamp?: number;
+  }): void {
+    console.log('='.repeat(60));
+    console.log('🎨 [A2UI] handleA2UIUpdate CALLED');
+    console.log('   Full data received:', data);
+    console.log('   Renderer exists:', !!this.a2uiRenderer);
+    console.log('   A2UI doc exists:', !!data.a2ui);
+    
+    if (!this.a2uiRenderer || !data.a2ui) {
+      console.warn('⚠️ [A2UI] Renderer not available or no A2UI data');
+      console.warn('   Renderer:', this.a2uiRenderer);
+      console.warn('   Data:', data);
+      console.log('='.repeat(60));
+      return;
+    }
+
+    const templateType = data.a2ui.root?.type || 'unknown';
+    const tier = data.tier || data.a2ui._metadata?.tier || 'auto';
+    const tierName = data.a2ui._metadata?.tier_name || 'unknown';
+    
+    console.log('📋 [A2UI] Document details:');
+    console.log(`   Template type: ${templateType}`);
+    console.log(`   Tier: ${tier} (${tierName})`);
+    console.log(`   Query: ${data.query || 'N/A'}`);
+    console.log(`   Timestamp: ${data.timestamp}`);
+
+    // Update status indicator
+    if (this.a2uiStatus) {
+      this.a2uiStatus.textContent = 'RENDERING';
+      this.a2uiStatus.classList.add('active');
+      console.log('📊 [A2UI] Status updated to RENDERING');
+    }
+
+    // Show the A2UI panel if hidden
+    if (this.a2uiPanel) {
+      this.a2uiPanel.classList.add('visible');
+      console.log('📺 [A2UI] Panel made visible');
+    }
+
+    try {
+      console.log('🔄 [A2UI] Calling renderer.render()...');
+      // Render the A2UI document
+      this.a2uiRenderer.render(data.a2ui);
+
+      // Log to terminal
+      this.addTerminalMessage(`a2ui.render({ type: '${templateType}', tier: '${tier}' });`, 'command');
+      this.log(`A2UI rendered: ${templateType} (${tier})`);
+      
+      console.log('✅ [A2UI] Render completed successfully!');
+
+      // Update status after render
+      setTimeout(() => {
+        if (this.a2uiStatus) {
+          this.a2uiStatus.textContent = 'READY';
+          this.a2uiStatus.classList.remove('active');
+          console.log('📊 [A2UI] Status updated to READY');
+        }
+      }, 500);
+
+    } catch (error) {
+      console.error('❌ [A2UI] Render error:', error);
+      this.addTerminalMessage(`a2ui.error: ${(error as Error).message}`, 'error');
+
+      if (this.a2uiStatus) {
+        this.a2uiStatus.textContent = 'ERROR';
+        this.a2uiStatus.classList.remove('active');
+      }
+    }
+    console.log('='.repeat(60));
+  }
+
+  /**
+   * Clear the A2UI display
+   */
+  private clearA2UI(): void {
+    if (this.a2uiRenderer) {
+      this.a2uiRenderer.clear();
+    }
+    if (this.a2uiStatus) {
+      this.a2uiStatus.textContent = 'READY';
+    }
+  }
+
+  /**
+   * Hide the A2UI panel
+   */
+  private hideA2UIPanel(): void {
+    if (this.a2uiPanel) {
+      this.a2uiPanel.classList.remove('visible');
+    }
+  }
+
+  /**
+   * Show the A2UI panel
+   */
+  private showA2UIPanel(): void {
+    if (this.a2uiPanel) {
+      this.a2uiPanel.classList.add('visible');
     }
   }
 

@@ -22,6 +22,14 @@ from pipecat.processors.filters.stt_mute_filter import STTMuteFilter, STTMuteCon
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.transports.base_transport import BaseTransport
 
+# Import interruption strategy for barge-in support
+try:
+    from pipecat.audio.interruptions.min_words_interruption_strategy import MinWordsInterruptionStrategy
+    INTERRUPTION_STRATEGY_AVAILABLE = True
+except ImportError:
+    INTERRUPTION_STRATEGY_AVAILABLE = False
+    logger.warning("MinWordsInterruptionStrategy not available - interruptions may not work correctly")
+
 from app.services.conversation import ConversationManager
 from app.services.input_analyzer import InputAnalyzer
 from app.services.latency import LatencyAnalyzer
@@ -95,12 +103,17 @@ class VoiceAssistant:
         # Text filter processor to remove markdown before TTS
         self.text_filter = TextFilterProcessor(enabled=True)
 
-        # Visual hint processor for streaming text and dynamic visual cards
-        # DISABLED - visual cards removed from frontend
+        # Visual hint processor - now minimal, A2UI is handled via RAG calls only
+        # A2UI (Agent-to-UI) is triggered ONLY when call_rag_system is invoked
+        # This prevents visual cards from showing on every LLM response
+        a2ui_config = self.config.get("a2ui", {})
+        a2ui_enabled = a2ui_config.get("enabled", True)
+        logger.info(f"🎨 A2UI system enabled (RAG-triggered only): {a2ui_enabled}")
         self.visual_hint_processor = VisualHintProcessor(
-            enabled=False,
+            enabled=False,  # Disable visual hint processor entirely
             stream_words=False,
-            detect_content=False,
+            detect_content=False,  # Disable legacy visual hints
+            use_a2ui=False,  # A2UI now handled via RAG calls in ConversationManager
         )
 
         # Store LLM and context references for greeting injection
@@ -143,9 +156,12 @@ class VoiceAssistant:
         rag_config = self.config.get("rag", {})
         self.rag_service = create_rag_service(rag_config)
 
-        # Initialize Conversation Manager
+        # Initialize Conversation Manager with A2UI support
         conversation_config = self.config.get("conversation", {})
         language_config = self.config.get("language", {})
+        a2ui_config = self.config.get("a2ui", {})
+        a2ui_enabled = a2ui_config.get("enabled", True)
+
         # Include system_prompt in llm_config so ConversationManager can access it
         llm_config = conversation_config.get("llm", {}).copy()
         llm_config["system_prompt"] = conversation_config.get("system_prompt", "")
@@ -154,6 +170,7 @@ class VoiceAssistant:
             rag_service=self.rag_service,
             llm_config=llm_config,
             language_config=language_config,
+            a2ui_enabled=a2ui_enabled,
         )
 
         logger.info("All services initialized successfully")
@@ -189,6 +206,13 @@ class VoiceAssistant:
 
         # Connect TTS to tone processor for dynamic voice switching
         self.tone_processor.set_tts_service(tts)
+
+        # Connect VisualHintProcessor to ToneProcessor for A2UI query capture
+        self.tone_processor.set_visual_hint_processor(self.visual_hint_processor)
+
+        # Set up A2UI callback for emitting visual updates from RAG responses
+        # This enables the full LightRAG + A2UI pipeline
+        self.conversation_manager.set_a2ui_callback(self._emit_a2ui_update)
 
         # Initialize SpeechBrain wav2vec2-large for emotion detection
         await self.tone_processor.initialize()
@@ -232,14 +256,27 @@ class VoiceAssistant:
         if not self.pipeline:
             raise ValueError("Pipeline must be created before creating task")
 
+        # Build pipeline params with interruption support
+        pipeline_params = PipelineParams(
+            enable_metrics=enable_metrics,
+            enable_usage_metrics=enable_metrics,
+            idle_timeout_secs=60,  # Increased from default ~5s to prevent premature cancellation
+            report_only_initial_ttfb=True,  # Only report first TTFB for cleaner metrics
+            allow_interruptions=True,  # Enable barge-in - user can interrupt bot speech
+        )
+
+        # Add interruption strategy if available (requires 2+ words to interrupt)
+        # Note: This ONLY applies when interrupting bot speech
+        # Normal input (when bot is silent) accepts any speech including "hello"
+        if INTERRUPTION_STRATEGY_AVAILABLE:
+            pipeline_params.interruption_strategies = [MinWordsInterruptionStrategy(min_words=2)]
+            logger.info("🎤 Interruption enabled: MinWordsInterruptionStrategy (min_words=2)")
+        else:
+            logger.warning("⚠️ Interruption strategy not available - using basic allow_interruptions")
+
         self.task = PipelineTask(
             self.pipeline,
-            params=PipelineParams(
-                enable_metrics=enable_metrics,
-                enable_usage_metrics=enable_metrics,
-                idle_timeout_secs=60,  # Increased from default ~5s to prevent premature cancellation
-                report_only_initial_ttfb=True,  # Only report first TTFB for cleaner metrics
-            ),
+            params=pipeline_params,
             observers=[RTVIObserver(self.rtvi)],
         )
 
@@ -314,6 +351,46 @@ class VoiceAssistant:
         await self.runner.run(self.task)
 
         logger.info("Voice Assistant stopped")
+
+    async def _emit_a2ui_update(self, a2ui_doc: Dict[str, Any], query: str) -> None:
+        """Emit A2UI update to frontend via the pipeline.
+
+        This callback is called by ConversationManager when A2UI is generated from RAG.
+
+        Args:
+            a2ui_doc: A2UI document structure
+            query: Original user query
+        """
+        import time
+
+        logger.info("=" * 60)
+        logger.info("📤 EMITTING A2UI UPDATE FROM RAG PIPELINE")
+        logger.info(f"   Query: '{query[:50]}...'")
+        logger.info(f"   Template: {a2ui_doc.get('root', {}).get('type', 'unknown')}")
+        logger.info(f"   Tier: {a2ui_doc.get('_metadata', {}).get('tier_name', 'unknown')}")
+        logger.info("=" * 60)
+
+        message = {
+            "label": "rtvi-ai",
+            "type": "server-message",
+            "data": {
+                "message_type": "a2ui_update",
+                "a2ui": a2ui_doc,
+                "query": query,
+                "timestamp": time.time(),
+            }
+        }
+
+        try:
+            # Push the A2UI update through the RTVI processor
+            from pipecat.frames.frames import OutputTransportMessageFrame
+            data_frame = OutputTransportMessageFrame(message=message)
+            await self.rtvi.push_frame(data_frame)
+            logger.info("✅ A2UI update emitted to frontend successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to emit A2UI update: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def get_service_status(self) -> Dict[str, Any]:
         """Get the status of all services.

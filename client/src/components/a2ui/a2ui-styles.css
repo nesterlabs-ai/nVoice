@@ -1,0 +1,855 @@
+/**
+ * A2UI Component Styles for Nester AI Voice Assistant
+ *
+ * Dark theme styling for all A2UI visual components.
+ * Uses CSS variables for easy theming.
+ */
+
+/* ==================== CSS Variables ==================== */
+:root {
+  --a2ui-bg-primary: rgba(20, 20, 25, 0.95);
+  --a2ui-bg-secondary: rgba(30, 30, 38, 0.9);
+  --a2ui-bg-card: rgba(40, 40, 50, 0.85);
+  --a2ui-border: rgba(100, 100, 120, 0.3);
+  --a2ui-text-primary: #ffffff;
+  --a2ui-text-secondary: rgba(255, 255, 255, 0.7);
+  --a2ui-text-muted: rgba(255, 255, 255, 0.5);
+  --a2ui-accent: #6366f1;
+  --a2ui-accent-light: #818cf8;
+  --a2ui-success: #10b981;
+  --a2ui-warning: #f59e0b;
+  --a2ui-danger: #ef4444;
+  --a2ui-radius: 12px;
+  --a2ui-radius-sm: 8px;
+  --a2ui-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --a2ui-transition: all 0.3s ease;
+}
+
+/* ==================== Base Wrapper ==================== */
+.a2ui-wrapper {
+  width: 100%;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.a2ui-fade-in {
+  animation: a2uiFadeIn 0.4s ease-out;
+}
+
+@keyframes a2uiFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tier badge */
+.a2ui-tier-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 10px;
+  background: var(--a2ui-accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+}
+
+/* ==================== Simple Card ==================== */
+.a2ui-simple-card {
+  background: var(--a2ui-bg-card);
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius);
+  padding: 20px;
+  box-shadow: var(--a2ui-shadow);
+}
+
+.a2ui-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.a2ui-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--a2ui-accent);
+}
+
+.a2ui-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.a2ui-card-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-card-content p {
+  margin: 0;
+  color: var(--a2ui-text-secondary);
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+/* ==================== Template Grid ==================== */
+.a2ui-template-grid {
+  background: var(--a2ui-bg-secondary);
+  border-radius: var(--a2ui-radius);
+  padding: 20px;
+}
+
+.a2ui-grid-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.a2ui-grid-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-grid-count {
+  font-size: 12px;
+  color: var(--a2ui-text-muted);
+  background: var(--a2ui-bg-card);
+  padding: 4px 12px;
+  border-radius: 20px;
+}
+
+.a2ui-grid-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.a2ui-grid-item {
+  background: var(--a2ui-bg-card);
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius-sm);
+  padding: 16px;
+  transition: var(--a2ui-transition);
+  animation: a2uiFadeIn 0.3s ease-out backwards;
+}
+
+.a2ui-grid-item:hover {
+  border-color: var(--a2ui-accent);
+  transform: translateY(-2px);
+}
+
+.a2ui-item-header {
+  margin-bottom: 8px;
+}
+
+.a2ui-item-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-item-category {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--a2ui-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.a2ui-item-description {
+  margin: 0;
+  font-size: 12px;
+  color: var(--a2ui-text-secondary);
+  line-height: 1.5;
+}
+
+/* ==================== Timeline ==================== */
+.a2ui-timeline {
+  padding: 20px;
+}
+
+.a2ui-timeline-title {
+  margin: 0 0 24px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-timeline-events {
+  position: relative;
+  padding-left: 24px;
+}
+
+.a2ui-timeline-events::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--a2ui-border);
+}
+
+.a2ui-timeline-event {
+  position: relative;
+  margin-bottom: 24px;
+  animation: a2uiFadeIn 0.4s ease-out backwards;
+}
+
+.a2ui-timeline-event:last-child {
+  margin-bottom: 0;
+}
+
+.a2ui-event-marker {
+  position: absolute;
+  left: -24px;
+  top: 0;
+  width: 14px;
+  height: 14px;
+  background: var(--a2ui-accent);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.a2ui-event-year {
+  position: absolute;
+  left: 20px;
+  top: -2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--a2ui-accent);
+  white-space: nowrap;
+}
+
+.a2ui-event-content {
+  background: var(--a2ui-bg-card);
+  border-radius: var(--a2ui-radius-sm);
+  padding: 16px;
+  margin-left: 60px;
+}
+
+.a2ui-event-title {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-event-description {
+  margin: 0;
+  font-size: 12px;
+  color: var(--a2ui-text-secondary);
+  line-height: 1.5;
+}
+
+/* ==================== Contact Card ==================== */
+.a2ui-contact-card {
+  background: var(--a2ui-bg-secondary);
+  border-radius: var(--a2ui-radius);
+  padding: 20px;
+}
+
+.a2ui-contact-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-contact-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.a2ui-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--a2ui-bg-card);
+  border-radius: var(--a2ui-radius-sm);
+  transition: var(--a2ui-transition);
+}
+
+.a2ui-contact-item:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.a2ui-contact-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--a2ui-accent);
+  border-radius: 50%;
+  color: white;
+  flex-shrink: 0;
+}
+
+.a2ui-contact-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.a2ui-contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.a2ui-contact-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-contact-desc {
+  font-size: 11px;
+  color: var(--a2ui-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ==================== Comparison Chart ==================== */
+.a2ui-comparison-chart {
+  background: var(--a2ui-bg-secondary);
+  border-radius: var(--a2ui-radius);
+  padding: 20px;
+  overflow-x: auto;
+}
+
+.a2ui-comparison-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-comparison-table {
+  display: flex;
+  gap: 16px;
+  min-width: max-content;
+}
+
+.a2ui-comparison-column {
+  flex: 1;
+  min-width: 180px;
+  background: var(--a2ui-bg-card);
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius-sm);
+  overflow: hidden;
+}
+
+.a2ui-comparison-column.a2ui-recommended {
+  border-color: var(--a2ui-accent);
+  box-shadow: 0 0 0 1px var(--a2ui-accent);
+}
+
+.a2ui-comparison-header {
+  padding: 16px;
+  background: rgba(99, 102, 241, 0.1);
+  text-align: center;
+}
+
+.a2ui-comparison-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-badge {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 8px;
+  background: var(--a2ui-accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 10px;
+}
+
+.a2ui-comparison-features {
+  padding: 8px;
+}
+
+.a2ui-comparison-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  border-bottom: 1px solid var(--a2ui-border);
+}
+
+.a2ui-comparison-row:last-child {
+  border-bottom: none;
+}
+
+.a2ui-feature-name {
+  font-size: 12px;
+  color: var(--a2ui-text-secondary);
+}
+
+.a2ui-feature-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+/* ==================== Stats Flow Layout ==================== */
+.a2ui-stats-flow {
+  background: var(--a2ui-bg-secondary);
+  border-radius: var(--a2ui-radius);
+  padding: 20px;
+}
+
+.a2ui-stats-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.a2ui-stats-row:last-child {
+  margin-bottom: 0;
+}
+
+.a2ui-stat-card {
+  background: var(--a2ui-bg-card);
+  border-radius: var(--a2ui-radius-sm);
+  padding: 16px;
+  text-align: center;
+  transition: var(--a2ui-transition);
+}
+
+.a2ui-stat-card:hover {
+  transform: scale(1.02);
+}
+
+.a2ui-stat-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--a2ui-accent);
+  margin-bottom: 4px;
+}
+
+.a2ui-stat-label {
+  font-size: 11px;
+  color: var(--a2ui-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ==================== Team Flip Cards ==================== */
+.a2ui-team-cards {
+  padding: 20px;
+}
+
+.a2ui-team-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.a2ui-team-card {
+  position: relative;
+  height: 200px;
+  perspective: 1000px;
+  cursor: pointer;
+}
+
+.a2ui-team-front,
+.a2ui-team-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: var(--a2ui-radius-sm);
+  transition: transform 0.6s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.a2ui-team-front {
+  background: var(--a2ui-bg-card);
+  border: 1px solid var(--a2ui-border);
+}
+
+.a2ui-team-back {
+  background: var(--a2ui-accent);
+  transform: rotateY(180deg);
+}
+
+.a2ui-team-card.flipped .a2ui-team-front {
+  transform: rotateY(180deg);
+}
+
+.a2ui-team-card.flipped .a2ui-team-back {
+  transform: rotateY(0deg);
+}
+
+.a2ui-team-avatar {
+  width: 60px;
+  height: 60px;
+  background: var(--a2ui-accent);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.a2ui-team-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+  text-align: center;
+}
+
+.a2ui-team-role {
+  font-size: 11px;
+  color: var(--a2ui-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+.a2ui-team-bio {
+  margin: 0;
+  font-size: 12px;
+  color: white;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ==================== Service Hover Reveal ==================== */
+.a2ui-services {
+  padding: 20px;
+}
+
+.a2ui-services-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-services-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.a2ui-service-item {
+  background: var(--a2ui-bg-card);
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius-sm);
+  overflow: hidden;
+  transition: var(--a2ui-transition);
+}
+
+.a2ui-service-item:hover {
+  border-color: var(--a2ui-accent);
+}
+
+.a2ui-service-header {
+  padding: 16px;
+  cursor: pointer;
+}
+
+.a2ui-service-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-service-reveal {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.a2ui-service-item:hover .a2ui-service-reveal {
+  max-height: 200px;
+}
+
+.a2ui-service-reveal p {
+  margin: 0;
+  padding: 16px;
+  font-size: 12px;
+  color: var(--a2ui-text-secondary);
+  line-height: 1.5;
+}
+
+/* ==================== Magazine Hero ==================== */
+.a2ui-magazine-hero {
+  background: var(--a2ui-bg-secondary);
+  border-radius: var(--a2ui-radius);
+  padding: 32px;
+}
+
+.a2ui-hero-header {
+  margin-bottom: 24px;
+}
+
+.a2ui-hero-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--a2ui-text-primary);
+  line-height: 1.3;
+}
+
+.a2ui-hero-subtitle {
+  margin: 12px 0 0 0;
+  font-size: 16px;
+  color: var(--a2ui-text-secondary);
+}
+
+.a2ui-hero-quote {
+  margin: 0 0 24px 0;
+  padding: 20px 24px;
+  border-left: 4px solid var(--a2ui-accent);
+  background: var(--a2ui-bg-card);
+  font-size: 16px;
+  font-style: italic;
+  color: var(--a2ui-text-secondary);
+  border-radius: 0 var(--a2ui-radius-sm) var(--a2ui-radius-sm) 0;
+}
+
+.a2ui-hero-content p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--a2ui-text-secondary);
+  line-height: 1.8;
+}
+
+.a2ui-hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.a2ui-tag {
+  padding: 4px 12px;
+  background: var(--a2ui-bg-card);
+  color: var(--a2ui-text-muted);
+  font-size: 11px;
+  border-radius: 20px;
+}
+
+/* ==================== FAQ Accordion ==================== */
+.a2ui-faq-accordion {
+  padding: 20px;
+}
+
+.a2ui-faq-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.a2ui-faq-item {
+  background: var(--a2ui-bg-card);
+  border: 1px solid var(--a2ui-border);
+  border-radius: var(--a2ui-radius-sm);
+  overflow: hidden;
+}
+
+.a2ui-faq-question {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--a2ui-text-primary);
+  transition: var(--a2ui-transition);
+}
+
+.a2ui-faq-question:hover {
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.a2ui-faq-icon {
+  font-size: 20px;
+  color: var(--a2ui-accent);
+  transition: transform 0.3s;
+}
+
+.a2ui-faq-item.open .a2ui-faq-icon {
+  transform: rotate(45deg);
+}
+
+.a2ui-faq-answer {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.a2ui-faq-item.open .a2ui-faq-answer {
+  max-height: 500px;
+}
+
+.a2ui-faq-answer p {
+  margin: 0;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--a2ui-text-secondary);
+  line-height: 1.6;
+}
+
+/* ==================== Image Gallery ==================== */
+.a2ui-image-gallery,
+.a2ui-video-gallery {
+  padding: 20px;
+}
+
+.a2ui-gallery-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--a2ui-text-primary);
+}
+
+.a2ui-gallery-grid,
+.a2ui-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.a2ui-gallery-item {
+  position: relative;
+  border-radius: var(--a2ui-radius-sm);
+  overflow: hidden;
+  aspect-ratio: 4/3;
+}
+
+.a2ui-gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s;
+}
+
+.a2ui-gallery-item:hover img {
+  transform: scale(1.05);
+}
+
+.a2ui-gallery-caption {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  font-size: 11px;
+  color: white;
+}
+
+.a2ui-video-item {
+  background: var(--a2ui-bg-card);
+  border-radius: var(--a2ui-radius-sm);
+  overflow: hidden;
+}
+
+.a2ui-video-embed {
+  position: relative;
+  padding-bottom: 56.25%;
+}
+
+.a2ui-video-embed iframe {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.a2ui-video-title {
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--a2ui-text-primary);
+}
+
+/* ==================== Responsive ==================== */
+@media (max-width: 768px) {
+  .a2ui-wrapper {
+    padding: 12px;
+  }
+
+  .a2ui-grid-items {
+    grid-template-columns: 1fr;
+  }
+
+  .a2ui-comparison-table {
+    flex-direction: column;
+  }
+
+  .a2ui-comparison-column {
+    min-width: 100%;
+  }
+
+  .a2ui-team-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .a2ui-hero-title {
+    font-size: 22px;
+  }
+}
