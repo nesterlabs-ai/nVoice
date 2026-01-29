@@ -65,18 +65,36 @@ class VoiceScannerApp {
   private waveformCanvas: HTMLCanvasElement | null = null;
   private circularCanvas: HTMLCanvasElement | null = null;
   private preloaderCanvas: HTMLCanvasElement | null = null;
+  private geminiWaveCanvas: HTMLCanvasElement | null = null;
   private waveformCtx: CanvasRenderingContext2D | null = null;
   private circularCtx: CanvasRenderingContext2D | null = null;
   private preloaderCtx: CanvasRenderingContext2D | null = null;
+  private geminiWaveCtx: CanvasRenderingContext2D | null = null;
 
-  // Audio analysis
+  // Audio analysis - Dual source for Gemini-style visualization
   private audioContext: AudioContext | null = null;
-  private analyser: AnalyserNode | null = null;
+  private analyser: AnalyserNode | null = null;  // Output (bot) audio
+  private inputAnalyser: AnalyserNode | null = null;  // Input (mic) audio
   private dataArray: Uint8Array | null = null;
+  private inputDataArray: Uint8Array | null = null;
   private animationFrame: number | null = null;
 
+  // Gemini blob animation state
+  private blobTime: number = 0;
+  private blobPhase: number = 0;
+  private smoothedAmplitude: number = 0;
+  private targetAmplitude: number = 0;
+
+  // Audio-driven wave state - stores smoothed frequency data for organic transitions
+  private smoothedFrequencyData: number[] = new Array(64).fill(0);
+  private waveHistory: number[][] = []; // Store recent wave frames for trail effect
+
+  // Bot audio level from RTVI RemoteAudioLevel event
+  private botAudioLevel: number = 0;
+  private smoothedBotAudioLevel: number = 0;
+
   // Audio
-  private botAudio: HTMLAudioElement;
+  private botAudio!: HTMLAudioElement;
 
   // State
   private voiceState: VoiceState = 'idle';
@@ -136,9 +154,12 @@ class VoiceScannerApp {
   }
 
   private setupDOMElements(): void {
+    // Legacy elements (hidden but kept for compatibility)
     this.scannerFrame = document.getElementById('scanner-frame');
     this.orbContainer = document.getElementById('voice-orb-container');
     this.orbStatus = document.getElementById('orb-status');
+
+    // Main UI elements
     this.welcomeMessage = document.getElementById('welcome-message');
     this.transcriptList = document.getElementById('transcript-list');
     this.transcriptStatus = document.getElementById('transcript-status');
@@ -169,6 +190,7 @@ class VoiceScannerApp {
     this.waveformCanvas = document.getElementById('waveform-canvas') as HTMLCanvasElement;
     this.circularCanvas = document.getElementById('circular-canvas') as HTMLCanvasElement;
     this.preloaderCanvas = document.getElementById('preloader-canvas') as HTMLCanvasElement;
+    this.geminiWaveCanvas = document.getElementById('gemini-wave-canvas') as HTMLCanvasElement;
 
     // A2UI elements
     this.a2uiPanel = document.getElementById('a2ui-panel');
@@ -179,7 +201,14 @@ class VoiceScannerApp {
   }
 
   private setupEventListeners(): void {
-    // Scanner frame click handler (whole frame is clickable)
+    // New connect/disconnect buttons
+    const connectBtn = document.getElementById('connect-btn');
+    const disconnectBtn = document.getElementById('disconnect-btn');
+
+    connectBtn?.addEventListener('click', () => this.handleConnect());
+    disconnectBtn?.addEventListener('click', () => this.handleDisconnect());
+
+    // Legacy scanner frame click (if still exists)
     this.scannerFrame?.addEventListener('click', () => this.handleOrbClick());
 
     // Debug panel
@@ -195,6 +224,69 @@ class VoiceScannerApp {
   }
 
   /**
+   * Handle connect button click
+   */
+  private handleConnect(): void {
+    this.connect();
+  }
+
+  /**
+   * Handle disconnect button click
+   */
+  private handleDisconnect(): void {
+    this.disconnect();
+  }
+
+  /**
+   * Update UI for connection state
+   */
+  private updateConnectionUI(connected: boolean): void {
+    const connectArea = document.getElementById('connect-area');
+    const statusDisplay = document.getElementById('status-display');
+    const connectionStatus = document.getElementById('connection-status');
+
+    if (connected) {
+      connectArea?.classList.add('hidden');
+      statusDisplay?.classList.remove('hidden');
+      connectionStatus?.classList.add('online');
+      if (connectionStatus) connectionStatus.textContent = 'ONLINE';
+    } else {
+      connectArea?.classList.remove('hidden');
+      statusDisplay?.classList.add('hidden');
+      connectionStatus?.classList.remove('online');
+      if (connectionStatus) connectionStatus.textContent = 'OFFLINE';
+    }
+  }
+
+  /**
+   * Update status display based on voice state
+   */
+  private updateStatusDisplay(): void {
+    const statusDisplay = document.getElementById('status-display');
+    const statusText = document.getElementById('status-text');
+
+    if (!statusDisplay) return;
+
+    // Remove all state classes
+    statusDisplay.classList.remove('idle', 'listening', 'speaking', 'thinking');
+
+    // Add current state class
+    statusDisplay.classList.add(this.voiceState);
+
+    // Update status text
+    const stateTexts: Record<string, string> = {
+      idle: 'READY',
+      listening: 'LISTENING',
+      speaking: 'SPEAKING',
+      thinking: 'PROCESSING'
+    };
+
+    if (statusText) {
+      statusText.textContent = stateTexts[this.voiceState] || 'READY';
+    }
+  }
+
+  /**
    * Initialize canvas elements for visualizations
    */
   private initializeCanvases(): void {
@@ -206,14 +298,28 @@ class VoiceScannerApp {
       this.drawIdleWaveform();
     }
 
-    // Circular visualizer canvas
+    // Old circular canvas (kept for compatibility but hidden)
     if (this.circularCanvas) {
       const container = this.circularCanvas.parentElement;
       if (container) {
-        this.circularCanvas.width = container.offsetWidth;
-        this.circularCanvas.height = container.offsetHeight;
+        const size = Math.max(container.offsetWidth, container.offsetHeight) + 100;
+        this.circularCanvas.width = size;
+        this.circularCanvas.height = size;
       }
       this.circularCtx = this.circularCanvas.getContext('2d');
+    }
+
+    // Gemini-style bottom wave visualizer canvas
+    if (this.geminiWaveCanvas) {
+      const container = this.geminiWaveCanvas.parentElement;
+      if (container) {
+        this.geminiWaveCanvas.width = container.offsetWidth * 2;  // 2x for retina
+        this.geminiWaveCanvas.height = container.offsetHeight * 2;
+      }
+      this.geminiWaveCtx = this.geminiWaveCanvas.getContext('2d');
+
+      // Start the Gemini wave animation
+      this.startIdleBlobAnimation();
     }
 
     // Preloader canvas
@@ -424,31 +530,32 @@ class VoiceScannerApp {
   private setVoiceState(state: VoiceState): void {
     this.voiceState = state;
 
-    if (!this.scannerFrame || !this.orbContainer || !this.orbStatus) return;
+    // Update new status display UI
+    this.updateStatusDisplay();
 
-    // Remove all state classes from scanner frame
-    this.scannerFrame.classList.remove('idle', 'listening', 'thinking', 'speaking', 'connected');
-    this.orbContainer.classList.remove('idle', 'listening', 'thinking', 'speaking', 'connected');
+    // Legacy scanner frame updates (hidden but kept for compatibility)
+    if (this.scannerFrame && this.orbContainer) {
+      this.scannerFrame.classList.remove('idle', 'listening', 'thinking', 'speaking', 'connected');
+      this.orbContainer.classList.remove('idle', 'listening', 'thinking', 'speaking', 'connected');
+      this.scannerFrame.classList.add(state);
+      this.orbContainer.classList.add(state);
 
-    // Add current state
-    this.scannerFrame.classList.add(state);
-    this.orbContainer.classList.add(state);
-
-    // Add connected class if connected
-    if (this.isConnected) {
-      this.scannerFrame.classList.add('connected');
-      this.orbContainer.classList.add('connected');
+      if (this.isConnected) {
+        this.scannerFrame.classList.add('connected');
+        this.orbContainer.classList.add('connected');
+      }
     }
 
-    // Update status text (sci-fi style)
-    const statusTexts: Record<VoiceState, string> = {
-      'idle': this.isConnected ? 'TAP TO TERMINATE' : 'TAP TO INITIALIZE',
-      'listening': 'SCANNING VOICE INPUT...',
-      'thinking': 'PROCESSING SIGNAL...',
-      'speaking': 'TRANSMITTING RESPONSE...'
-    };
-
-    this.orbStatus.textContent = statusTexts[state];
+    // Update legacy status text
+    if (this.orbStatus) {
+      const statusTexts: Record<VoiceState, string> = {
+        'idle': this.isConnected ? 'TAP TO TERMINATE' : 'TAP TO INITIALIZE',
+        'listening': 'SCANNING VOICE INPUT...',
+        'thinking': 'PROCESSING SIGNAL...',
+        'speaking': 'TRANSMITTING RESPONSE...'
+      };
+      this.orbStatus.textContent = statusTexts[state];
+    }
 
     // Update status indicator
     if (this.statusIndicator) {
@@ -746,28 +853,10 @@ class VoiceScannerApp {
 
   /**
    * Start audio visualization
+   * The actual animation loop is in startIdleBlobAnimation which handles all states
    */
   private startAudioVisualization(): void {
-    if (!this.analyser || !this.dataArray) return;
-
-    const visualize = () => {
-      if (!this.isConnected) return;
-
-      this.analyser!.getByteFrequencyData(this.dataArray! as Uint8Array<ArrayBuffer>);
-
-      // Draw waveform
-      this.drawWaveform();
-
-      // Draw circular visualizer
-      this.drawCircularVisualizer();
-
-      // Update peak frequency
-      this.updatePeakFrequency();
-
-      this.animationFrame = requestAnimationFrame(visualize);
-    };
-
-    visualize();
+    // Animation loop is already running from startIdleBlobAnimation
   }
 
   /**
@@ -820,41 +909,214 @@ class VoiceScannerApp {
   }
 
   /**
-   * Draw circular audio visualizer
+   * Draw audio-driven wave visualizer at bottom of screen
    */
-  private drawCircularVisualizer(): void {
-    if (!this.circularCtx || !this.circularCanvas || !this.dataArray) return;
+  private drawGeminiBlob(): void {
+    if (!this.geminiWaveCtx || !this.geminiWaveCanvas) return;
 
-    const ctx = this.circularCtx;
-    const width = this.circularCanvas.width;
-    const height = this.circularCanvas.height;
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const radius = Math.min(width, height) / 2 - 50;
+    const ctx = this.geminiWaveCtx;
+    const width = this.geminiWaveCanvas.width;
+    const height = this.geminiWaveCanvas.height;
+
+    // Safety check for valid dimensions
+    if (width <= 0 || height <= 0) return;
+
+    const centerY = height * 0.5;
 
     ctx.clearRect(0, 0, width, height);
 
-    const bars = 64;
-    const barWidth = (Math.PI * 2) / bars;
+    // Update animation time
+    this.blobTime += 0.02;
+    this.blobPhase += 0.015;
 
-    for (let i = 0; i < bars; i++) {
-      const dataIndex = Math.floor(i * (this.dataArray.length / bars));
-      const value = this.dataArray[dataIndex] / 255;
-      const barHeight = value * 40 + 5;
+    // Get active audio data based on state
+    const activeDataArray = this.voiceState === 'speaking'
+      ? this.dataArray
+      : (this.voiceState === 'listening' ? this.inputDataArray : null);
 
-      const angle = i * barWidth - Math.PI / 2;
-      const x1 = centerX + Math.cos(angle) * radius;
-      const y1 = centerY + Math.sin(angle) * radius;
-      const x2 = centerX + Math.cos(angle) * (radius + barHeight);
-      const y2 = centerY + Math.sin(angle) * (radius + barHeight);
+    const numBars = this.smoothedFrequencyData.length;
 
-      ctx.strokeStyle = `rgba(55, 182, 255, ${0.3 + value * 0.7})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
+    // Update smoothed frequency data from actual audio OR simulated audio
+    if (activeDataArray && activeDataArray.length > 0 && (this.voiceState === 'speaking' || this.voiceState === 'listening')) {
+      // Real audio data available (mic input for listening state)
+      for (let i = 0; i < numBars; i++) {
+        const dataIndex = Math.floor((i / numBars) * activeDataArray.length * 0.8);
+        const rawValue = (activeDataArray[dataIndex] || 0) / 255;
+
+        // Apply noise gate threshold to filter out background noise (mouse clicks, scrolling, etc.)
+        const noiseThreshold = 0.08; // Ignore values below 8%
+        const gatedValue = rawValue > noiseThreshold ? (rawValue - noiseThreshold) / (1 - noiseThreshold) : 0;
+
+        // Less aggressive curve and multiplier for more controlled response
+        const targetValue = Math.pow(gatedValue, 0.8) * 1.4;
+
+        // Smooth transition (moderate attack, slower decay)
+        if (targetValue > this.smoothedFrequencyData[i]) {
+          this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.5;
+        } else {
+          this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.15;
+        }
+      }
+    } else if (this.voiceState === 'speaking') {
+      // Bot is speaking - use real audio level from RemoteAudioLevel event
+      // Smooth the bot audio level for better visualization
+      this.smoothedBotAudioLevel += (this.botAudioLevel - this.smoothedBotAudioLevel) * 0.3;
+
+      // Generate frequency-like visualization from the audio level
+      for (let i = 0; i < numBars; i++) {
+        // Voice frequencies tend to be concentrated in lower-mid range
+        const freqWeight = Math.exp(-Math.pow((i / numBars - 0.35) * 2.5, 2));
+
+        // Add variation based on position and time for organic feel
+        const timeVariation = Math.sin(this.blobTime * 3 + i * 0.4) * 0.15;
+        const randomVariation = (Math.random() - 0.5) * 0.1;
+
+        // Scale by the actual audio level (0-1 range typically)
+        const audioScale = this.smoothedBotAudioLevel * 2.5; // Boost the level for visibility
+        const targetValue = Math.max(0, Math.min(1,
+          (0.1 + audioScale * freqWeight + timeVariation + randomVariation * audioScale) * freqWeight
+        ));
+
+        // Smooth transition (fast attack, slower decay)
+        if (targetValue > this.smoothedFrequencyData[i]) {
+          this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.5;
+        } else {
+          this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.15;
+        }
+      }
+    } else {
+      // Idle/thinking animation
+      for (let i = 0; i < numBars; i++) {
+        let targetValue: number;
+        if (this.voiceState === 'thinking') {
+          targetValue = 0.15 + Math.sin(this.blobTime * 2 + i * 0.2) * 0.1;
+        } else {
+          targetValue = 0.05 + Math.sin(this.blobPhase + i * 0.1) * 0.03;
+        }
+        this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.1;
+      }
     }
+
+    // Calculate overall amplitude
+    let totalAmplitude = 0;
+    for (let i = 0; i < numBars; i++) {
+      totalAmplitude += this.smoothedFrequencyData[i];
+    }
+    this.smoothedAmplitude = totalAmplitude / numBars;
+
+    // State-based colors
+    let primaryColor: string;
+    let glowAlpha: number;
+
+    switch (this.voiceState) {
+      case 'idle':
+        primaryColor = '#ef3339';
+        glowAlpha = 0.15;
+        break;
+      case 'listening':
+        primaryColor = '#22c55e';
+        glowAlpha = 0.6;
+        break;
+      case 'thinking':
+        primaryColor = '#f97316';
+        glowAlpha = 0.4;
+        break;
+      case 'speaking':
+        primaryColor = '#ef3339';
+        glowAlpha = 0.7;
+        break;
+      default:
+        primaryColor = '#ef3339';
+        glowAlpha = 0.15;
+    }
+
+    const maxWaveHeight = height * 0.4;
+
+    // Get interpolated value from frequency data
+    const getAudioValue = (position: number): number => {
+      const idx = Math.max(0, Math.min(position, 1)) * (numBars - 1);
+      const i0 = Math.floor(idx);
+      const i1 = Math.min(i0 + 1, numBars - 1);
+      const t = idx - i0;
+      const v0 = this.smoothedFrequencyData[i0] || 0;
+      const v1 = this.smoothedFrequencyData[i1] || 0;
+      return v0 * (1 - t) + v1 * t;
+    };
+
+    // Draw filled wave shape
+    ctx.beginPath();
+    ctx.moveTo(0, centerY);
+
+    const numPoints = 80;
+
+    // Draw top half
+    for (let i = 0; i <= numPoints; i++) {
+      const x = (i / numPoints) * width;
+      const normalizedX = i / numPoints;
+
+      // Mirror from center for symmetric shape
+      const dataPosition = normalizedX <= 0.5 ? normalizedX * 2 : (1 - normalizedX) * 2;
+      const audioValue = getAudioValue(dataPosition);
+      const waveHeight = audioValue * maxWaveHeight;
+      const edgeFade = Math.sin(normalizedX * Math.PI);
+      const y = centerY - waveHeight * edgeFade;
+
+      ctx.lineTo(x, y);
+    }
+
+    // Draw bottom half (mirrored, smaller)
+    for (let i = numPoints; i >= 0; i--) {
+      const x = (i / numPoints) * width;
+      const normalizedX = i / numPoints;
+      const dataPosition = normalizedX <= 0.5 ? normalizedX * 2 : (1 - normalizedX) * 2;
+      const audioValue = getAudioValue(dataPosition);
+      const waveHeight = audioValue * maxWaveHeight * 0.5;
+      const edgeFade = Math.sin(normalizedX * Math.PI);
+      const y = centerY + waveHeight * edgeFade;
+
+      ctx.lineTo(x, y);
+    }
+
+    ctx.closePath();
+
+    // Fill with gradient
+    const gradient = ctx.createLinearGradient(0, centerY - maxWaveHeight, 0, centerY + maxWaveHeight);
+    gradient.addColorStop(0, primaryColor);
+    gradient.addColorStop(0.5, `${primaryColor}${Math.round(glowAlpha * 255).toString(16).padStart(2, '0')}`);
+    gradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Draw top line with glow
+    ctx.beginPath();
+    for (let i = 0; i <= numPoints; i++) {
+      const x = (i / numPoints) * width;
+      const normalizedX = i / numPoints;
+      const dataPosition = normalizedX <= 0.5 ? normalizedX * 2 : (1 - normalizedX) * 2;
+      const audioValue = getAudioValue(dataPosition);
+      const waveHeight = audioValue * maxWaveHeight;
+      const edgeFade = Math.sin(normalizedX * Math.PI);
+      const y = centerY - waveHeight * edgeFade;
+
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+
+    ctx.strokeStyle = primaryColor;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = primaryColor;
+    ctx.shadowBlur = 12;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Center line
+    ctx.beginPath();
+    ctx.moveTo(width * 0.05, centerY);
+    ctx.lineTo(width * 0.95, centerY);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 
   /**
@@ -901,9 +1163,9 @@ class VoiceScannerApp {
     // Reset displays
     this.drawIdleWaveform();
 
-    if (this.circularCtx && this.circularCanvas) {
-      this.circularCtx.clearRect(0, 0, this.circularCanvas.width, this.circularCanvas.height);
-    }
+    // Draw one final idle blob frame
+    this.smoothedAmplitude = 0;
+    this.drawGeminiBlob();
 
     const peakValue = document.getElementById('peak-value');
     if (peakValue) peakValue.textContent = '-- HZ';
@@ -913,31 +1175,112 @@ class VoiceScannerApp {
   }
 
   /**
-   * Set up audio track with visualization
+   * Start idle blob animation (runs even when not connected)
    */
-  private setupAudioTrack(track: MediaStreamTrack): void {
-    this.log('Audio track connected');
+  private startIdleBlobAnimation(): void {
+    if (this.animationFrame) return;
 
-    if (this.botAudio.srcObject && "getAudioTracks" in this.botAudio.srcObject) {
-      const oldTrack = this.botAudio.srcObject.getAudioTracks()[0];
-      if (oldTrack?.id === track.id) return;
-    }
+    const animate = () => {
+      // Read mic audio frequency data when user is speaking
+      if (this.voiceState === 'listening' && this.inputAnalyser && this.inputDataArray) {
+        this.inputAnalyser.getByteFrequencyData(this.inputDataArray as Uint8Array<ArrayBuffer>);
+      }
+
+      // Draw the main wave visualizer
+      this.drawGeminiBlob();
+
+      // When connected, also update other visualizations
+      if (this.isConnected) {
+        this.drawWaveform();
+        this.updatePeakFrequency();
+      }
+
+      this.animationFrame = requestAnimationFrame(animate);
+    };
+    animate();
+  }
+
+  /**
+   * Set up output audio track (bot voice) with visualization
+   */
+  private botAnalyserSetup = false;
+
+  private setupAudioTrack(track: MediaStreamTrack): void {
+    this.log('Bot audio track connected');
 
     const stream = new MediaStream([track]);
     this.botAudio.srcObject = stream;
 
     // Set up audio analysis for visualization
     try {
-      this.audioContext = new AudioContext();
-      const source = this.audioContext.createMediaStreamSource(stream);
-      this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 256;
-      source.connect(this.analyser);
-      this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+      if (!this.audioContext) {
+        this.audioContext = new AudioContext();
+      }
+
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+      }
+
+      // Only set up analyser once
+      if (!this.botAnalyserSetup) {
+        // Method 1: Try to capture stream from the audio element (works best for playback)
+        if ('captureStream' in this.botAudio) {
+          this.botAudio.onplay = () => {
+            if (this.botAnalyserSetup) return;
+            try {
+              const capturedStream = (this.botAudio as any).captureStream();
+              const source = this.audioContext!.createMediaStreamSource(capturedStream);
+              this.analyser = this.audioContext!.createAnalyser();
+              this.analyser.fftSize = 256;
+              this.analyser.smoothingTimeConstant = 0.5;
+              source.connect(this.analyser);
+              this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+              this.botAnalyserSetup = true;
+              console.log('[BOT AUDIO] Analyser set up via captureStream');
+            } catch (e) {
+              console.warn('[BOT AUDIO] captureStream failed:', e);
+            }
+          };
+        }
+
+        // Method 2: Also try direct MediaStreamSource as backup
+        const source = this.audioContext.createMediaStreamSource(stream);
+        this.analyser = this.audioContext.createAnalyser();
+        this.analyser.fftSize = 256;
+        this.analyser.smoothingTimeConstant = 0.5;
+        source.connect(this.analyser);
+        this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+        console.log('[BOT AUDIO] Analyser set up via MediaStreamSource');
+      }
 
       this.startAudioVisualization();
     } catch (e) {
-      console.warn('Could not set up audio visualization:', e);
+      console.warn('Could not set up output audio visualization:', e);
+    }
+  }
+
+  /**
+   * Set up input audio track (user microphone) with visualization
+   */
+  private setupInputAudioTrack(track: MediaStreamTrack): void {
+    this.log('Microphone audio track connected for visualization');
+
+    try {
+      if (!this.audioContext) {
+        this.audioContext = new AudioContext();
+      }
+
+      const stream = new MediaStream([track]);
+      const source = this.audioContext.createMediaStreamSource(stream);
+      this.inputAnalyser = this.audioContext.createAnalyser();
+      this.inputAnalyser.fftSize = 256;
+      this.inputAnalyser.smoothingTimeConstant = 0.7;
+      source.connect(this.inputAnalyser);
+      this.inputDataArray = new Uint8Array(this.inputAnalyser.frequencyBinCount);
+
+      this.log('Microphone analyser ready for Gemini-style visualization');
+    } catch (e) {
+      console.warn('Could not set up input audio visualization:', e);
     }
   }
 
@@ -947,8 +1290,15 @@ class VoiceScannerApp {
   private setupMediaTracks(): void {
     if (!this.rtviClient) return;
     const tracks = this.rtviClient.tracks();
+
+    // Set up bot output audio
     if (tracks.bot?.audio) {
       this.setupAudioTrack(tracks.bot.audio);
+    }
+
+    // Set up local microphone input for visualization
+    if (tracks.local?.audio) {
+      this.setupInputAudioTrack(tracks.local.audio);
     }
   }
 
@@ -960,14 +1310,21 @@ class VoiceScannerApp {
 
     // Track events
     this.rtviClient.on(RTVIEvent.TrackStarted, (track, participant) => {
-      if (!participant?.local && track.kind === 'audio') {
-        this.setupAudioTrack(track);
+      if (track.kind === 'audio') {
+        if (participant?.local) {
+          // Local microphone track - for user voice visualization
+          this.setupInputAudioTrack(track);
+        } else {
+          // Remote bot track - for AI voice visualization
+          this.setupAudioTrack(track);
+        }
       }
     });
 
     // Bot speech events
     this.rtviClient.on(RTVIEvent.BotStartedSpeaking, () => {
       this.log('Bot started speaking');
+      // Note: Bot audio visualization uses simulated data since RTVI doesn't expose bot audio track
       this.setVoiceState('speaking');
     });
 
@@ -988,6 +1345,11 @@ class VoiceScannerApp {
     this.rtviClient.on(RTVIEvent.UserStoppedSpeaking, () => {
       this.log('User stopped speaking');
       this.setVoiceState('thinking');
+    });
+
+    // Listen for bot audio levels - this gives us real-time audio level data for visualization
+    this.rtviClient.on(RTVIEvent.RemoteAudioLevel, (level: number) => {
+      this.botAudioLevel = level;
     });
   }
 
@@ -1037,7 +1399,8 @@ class VoiceScannerApp {
             this.isConnected = true;
             this.log('Connected successfully!');
             this.setVoiceState('listening');
-            this.addTerminalMessage('Connection established. Voice scanner active.', 'success');
+            this.updateConnectionUI(true);
+            this.addTerminalMessage('Connection established. Voice active.', 'success');
             this.showNotification('CONNECTION ESTABLISHED');
           },
           onDisconnected: () => {
@@ -1046,6 +1409,7 @@ class VoiceScannerApp {
             this.rtviClient = null;
             this.log('Disconnected');
             this.setVoiceState('idle');
+            this.updateConnectionUI(false);
             this.stopAudioVisualization();
             this.addTerminalMessage('Connection terminated.', 'regular');
           },
@@ -1148,6 +1512,7 @@ class VoiceScannerApp {
       this.log(`Connection failed: ${(error as Error).message}`);
       this.addTerminalMessage(`Connection failed: ${(error as Error).message}`, 'error');
       this.setVoiceState('idle');
+      this.updateConnectionUI(false);
 
       if (this.rtviClient) {
         try {
@@ -1184,8 +1549,14 @@ class VoiceScannerApp {
         await this.audioContext.close();
         this.audioContext = null;
         this.analyser = null;
+        this.inputAnalyser = null;
         this.dataArray = null;
+        this.inputDataArray = null;
       }
+
+      // Reset Gemini blob state
+      this.smoothedAmplitude = 0;
+      this.targetAmplitude = 0;
 
       this.stopAudioVisualization();
 
@@ -1195,6 +1566,7 @@ class VoiceScannerApp {
       this.isConnecting = false;
       this.isConnected = false;
       this.setVoiceState('idle');
+      this.updateConnectionUI(false);
       this.log('Disconnected successfully');
 
     } catch (error) {
@@ -1202,6 +1574,7 @@ class VoiceScannerApp {
       this.isConnecting = false;
       this.isConnected = false;
       this.setVoiceState('idle');
+      this.updateConnectionUI(false);
     }
   }
 

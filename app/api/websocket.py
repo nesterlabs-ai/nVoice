@@ -60,10 +60,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # Lower thresholds allow barge-in, MinWordsInterruptionStrategy filters backchanneling
         # Note: start_secs must be low enough to catch short words like "hello" (~0.5s)
         vad_params = VADParams(
-            confidence=vad_config.get("confidence", 0.6),      # MEDIUM-LOW - detect speech including soft "hello"
+            confidence=vad_config.get("confidence", 0.9),      # MEDIUM-LOW - detect speech including soft "hello"
             start_secs=vad_config.get("start_secs", 0.15),     # FAST - catch short words like "hello"
             stop_secs=vad_config.get("stop_secs", 0.6),        # Shorter pause to end speech quickly
-            min_volume=vad_config.get("min_volume", 0.5),      # LOW - catch softer speech
+            min_volume=vad_config.get("min_volume", 0.8),      # LOW - catch softer speech
         )
         vad_analyzer = SileroVADAnalyzer(params=vad_params)
 
