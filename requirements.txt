@@ -6,7 +6,7 @@ PyYAML~=6.0.2
 loguru~=0.7.3
 
 # Pipecat Voice AI Framework
-pipecat-ai[daily,deepgram,cartesia,silero,websocket,google,openai]
+pipecat-ai[daily,deepgram,cartesia,silero,websocket,google,openai,koala,aic]==0.0.100
 pipecat-ai-small-webrtc-prebuilt
 
 # HTTP client for LightRAG API (external RAG service)

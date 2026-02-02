@@ -29,12 +29,12 @@ class TestAPIEndpoints:
         response = client.get("/status")
         assert response.status_code == 200
         data = response.json()
-        assert "status" in data
-        assert "version" in data
+        assert "server" in data
+        assert "mode" in data["server"]
 
     def test_connect_endpoint(self, client, mock_env_vars):
-        """Test connection endpoint."""
-        response = client.get("/connect")
+        """Test connection endpoint (POST method)."""
+        response = client.post("/connect")
         assert response.status_code == 200
         data = response.json()
-        assert "websocket_url" in data
+        assert "ws_url" in data

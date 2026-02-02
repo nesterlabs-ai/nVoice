@@ -39,6 +39,7 @@ from app.services.tts import TextToSpeechService
 from app.processors.tone_aware_processor import ToneAwareProcessor
 from app.processors.text_filter_processor import TextFilterProcessor
 from app.processors.visual_hint_processor import VisualHintProcessor
+from app.processors.smart_interruption_processor import SmartInterruptionProcessor
 
 
 class VoiceAssistant:
@@ -114,6 +115,15 @@ class VoiceAssistant:
             stream_words=False,
             detect_content=False,  # Disable legacy visual hints
             use_a2ui=False,  # A2UI now handled via RAG calls in ConversationManager
+        )
+
+        # Smart interruption processor - validates interruptions to prevent false barge-ins
+        smart_int_config = server_config.get("smart_interruption", {})
+        smart_int_enabled = smart_int_config.get("enabled", True)
+        logger.info(f"🛡️ Smart interruption validation enabled: {smart_int_enabled}")
+        self.smart_interruption = SmartInterruptionProcessor(
+            enabled=smart_int_enabled,
+            min_confidence_threshold=smart_int_config.get("min_confidence", 0.7),
         )
 
         # Store LLM and context references for greeting injection
@@ -217,26 +227,44 @@ class VoiceAssistant:
         # Initialize SpeechBrain wav2vec2-large for emotion detection
         await self.tone_processor.initialize()
 
+        # Get smart interruption config for conditional pipeline inclusion
+        server_config = self.config.get("server", {})
+        smart_int_config = server_config.get("smart_interruption", {})
+        smart_int_enabled = smart_int_config.get("enabled", True)
+
         # Create pipeline
         # ToneAwareProcessor receives audio frames for SpeechBrain emotion detection
         # VisualHintProcessor streams text word-by-word and emits visual hints
         # TextFilterProcessor removes markdown before TTS
-        self.pipeline = Pipeline(
-            [
-                transport.input(),
-                stt,                          # STT first to generate transcriptions
-                self.tone_processor,          # AFTER STT to receive both audio AND transcriptions for hybrid mode
-                context_aggregator.user(),    # Context BEFORE mute filter
-                self.stt_mute_filter,         # Mute AFTER context sees frames
-                self.rtvi,
-                llm,
-                self.visual_hint_processor,   # Stream text and detect content for visual cards
-                self.text_filter,             # Remove markdown before TTS
-                tts,
-                transport.output(),
-                context_aggregator.assistant(),
-            ]
-        )
+
+        # Build pipeline processors list
+        pipeline_processors = [
+            transport.input(),
+            stt,                          # STT first to generate transcriptions
+        ]
+
+        # Only add SmartInterruptionProcessor if enabled
+        if smart_int_enabled:
+            pipeline_processors.append(self.smart_interruption)  # Validate interruptions from transcriptions
+            logger.info("🛡️ SmartInterruptionProcessor added to pipeline")
+        else:
+            logger.info("🛡️ SmartInterruptionProcessor DISABLED - not added to pipeline")
+
+        # Continue with rest of pipeline
+        pipeline_processors.extend([
+            self.tone_processor,          # AFTER STT to receive both audio AND transcriptions for hybrid mode
+            context_aggregator.user(),    # Context BEFORE mute filter
+            self.stt_mute_filter,         # Mute AFTER context sees frames
+            self.rtvi,
+            llm,
+            self.visual_hint_processor,   # Stream text and detect content for visual cards
+            self.text_filter,             # Remove markdown before TTS
+            tts,
+            transport.output(),
+            context_aggregator.assistant(),
+        ])
+
+        self.pipeline = Pipeline(pipeline_processors)
 
         logger.info("Pipeline created successfully")
         return self.pipeline
