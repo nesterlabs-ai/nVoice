@@ -456,12 +456,38 @@ class ToneAwareProcessor(FrameProcessor):
             tone = await self.tone_detector.detect_tone_llm(text)
             confidence = 0.7  # Text-based detection has moderate confidence
 
-            logger.info(f"TEXT FALLBACK: {tone} ({confidence:.0%})")
+            # Map tone to VAD (arousal, dominance, valence) values
+            # These are reasonable approximations for text-based detection
+            tone_to_vad = {
+                "neutral": {"arousal": 0.5, "dominance": 0.5, "valence": 0.5},
+                "excited": {"arousal": 0.8, "dominance": 0.6, "valence": 0.8},
+                "frustrated": {"arousal": 0.7, "dominance": 0.4, "valence": 0.3},
+                "sad": {"arousal": 0.3, "dominance": 0.3, "valence": 0.3},
+                "happy": {"arousal": 0.7, "dominance": 0.6, "valence": 0.8},
+                "angry": {"arousal": 0.8, "dominance": 0.7, "valence": 0.2},
+            }
+
+            vad = tone_to_vad.get(tone, tone_to_vad["neutral"])
+
+            # Update state variables
+            self._latest_arousal = vad["arousal"]
+            self._latest_dominance = vad["dominance"]
+            self._latest_valence = vad["valence"]
+            self._latest_emotion = tone
+            self._latest_tone = tone
+            self._latest_confidence = confidence
+
+            logger.info(f"TEXT FALLBACK: {tone} ({confidence:.0%}) - A:{vad['arousal']:.2f} D:{vad['dominance']:.2f} V:{vad['valence']:.2f}")
+
+            # Emit emotion event to frontend via WebSocket
+            await self._emit_text_emotion_event(tone, vad, confidence)
 
             await self._check_voice_switch(tone, confidence)
 
         except Exception as e:
             logger.error(f"Text tone detection error: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def _check_voice_switch(self, tone: str, confidence: float) -> None:
         """Check if voice should be switched based on detected tone.
@@ -658,6 +684,43 @@ class ToneAwareProcessor(FrameProcessor):
 
         except Exception as e:
             logger.error(f"Error emitting emotion event: {e}")
+
+    async def _emit_text_emotion_event(self, tone: str, vad: dict, confidence: float) -> None:
+        """Emit text-based emotion detection event to frontend via WebSocket.
+
+        Used when MSP-PODCAST is unavailable and we fall back to text-based detection.
+
+        Args:
+            tone: Detected emotional tone
+            vad: Dictionary with arousal, dominance, valence values
+            confidence: Confidence score
+        """
+        try:
+            # Create emotion data payload for frontend (text fallback)
+            emotion_message = {
+                "label": "rtvi-ai",
+                "type": "server-message",
+                "data": {
+                    "message_type": "emotion_detected",
+                    "arousal": round(vad["arousal"], 2),
+                    "dominance": round(vad["dominance"], 2),
+                    "valence": round(vad["valence"], 2),
+                    "emotion": tone,
+                    "tone": tone,
+                    "confidence": round(confidence, 2),
+                    "timestamp": time.time(),
+                    "source": "text_fallback",  # Indicate this is from text-based detection
+                }
+            }
+
+            # Push data frame to transport (will be sent via WebSocket)
+            data_frame = OutputTransportMessageFrame(message=emotion_message)
+            await self.push_frame(data_frame)
+
+            logger.info(f"✓ Emitted text emotion event via WebSocket: {tone} ({confidence:.0%}) - A:{vad['arousal']:.2f} D:{vad['dominance']:.2f} V:{vad['valence']:.2f}")
+
+        except Exception as e:
+            logger.error(f"Error emitting text emotion event: {e}")
 
     async def _emit_tone_switch_event(self, old_tone: str, new_tone: str) -> None:
         """Emit tone switch event to frontend via WebSocket.

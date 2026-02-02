@@ -25,6 +25,13 @@ except ImportError as e:
     A2UI_AVAILABLE = False
     logger.warning(f"A2UI system not available in routes: {e}")
 
+try:
+    from app.services.graph_keywords import get_graph_keyword_extractor
+    GRAPH_KEYWORDS_AVAILABLE = True
+except ImportError as e:
+    GRAPH_KEYWORDS_AVAILABLE = False
+    logger.warning(f"Graph keyword extraction not available: {e}")
+
 router = APIRouter(tags=["voice-assistant"])
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -654,3 +661,43 @@ async def a2ui_app_styles() -> FileResponse:
     """Serve main app styles for the tester page."""
     css_path = BASE_DIR / "client" / "src" / "style.css"
     return FileResponse(css_path)
+
+
+@router.post("/graph/keywords")
+async def extract_graph_keywords(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Select relevant knowledge graph nodes and extract topic based on query and answer.
+
+    This endpoint uses LLM to select which graph nodes are relevant to highlight
+    based on both the user query and the bot's answer. It also extracts the
+    conversation topic and determines its relationship to previous topics.
+
+    Request body:
+        query (str): User query text
+        answer (str, optional): Bot's answer text (improves node selection)
+        previousTopics (list, optional): List of previous conversation topics
+
+    Returns:
+        Dict containing:
+            - matched: List of node IDs to highlight in the graph
+            - graph_node_count: Total nodes in graph
+            - topic: Extracted conversation topic
+            - topicType: "new", "continuation", or "branch"
+            - parentTopic: Parent topic if branching (optional)
+    """
+    if not GRAPH_KEYWORDS_AVAILABLE:
+        raise HTTPException(status_code=500, detail="Graph keyword extraction not available")
+
+    query = (payload or {}).get("query", "").strip()
+    answer = (payload or {}).get("answer", "").strip()
+    previous_topics = (payload or {}).get("previousTopics", [])
+
+    if not query and not answer:
+        raise HTTPException(status_code=400, detail="Missing 'query' or 'answer'")
+
+    try:
+        extractor = get_graph_keyword_extractor()
+        result = await extractor.get_matching_keywords(query, answer, previous_topics)
+        return result
+    except Exception as e:
+        logger.error(f"Graph keyword extraction failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

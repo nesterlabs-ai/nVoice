@@ -293,19 +293,33 @@ body {
   min-height: 0;
 }
 
+/* Compact spacing for emotion panel to avoid scroll */
+.emotion-panel .panel-body {
+  padding: 14px;
+  overflow: hidden;
+}
+
+/* ===== KNOWLEDGE GRAPH PANEL ===== */
+.knowledge-graph-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .emotion-display {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px;
+  gap: 12px;
+  padding: 10px 14px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-subtle);
   border-radius: var(--panel-radius);
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .emotion-emoji {
-  font-size: 32px;
+  font-size: 28px;
 }
 
 .emotion-info {
@@ -335,8 +349,8 @@ body {
 .metrics-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .metric-row {
@@ -385,16 +399,75 @@ body {
   text-align: right;
 }
 
+/* Emotion Line Chart */
+.emotion-chart-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100px;
+  max-height: 150px;
+  position: relative;
+  overflow: hidden;
+}
+
+.emotion-chart-section canvas {
+  width: 100% !important;
+  height: 100px !important;
+  display: block;
+}
+
+.chart-legend {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 10px 0 6px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 4px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.legend-color {
+  width: 16px;
+  height: 4px;
+  border-radius: 2px;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.legend-color.valence {
+  background: #3b82f6;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+}
+
+.legend-color.arousal {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+}
+
+.legend-color.dominance {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+}
+
 /* Tone Display */
 .tone-display {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: 8px 14px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-subtle);
   border-radius: var(--panel-radius);
-  margin-bottom: 20px;
+  margin-bottom: 10px;
 }
 
 .tone-label {
@@ -413,7 +486,7 @@ body {
 
 /* Timeline Section */
 .timeline-section {
-  padding-top: 16px;
+  padding-top: 10px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -423,7 +496,7 @@ body {
   letter-spacing: 0.1em;
   color: var(--text-muted);
   display: block;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .timeline-track {
@@ -454,24 +527,106 @@ body {
   transform: scale(1);
 }
 
+/* ===== TOPIC TIMELINE PANEL ===== */
+.topic-timeline-panel {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+}
+
+.topic-timeline-panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.topic-legend {
+  display: flex;
+  gap: 10px;
+}
+
+.topic-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 8px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.topic-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.topic-dot.new {
+  background: #ef4444;
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+}
+
+.topic-dot.continue {
+  background: #22c55e;
+  box-shadow: 0 0 4px rgba(34, 197, 94, 0.5);
+}
+
+.topic-dot.branch {
+  background: #f59e0b;
+  box-shadow: 0 0 4px rgba(245, 158, 11, 0.5);
+}
+
+.topic-timeline-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+}
+
+.topic-timeline-body canvas {
+  width: 100%;
+  height: 100%;
+}
+
 /* ===== TERMINAL PANEL ===== */
 .terminal-panel {
-  height: 160px;
+  height: 100px;
   flex-shrink: 0;
+}
+
+/* Right panel layout - split space between conversation, topic timeline, and terminal */
+.right-panel .conversation-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.right-panel .topic-timeline-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.right-panel .terminal-panel {
+  flex: 0 0 100px;
 }
 
 .terminal-body {
   flex: 1;
-  padding: 16px;
+  padding: 12px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-secondary);
-  overflow-y: auto;
-  line-height: 1.8;
+  overflow: hidden;
+  line-height: 1.6;
 }
 
 .terminal-line {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .terminal-line.dim {
@@ -519,8 +674,10 @@ body {
 }
 
 .connect-btn {
+  position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   padding: 16px 32px;
   background: var(--accent-hero);
@@ -544,6 +701,49 @@ body {
 
 .connect-btn:active {
   transform: translateY(0);
+}
+
+/* Connecting state - pulsing animation while waiting for backend */
+.connect-btn.connecting {
+  pointer-events: none;
+  animation: connectingPulse 1.2s ease-in-out infinite;
+}
+
+.connect-btn.connecting .btn-text {
+  opacity: 0;
+}
+
+.connect-btn.connecting .btn-icon {
+  opacity: 0;
+}
+
+.connect-btn.connecting::after {
+  content: 'CONNECTING...';
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  animation: connectingTextPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes connectingPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(var(--accent-hero-rgb), 0.3);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(var(--accent-hero-rgb), 0.6);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes connectingTextPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 .btn-icon {
@@ -675,6 +875,82 @@ body {
   border-color: var(--accent-orange);
 }
 
+/* ===== FLOATING DISCONNECT BUTTON ===== */
+.floating-disconnect-btn {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(239, 51, 57, 0.9);
+  border: 2px solid var(--accent-hero);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  box-shadow: 0 4px 20px rgba(239, 51, 57, 0.4);
+  transition: all 0.3s ease;
+  animation: floatIn 0.5s ease-out;
+}
+
+.floating-disconnect-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.5;
+}
+
+.floating-disconnect-btn:hover {
+  background: #ff4a4f;
+  transform: translateX(-50%) scale(1.1);
+  box-shadow: 0 6px 30px rgba(239, 51, 57, 0.6);
+}
+
+.floating-disconnect-btn:active {
+  transform: translateX(-50%) scale(0.95);
+}
+
+.floating-disconnect-btn.hidden {
+  display: none;
+}
+
+/* Connect button shrink animation */
+.connect-btn.shrinking {
+  animation: shrinkToCircle 0.4s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes shrinkToCircle {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(0.6);
+    border-radius: 50%;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.3) translateY(100px);
+    border-radius: 50%;
+  }
+}
+
+@keyframes floatIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(50px) scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
 /* ===== WAVE VISUALIZER ===== */
 .wave-container {
   position: absolute;
@@ -771,6 +1047,38 @@ body {
   background: rgba(var(--accent-hero-rgb), 0.1);
   border: 1px solid rgba(var(--accent-hero-rgb), 0.2);
   margin-right: 20px;
+}
+
+.transcript-bubble.bot {
+  background: rgba(var(--accent-hero-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-hero-rgb), 0.2);
+  margin-right: 20px;
+}
+
+/* Typewriter effect for bot transcripts */
+.transcript-bubble.typewriter .typewriter-text {
+  display: inline;
+}
+
+.typewriter-word {
+  display: inline;
+  opacity: 0;
+  animation: typewriterFadeIn 0.15s ease forwards;
+}
+
+@keyframes typewriterFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.transcript-bubble.finalized .typewriter-text {
+  display: inline;
 }
 
 .bubble-header {

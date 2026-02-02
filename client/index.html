@@ -47,7 +47,6 @@
       <div class="panel emotion-panel" id="emotion-panel">
         <div class="panel-header">
           <span class="panel-label">EMOTION METRICS</span>
-          <span id="status-indicator" class="status-dot active"></span>
         </div>
         <div class="panel-body">
           <!-- Current Emotion Display -->
@@ -59,57 +58,21 @@
             </div>
           </div>
 
-          <!-- Dimension Bars -->
-          <div class="metrics-section">
-            <div class="metric-row">
-              <span class="metric-label">AROUSAL</span>
-              <div class="metric-bar">
-                <div class="metric-bar-fill arousal" id="arousal-bar" style="width: 50%;"></div>
-              </div>
-              <span class="metric-value" id="arousal-value">0.50</span>
+          <!-- Emotion Line Chart -->
+          <div class="emotion-chart-section">
+            <canvas id="emotion-chart-canvas"></canvas>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-color valence"></span>VALENCE</span>
+              <span class="legend-item"><span class="legend-color arousal"></span>AROUSAL</span>
+              <span class="legend-item"><span class="legend-color dominance"></span>DOMINANCE</span>
             </div>
-            <div class="metric-row">
-              <span class="metric-label">DOMINANCE</span>
-              <div class="metric-bar">
-                <div class="metric-bar-fill dominance" style="width: 50%;"></div>
-              </div>
-              <span class="metric-value" id="dominance-value">0.50</span>
-            </div>
-            <div class="metric-row">
-              <span class="metric-label">VALENCE</span>
-              <div class="metric-bar">
-                <div class="metric-bar-fill valence" style="width: 50%;"></div>
-              </div>
-              <span class="metric-value" id="valence-value">0.50</span>
-            </div>
-          </div>
-
-          <!-- Voice Tone -->
-          <div class="tone-display">
-            <span class="tone-label">VOICE TONE</span>
-            <span class="tone-value" id="tone-label">NEUTRAL</span>
-          </div>
-
-          <!-- Emotion Timeline -->
-          <div class="timeline-section">
-            <span class="timeline-label">TIMELINE</span>
-            <div class="timeline-track" id="emotion-timeline"></div>
           </div>
         </div>
       </div>
 
-      <!-- System Terminal Panel -->
-      <div class="panel terminal-panel">
-        <div class="panel-header">
-          <span class="panel-label">SYSTEM</span>
-          <span id="terminal-status" class="status-dot active"></span>
-        </div>
-        <div class="terminal-body" id="terminal-content">
-          <div class="terminal-line">Nester Voice AI v2.0</div>
-          <div class="terminal-line dim">Ready to connect...</div>
-          <div class="terminal-line typing" id="typing-line"></div>
-        </div>
-      </div>
+      <!-- Knowledge Graph Widget -->
+      <div id="knowledge-graph-root" class="panel knowledge-graph-panel"></div>
+
     </aside>
 
     <!-- CENTER: Connect Button & Wave Visualizer -->
@@ -122,6 +85,14 @@
         </button>
         <p class="connect-hint">Click to begin voice interaction</p>
       </div>
+
+      <!-- Floating Disconnect Button (shown when connected) -->
+      <button class="floating-disconnect-btn hidden" id="floating-disconnect-btn" aria-label="End conversation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
 
       <!-- Status Display (shown when connected) -->
       <div class="status-display hidden" id="status-display">
@@ -147,7 +118,6 @@
           </div>
         </div>
         <span class="status-text" id="status-text">LISTENING</span>
-        <button class="disconnect-btn" id="disconnect-btn">END</button>
       </div>
 
       <!-- Gemini Wave Visualizer -->
@@ -156,26 +126,50 @@
       </div>
     </section>
 
-    <!-- RIGHT PANEL: Conversation Log -->
+    <!-- RIGHT PANEL: Conversation Log + Terminal -->
     <aside class="right-panel">
+      <!-- Conversation Panel (takes more space) -->
       <div class="panel conversation-panel">
         <div class="panel-header">
           <span class="panel-label">CONVERSATION</span>
-          <span class="panel-status" id="transcript-status"></span>
         </div>
         <div class="conversation-body" id="transcript-list">
           <div class="welcome-message" id="welcome-message">
             <div class="welcome-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8" y1="23" x2="16" y2="23"/>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
               </svg>
             </div>
-            <div class="welcome-text">VOICE READY</div>
-            <div class="welcome-sub">Start a conversation to begin</div>
+            <div class="welcome-text">CONVERSATION LOG</div>
+            <div class="welcome-sub">Messages will appear here</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Topic Timeline Panel -->
+      <div class="panel topic-timeline-panel">
+        <div class="panel-header">
+          <span class="panel-label">TOPIC FLOW</span>
+          <div class="topic-legend">
+            <span class="topic-legend-item"><span class="topic-dot new"></span>NEW</span>
+            <span class="topic-legend-item"><span class="topic-dot continue"></span>CONTINUE</span>
+            <span class="topic-legend-item"><span class="topic-dot branch"></span>BRANCH</span>
+          </div>
+        </div>
+        <div class="topic-timeline-body">
+          <canvas id="topic-timeline-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- System Terminal Panel -->
+      <div class="panel terminal-panel">
+        <div class="panel-header">
+          <span class="panel-label">SYSTEM</span>
+        </div>
+        <div class="terminal-body" id="terminal-content">
+          <div class="terminal-line">Nester Voice AI v2.0</div>
+          <div class="terminal-line dim">Ready to connect...</div>
+          <div class="terminal-line typing" id="typing-line"></div>
         </div>
       </div>
     </aside>
@@ -215,6 +209,7 @@
     <div class="a2ui-content" id="a2ui-container"></div>
   </div>
 
+
   <!-- Hidden legacy elements for JS compatibility -->
   <div id="scanner-frame" class="hidden"></div>
   <div id="voice-orb-container" class="hidden"></div>
@@ -224,6 +219,7 @@
   <canvas id="preloader-canvas" class="hidden"></canvas>
 
   <script type="module" src="/src/app.ts"></script>
+  <script type="module" src="/src/components/KnowledgeGraphWidget/mount.tsx"></script>
   <link rel="stylesheet" href="/src/style.css">
   <link rel="stylesheet" href="/src/components/a2ui/a2ui-styles.css">
 </body>
