@@ -110,6 +110,9 @@ def get_msp_model():
         class EmotionModel(Wav2Vec2PreTrainedModel):
             """Wav2Vec2 model with regression head for dimensional emotions."""
 
+            # Required for newer transformers versions (>=4.40)
+            _tied_weights_keys = []
+
             def __init__(self, config):
                 super().__init__(config)
                 self.config = config

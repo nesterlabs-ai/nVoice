@@ -17,7 +17,7 @@ librosa>=0.10.0  # Audio feature extraction with high-quality resampling
 numpy>=1.24.0    # Numerical operations for audio processing
 
 # Emotion detection dependencies (MSP-PODCAST wav2vec2)
-# NOTE: torch is installed separately in Dockerfile with CPU-only version
+torch>=2.0.0  # PyTorch for wav2vec2 emotion detection models
 transformers>=4.30.0  # Hugging Face transformers for wav2vec2 models
 
 # Google Generative AI for text sentiment detection (Gemini)
