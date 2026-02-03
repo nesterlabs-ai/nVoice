@@ -56,7 +56,7 @@ input_analyzer:
 rag:
   type: "lightrag"  # Using external LightRAG API
   config:
-    api_url: "https://nonrecessive-arlie-vexedly.ngrok-free.dev/"  # LightRAG server
+    api_url: "https://nonrecessive-arlie-vexedly.ngrok-free.dev"  # LightRAG server
     api_key: "${LIGHTRAG_API_KEY}"  # API key for authentication
     mode: "mix"  # OPTIMIZED: "local" for 2-3x faster retrieval (entity-focused, was "mix")
     top_k: 10  # Number of top results to retrieve

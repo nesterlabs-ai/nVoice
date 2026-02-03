@@ -21,6 +21,33 @@ from app.config.loader import get_assistant_config
 from app.core.server import voice_assistant_server
 
 
+def _prewarm_semantic_selector():
+    """
+    Pre-warm the semantic template selector model.
+
+    This loads the Sentence Transformer model (~80MB) and pre-computes
+    template embeddings at startup, avoiding a 4-second delay on the
+    first A2UI query.
+    """
+    try:
+        from app.services.a2ui.semantic_selector import get_semantic_selector, is_semantic_available
+
+        if is_semantic_available():
+            logger.info("🧠 Pre-warming semantic template selector...")
+            selector = get_semantic_selector()
+            if selector:
+                logger.info("✅ Semantic template selector ready")
+            else:
+                logger.warning("⚠️ Semantic selector initialization returned None")
+        else:
+            logger.info("📋 Semantic selector not available (sentence-transformers not installed)")
+    except ImportError:
+        logger.info("📋 Semantic selector not available (module not found)")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to pre-warm semantic selector: {e}")
+        logger.warning("   A2UI will fall back to keyword-based template selection")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown events."""
@@ -35,6 +62,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to load configuration: {e}")
             raise
+
+    # Pre-warm semantic template selector (runs in background thread to not block startup)
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.submit(_prewarm_semantic_selector)
 
     yield
     logger.info("Shutting down NesterVoiceAI application...")

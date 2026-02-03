@@ -4,12 +4,17 @@ A2UI Orchestrator - 3-Tier Template Selection System for Nester AI
 This module implements the tier detection logic that selects appropriate
 visual templates based on user queries.
 
-TIER 1: Explicit Template Request
+TIER 1a: Custom Template (API Parameter)
+   - Caller provides custom template via API
+   - Highest priority, direct pass-through
+
+TIER 1b: Explicit Template Request
    - User explicitly mentions a template type name
    - Examples: "show me a contact card", "use timeline template"
 
-TIER 2: Keyword/Semantic Intent Understanding
-   - Detects query intent through keywords and patterns
+TIER 2: Semantic/Keyword Intent Understanding
+   - Semantic: Uses sentence embeddings for intent understanding
+   - Keyword: Falls back to pattern matching if semantic unavailable
    - Examples: "how can I contact you" → contact-card
 
 TIER 3: Fallback to Simple Card
@@ -18,6 +23,15 @@ TIER 3: Fallback to Simple Card
 
 from typing import Optional, Dict, Any
 from loguru import logger
+
+# Try to import semantic selector (optional dependency)
+try:
+    from .semantic_selector import get_semantic_selector, is_semantic_available
+    SEMANTIC_AVAILABLE = is_semantic_available()
+except ImportError:
+    SEMANTIC_AVAILABLE = False
+    get_semantic_selector = None
+    is_semantic_available = None
 
 
 # Tier 1: Explicit template keywords (user requests specific template)
@@ -119,29 +133,39 @@ class A2UIOrchestrator:
     A2UI Orchestrator for template selection based on user queries.
 
     Provides 3-tier template selection:
-    1. Explicit template requests
-    2. Keyword/pattern-based detection
+    1a. Custom template (API parameter)
+    1b. Explicit template requests
+    2. Semantic/keyword-based detection
     3. Fallback to simple card
     """
 
-    def __init__(self, use_semantic: bool = False):
+    def __init__(self, use_semantic: bool = True):
         """
         Initialize the orchestrator.
 
         Args:
             use_semantic: Enable semantic matching (requires sentence-transformers)
+                         Default: True (recommended for voice interfaces)
         """
-        self.use_semantic = use_semantic
+        self.use_semantic = use_semantic and SEMANTIC_AVAILABLE
         self._semantic_selector = None
 
-        if use_semantic:
+        if self.use_semantic:
             try:
-                from .semantic_selector import SemanticTemplateSelector
-                self._semantic_selector = SemanticTemplateSelector()
-                logger.info("Semantic template selector initialized")
-            except ImportError:
-                logger.warning("sentence-transformers not installed, using keyword matching only")
+                self._semantic_selector = get_semantic_selector()
+                if self._semantic_selector:
+                    logger.info("✅ Semantic template selector initialized")
+                else:
+                    logger.warning("⚠️ Semantic selector returned None, using keyword matching only")
+                    self.use_semantic = False
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize semantic selector: {e}")
+                logger.warning("   Falling back to keyword matching only")
                 self.use_semantic = False
+        else:
+            if use_semantic and not SEMANTIC_AVAILABLE:
+                logger.warning("⚠️ sentence-transformers not installed, using keyword matching only")
+            logger.info("📋 Using keyword-based template selection")
 
     def detect_tier(self, query: str, custom_template: Optional[Dict] = None) -> Dict[str, Any]:
         """
@@ -160,7 +184,7 @@ class A2UIOrchestrator:
 def detect_tier(
     query: str,
     custom_template: Optional[Dict] = None,
-    use_semantic: bool = False,
+    use_semantic: bool = True,  # ✅ Enabled by default for smarter matching
     semantic_selector=None
 ) -> Dict[str, Any]:
     """
@@ -214,31 +238,13 @@ def detect_tier(
                 }
     logger.debug("   No explicit template keywords found")
 
-    # ==================== TIER 2: PATTERN-BASED DETECTION ====================
-    logger.debug("🔍 Checking TIER 2: Pattern-based detection...")
-    
-    # First try semantic matching if available
-    if use_semantic and semantic_selector:
-        logger.debug("   Trying semantic matching...")
-        try:
-            template_type, confidence = semantic_selector.select_template(query, threshold=0.3)
-            if template_type and confidence >= 0.3:
-                logger.info(f"🏆 TIER 2 MATCH (Semantic): Template selected!")
-                logger.info(f"   Template: {template_type}")
-                logger.info(f"   Confidence: {confidence:.3f}")
-                return {
-                    "tier": "tier2_semantic",
-                    "tier_name": "Semantic Template Selection",
-                    "template_type": template_type,
-                    "mode": "semantic",
-                    "description": f"Semantic matching (confidence: {confidence:.3f})",
-                    "confidence": confidence
-                }
-        except Exception as e:
-            logger.warning(f"⚠️ Semantic selection failed: {e}")
+    # ==================== TIER 2: SEMANTIC + KEYWORD DETECTION ====================
+    logger.debug("🔍 Checking TIER 2: Semantic + Keyword detection...")
 
-    # Fall back to keyword matching
-    logger.debug("   Trying keyword pattern matching...")
+    # First, collect keyword matches (we'll use them as fallback)
+    keyword_result = None
+    keyword_match_info = None
+    logger.debug("   Collecting keyword pattern matches...")
     all_matches = []
     for pattern_name, pattern_config in TEMPLATE_PATTERNS.items():
         keywords = pattern_config["keywords"]
@@ -259,19 +265,71 @@ def detect_tier(
     if all_matches:
         all_matches.sort(key=lambda x: (x["priority"], x["length"]), reverse=True)
         best_match = all_matches[0]
+        keyword_result = best_match["template"]
+        keyword_match_info = best_match
+        logger.debug(f"   Best keyword match: '{best_match['keyword']}' → {keyword_result}")
+
+    # Now try semantic matching if available (with hybrid fallback)
+    if use_semantic and semantic_selector:
+        logger.debug("   Trying semantic matching with hybrid fallback...")
+        try:
+            # Use the hybrid method that considers keyword results
+            template_type, confidence, method = semantic_selector.select_template_with_fallback(
+                query=query,
+                keyword_result=keyword_result,
+                semantic_threshold=0.15,
+                confidence_threshold=0.5
+            )
+
+            if method == "semantic":
+                logger.info(f"🏆 TIER 2 MATCH (Semantic): Template selected!")
+                logger.info(f"   Template: {template_type}")
+                logger.info(f"   Confidence: {confidence:.3f}")
+                return {
+                    "tier": "tier2_semantic",
+                    "tier_name": "Semantic Template Selection",
+                    "template_type": template_type,
+                    "mode": "semantic",
+                    "description": f"Semantic matching (confidence: {confidence:.3f})",
+                    "confidence": confidence
+                }
+            elif method == "keyword_fallback" and keyword_match_info:
+                logger.info(f"🏆 TIER 2 MATCH (Keyword via Semantic Fallback): Pattern detected!")
+                logger.info(f"   Template: {template_type}")
+                logger.info(f"   Semantic confidence was: {confidence:.3f} (below threshold)")
+                logger.info(f"   Using keyword match: '{keyword_match_info['keyword']}'")
+                return {
+                    "tier": "tier2_registry",
+                    "tier_name": "Registry Template (Semantic Fallback)",
+                    "pattern": keyword_match_info["pattern"],
+                    "template_type": template_type,
+                    "mode": "registry_semantic_fallback",
+                    "description": keyword_match_info["description"],
+                    "matched_keyword": keyword_match_info["keyword"],
+                    "semantic_confidence": confidence
+                }
+            elif method == "default":
+                # No match from semantic, fall through to keyword-only or Tier 3
+                logger.debug(f"   Semantic returned default, checking keyword matches...")
+        except Exception as e:
+            logger.warning(f"⚠️ Semantic selection failed: {e}")
+            logger.warning("   Falling back to keyword-only matching")
+
+    # If semantic not available or failed, use keyword result directly
+    if keyword_match_info:
         logger.info(f"🏆 TIER 2 MATCH (Keyword): Pattern detected!")
-        logger.info(f"   Pattern: {best_match['pattern']}")
-        logger.info(f"   Template: {best_match['template']}")
-        logger.info(f"   Matched keyword: '{best_match['keyword']}'")
+        logger.info(f"   Pattern: {keyword_match_info['pattern']}")
+        logger.info(f"   Template: {keyword_match_info['template']}")
+        logger.info(f"   Matched keyword: '{keyword_match_info['keyword']}'")
         logger.info(f"   Total matches found: {len(all_matches)}")
         return {
             "tier": "tier2_registry",
             "tier_name": "Registry Template",
-            "pattern": best_match["pattern"],
-            "template_type": best_match["template"],
+            "pattern": keyword_match_info["pattern"],
+            "template_type": keyword_match_info["template"],
             "mode": "registry",
-            "description": best_match["description"],
-            "matched_keyword": best_match["keyword"]
+            "description": keyword_match_info["description"],
+            "matched_keyword": keyword_match_info["keyword"]
         }
 
     # ==================== TIER 3: FALLBACK TO SIMPLE CARD ====================

@@ -361,14 +361,38 @@ export class A2UIRenderer {
       const card = document.createElement('div');
       card.className = 'a2ui-team-card';
 
+      // Check for image URL (support multiple field names)
+      const imageUrl = (member as any).image || (member as any).photo || (member as any).avatar || (member as any).url;
+      const email = (member as any).email;
+      const linkedin = (member as any).linkedin;
+      const initials = member.name.substring(0, 2).toUpperCase();
+
+      // Build front side with image or initials
+      const frontAvatarHtml = imageUrl
+        ? `<img src="${this.escapeHtml(imageUrl)}" alt="${this.escapeHtml(member.name)}" class="a2ui-team-avatar-img" />`
+        : `<div class="a2ui-team-avatar">${initials}</div>`;
+
+      // Build back side with bio and optional links
+      let backContent = `<p class="a2ui-team-bio">${this.escapeHtml(member.bio || '')}</p>`;
+      if (email || linkedin) {
+        backContent += '<div class="a2ui-team-links">';
+        if (email) {
+          backContent += `<a href="mailto:${this.escapeHtml(email)}" class="a2ui-team-link">✉️ Email</a>`;
+        }
+        if (linkedin) {
+          backContent += `<a href="${this.escapeHtml(linkedin)}" target="_blank" rel="noopener" class="a2ui-team-link">🔗 LinkedIn</a>`;
+        }
+        backContent += '</div>';
+      }
+
       card.innerHTML = `
         <div class="a2ui-team-front">
-          <div class="a2ui-team-avatar">${member.name.charAt(0)}</div>
+          ${frontAvatarHtml}
           <h4 class="a2ui-team-name">${this.escapeHtml(member.name)}</h4>
           <span class="a2ui-team-role">${this.escapeHtml(member.role)}</span>
         </div>
         <div class="a2ui-team-back">
-          <p class="a2ui-team-bio">${this.escapeHtml(member.bio || '')}</p>
+          ${backContent}
         </div>
       `;
 
