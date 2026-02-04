@@ -53,7 +53,6 @@ class VoiceScannerApp {
   private debugToggle: HTMLElement | null = null;
   private debugClose: HTMLElement | null = null;
   private mainLayout: HTMLElement | null = null;
-  private panelsToggle: HTMLElement | null = null;
   private emotionPanel: HTMLElement | null = null;
   private emotionToggle: HTMLElement | null = null;
   private emotionLabel: HTMLElement | null = null;
@@ -133,6 +132,10 @@ class VoiceScannerApp {
   private lastUserSubtitleText: string = '';
   private lastBotSubtitleText: string = '';
 
+  // Media control bar: speaker/mic icon toggle (slash = muted)
+  private speakerMuted: boolean = false;
+  private micMuted: boolean = false;
+
   // Visual cards state
   private activeVisualCard: HTMLElement | null = null;
   private visualCardsContainer: HTMLElement | null = null;
@@ -207,7 +210,6 @@ class VoiceScannerApp {
     this.debugToggle = document.getElementById('debug-toggle');
     this.debugClose = document.getElementById('debug-close');
     this.mainLayout = document.querySelector('.main-layout');
-    this.panelsToggle = document.getElementById('panels-toggle');
     this.emotionPanel = document.getElementById('emotion-panel');
     this.emotionToggle = document.getElementById('emotion-toggle');
     this.emotionLabel = document.getElementById('emotion-label');
@@ -285,10 +287,10 @@ class VoiceScannerApp {
     this.debugToggle?.addEventListener('click', () => this.toggleDebugPanel());
     this.debugClose?.addEventListener('click', () => this.hideDebugPanel());
 
-    // Side panels toggle (left + right)
-    this.panelsToggle?.addEventListener('click', () => this.toggleSidePanels());
     document.getElementById('control-peak')?.addEventListener('click', () => this.toggleSidePanels());
     document.getElementById('control-close')?.addEventListener('click', () => this.handleDisconnect());
+    document.getElementById('control-speaker')?.addEventListener('click', () => this.toggleSpeakerIcon());
+    document.getElementById('control-mic')?.addEventListener('click', () => this.toggleMicIcon());
 
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
@@ -927,6 +929,32 @@ class VoiceScannerApp {
    */
   private toggleSidePanels(): void {
     this.mainLayout?.classList.toggle('panels-hidden');
+  }
+
+  /**
+   * Toggle speaker icon between SpeakerHigh.svg and SpeakerSlash.svg
+   */
+  private toggleSpeakerIcon(): void {
+    this.speakerMuted = !this.speakerMuted;
+    const btn = document.getElementById('control-speaker');
+    const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
+    if (img) {
+      img.src = this.speakerMuted ? '/SpeakerSlash.svg' : '/SpeakerHigh.svg';
+    }
+    btn?.setAttribute('aria-label', this.speakerMuted ? 'Sound muted' : 'Sound');
+  }
+
+  /**
+   * Toggle mic icon between Microphone (1).svg and MicrophoneSlash.svg
+   */
+  private toggleMicIcon(): void {
+    this.micMuted = !this.micMuted;
+    const btn = document.getElementById('control-mic');
+    const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
+    if (img) {
+      img.src = this.micMuted ? '/MicrophoneSlash.svg' : '/Microphone (1).svg';
+    }
+    btn?.setAttribute('aria-label', this.micMuted ? 'Microphone muted' : 'Microphone');
   }
 
   /**
