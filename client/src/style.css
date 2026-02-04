@@ -3,7 +3,7 @@
 /* ===== CSS VARIABLES ===== */
 :root {
   /* Colors - NesterWebsite palette */
-  --bg-primary: #000000;
+  --bg-primary: #0E0102;
   --bg-secondary: #0a0a0a;
   --bg-panel: rgba(10, 10, 10, 0.8);
 
@@ -223,6 +223,18 @@ body {
   bottom: 0;
   padding: 0;
   overflow: hidden;
+}
+
+/* dots.svg layer on top of main layout */
+.main-layout-dots {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* ===== PANELS (overlay on top of center) ===== */
