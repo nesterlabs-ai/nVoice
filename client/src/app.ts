@@ -274,11 +274,9 @@ class VoiceScannerApp {
     // New connect/disconnect buttons
     const connectBtn = document.getElementById('connect-btn');
     const disconnectBtn = document.getElementById('disconnect-btn');
-    const floatingDisconnectBtn = document.getElementById('floating-disconnect-btn');
 
     connectBtn?.addEventListener('click', () => this.handleConnect());
     disconnectBtn?.addEventListener('click', () => this.handleDisconnect());
-    floatingDisconnectBtn?.addEventListener('click', () => this.handleDisconnect());
 
     // Legacy scanner frame click (if still exists)
     this.scannerFrame?.addEventListener('click', () => this.handleOrbClick());
@@ -324,7 +322,6 @@ class VoiceScannerApp {
     const connectArea = document.getElementById('connect-area');
     const connectBtn = document.getElementById('connect-btn');
     const statusDisplay = document.getElementById('status-display');
-    const floatingDisconnectBtn = document.getElementById('floating-disconnect-btn');
     const connectionStatus = document.getElementById('connection-status');
 
     if (connected) {
@@ -332,11 +329,10 @@ class VoiceScannerApp {
       connectBtn?.classList.remove('connecting');
       connectBtn?.classList.add('shrinking');
 
-      // After animation, hide connect area and show floating button
+      // After animation, hide connect area (disconnect is via control-close in media bar)
       setTimeout(() => {
         connectArea?.classList.add('hidden');
         connectBtn?.classList.remove('shrinking');
-        floatingDisconnectBtn?.classList.remove('hidden');
       }, 400);
 
       statusDisplay?.classList.remove('hidden');
@@ -347,7 +343,6 @@ class VoiceScannerApp {
       connectBtn?.classList.remove('shrinking');
       connectArea?.classList.remove('hidden');
       statusDisplay?.classList.add('hidden');
-      floatingDisconnectBtn?.classList.add('hidden');
       connectionStatus?.classList.remove('online');
       if (connectionStatus) connectionStatus.textContent = 'OFFLINE';
     }

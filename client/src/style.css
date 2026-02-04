@@ -1133,48 +1133,6 @@ body {
   border-color: var(--accent-orange);
 }
 
-/* ===== FLOATING DISCONNECT BUTTON ===== */
-.floating-disconnect-btn {
-  position: absolute;
-  bottom: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: rgba(239, 51, 57, 0.9);
-  border: 2px solid var(--accent-hero);
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 20;
-  box-shadow: 0 4px 20px rgba(239, 51, 57, 0.4);
-  transition: all 0.3s ease;
-  animation: floatIn 0.5s ease-out;
-}
-
-.floating-disconnect-btn svg {
-  width: 20px;
-  height: 20px;
-  stroke-width: 2.5;
-}
-
-.floating-disconnect-btn:hover {
-  background: #ff4a4f;
-  transform: translateX(-50%) scale(1.1);
-  box-shadow: 0 6px 30px rgba(239, 51, 57, 0.6);
-}
-
-.floating-disconnect-btn:active {
-  transform: translateX(-50%) scale(0.95);
-}
-
-.floating-disconnect-btn.hidden {
-  display: none;
-}
-
 /* Connect button shrink animation */
 .connect-btn.shrinking {
   animation: shrinkToCircle 0.4s ease-in forwards;
@@ -1197,18 +1155,6 @@ body {
     opacity: 0;
     transform: scale(0.3) translateY(100px);
     border-radius: 50%;
-  }
-}
-
-@keyframes floatIn {
-  0% {
-    opacity: 0;
-    transform: translateX(-50%) translateY(50px) scale(0.5);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
   }
 }
 
