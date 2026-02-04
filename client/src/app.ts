@@ -127,6 +127,12 @@ class VoiceScannerApp {
   private isTypewriting: boolean = false;
   private typewriterSpeed: number = 30; // ms per word
 
+  // Live subtitle above wave (2 lines, synced with voice)
+  private liveSubtitleUser: HTMLElement | null = null;
+  private liveSubtitleBot: HTMLElement | null = null;
+  private lastUserSubtitleText: string = '';
+  private lastBotSubtitleText: string = '';
+
   // Visual cards state
   private activeVisualCard: HTMLElement | null = null;
   private visualCardsContainer: HTMLElement | null = null;
@@ -194,6 +200,8 @@ class VoiceScannerApp {
     this.welcomeMessage = document.getElementById('welcome-message');
     this.transcriptList = document.getElementById('transcript-list');
     this.transcriptStatus = document.getElementById('transcript-status');
+    this.liveSubtitleUser = document.getElementById('live-subtitle-user');
+    this.liveSubtitleBot = document.getElementById('live-subtitle-bot');
     this.debugPanel = document.getElementById('debug-panel');
     this.debugLog = document.getElementById('debug-log');
     this.debugToggle = document.getElementById('debug-toggle');
@@ -279,6 +287,8 @@ class VoiceScannerApp {
 
     // Side panels toggle (left + right)
     this.panelsToggle?.addEventListener('click', () => this.toggleSidePanels());
+    document.getElementById('control-peak')?.addEventListener('click', () => this.toggleSidePanels());
+    document.getElementById('control-close')?.addEventListener('click', () => this.handleDisconnect());
 
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
@@ -705,6 +715,13 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
+    if (isUser) {
+      this.lastUserSubtitleText = text;
+    } else {
+      this.lastBotSubtitleText = text;
+    }
+    this.updateLiveSubtitle();
+
     const bubble = document.createElement('div');
     bubble.className = `transcript-bubble ${isUser ? 'user' : 'bot'}`;
 
@@ -725,6 +742,18 @@ class VoiceScannerApp {
 
     // Scroll to bottom
     this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+  }
+
+  /**
+   * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice)
+   */
+  private updateLiveSubtitle(): void {
+    if (this.liveSubtitleUser) {
+      this.liveSubtitleUser.textContent = this.lastUserSubtitleText ? `You: ${this.lastUserSubtitleText}` : '';
+    }
+    if (this.liveSubtitleBot) {
+      this.liveSubtitleBot.textContent = this.lastBotSubtitleText ? `NesterAI: ${this.lastBotSubtitleText}` : '';
+    }
   }
 
   /**
@@ -784,6 +813,10 @@ class VoiceScannerApp {
         wordSpan.textContent = word + ' ';
         textSpan.appendChild(wordSpan);
 
+        // Sync live subtitle with typewriter (voice sync)
+        this.lastBotSubtitleText = (textSpan.textContent || '').trim();
+        this.updateLiveSubtitle();
+
         // Scroll to bottom
         if (this.transcriptList) {
           this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
@@ -800,11 +833,15 @@ class VoiceScannerApp {
    */
   private finalizeBotBubble(): void {
     if (this.currentBotBubble) {
+      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
+      if (textSpan) {
+        this.lastBotSubtitleText = (textSpan.textContent || '').trim();
+        this.updateLiveSubtitle();
+      }
       this.currentBotBubble.classList.remove('typewriter');
       this.currentBotBubble.classList.add('finalized');
 
       // Convert animated words to static text for performance
-      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
       if (textSpan) {
         const fullText = textSpan.textContent || '';
         textSpan.innerHTML = '';
@@ -1996,6 +2033,9 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
+    this.lastBotSubtitleText = '';
+    this.updateLiveSubtitle();
+
     this.streamingBubble = document.createElement('div');
     this.streamingBubble.className = 'transcript-bubble bot streaming';
 
@@ -2030,6 +2070,10 @@ class VoiceScannerApp {
     textContainer.appendChild(wordSpan);
     this.streamingWords.push(word);
 
+    // Sync live subtitle with streaming (voice sync)
+    this.lastBotSubtitleText = this.streamingWords.join(' ');
+    this.updateLiveSubtitle();
+
     // Auto-scroll
     if (this.transcriptList) {
       this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
@@ -2041,6 +2085,9 @@ class VoiceScannerApp {
    */
   private finalizeCurrentStreamingBubble(): void {
     if (this.streamingBubble) {
+      this.lastBotSubtitleText = this.streamingWords.join(' ');
+      this.updateLiveSubtitle();
+
       this.streamingBubble.classList.remove('streaming');
       this.streamingBubble.classList.add('finalized');
 
