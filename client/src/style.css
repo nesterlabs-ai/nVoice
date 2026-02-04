@@ -31,7 +31,7 @@
   --font-sans: "Poppins", system-ui, sans-serif;
 
   /* Layout */
-  --header-height: 56px;
+  --header-height: 0px;
   --panel-width: 320px;
   --panel-gap: 24px;
   --panel-radius: 4px;
