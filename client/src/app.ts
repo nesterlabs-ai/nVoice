@@ -52,6 +52,8 @@ class VoiceScannerApp {
   private debugLog: HTMLElement | null = null;
   private debugToggle: HTMLElement | null = null;
   private debugClose: HTMLElement | null = null;
+  private mainLayout: HTMLElement | null = null;
+  private panelsToggle: HTMLElement | null = null;
   private emotionPanel: HTMLElement | null = null;
   private emotionToggle: HTMLElement | null = null;
   private emotionLabel: HTMLElement | null = null;
@@ -196,6 +198,8 @@ class VoiceScannerApp {
     this.debugLog = document.getElementById('debug-log');
     this.debugToggle = document.getElementById('debug-toggle');
     this.debugClose = document.getElementById('debug-close');
+    this.mainLayout = document.querySelector('.main-layout');
+    this.panelsToggle = document.getElementById('panels-toggle');
     this.emotionPanel = document.getElementById('emotion-panel');
     this.emotionToggle = document.getElementById('emotion-toggle');
     this.emotionLabel = document.getElementById('emotion-label');
@@ -272,6 +276,9 @@ class VoiceScannerApp {
     // Debug panel
     this.debugToggle?.addEventListener('click', () => this.toggleDebugPanel());
     this.debugClose?.addEventListener('click', () => this.hideDebugPanel());
+
+    // Side panels toggle (left + right)
+    this.panelsToggle?.addEventListener('click', () => this.toggleSidePanels());
 
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
@@ -876,6 +883,13 @@ class VoiceScannerApp {
    */
   private toggleDebugPanel(): void {
     this.debugPanel?.classList.toggle('visible');
+  }
+
+  /**
+   * Toggle left and right side panels visibility
+   */
+  private toggleSidePanels(): void {
+    this.mainLayout?.classList.toggle('panels-hidden');
   }
 
   /**

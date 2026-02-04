@@ -231,6 +231,17 @@ body {
   gap: var(--panel-gap);
   height: 100%;
   overflow: hidden;
+  transition: opacity var(--transition-fast), visibility var(--transition-fast);
+}
+
+/* Main layout when side panels are hidden */
+.main-layout.panels-hidden {
+  grid-template-columns: 1fr;
+}
+
+.main-layout.panels-hidden .left-panel,
+.main-layout.panels-hidden .right-panel {
+  display: none;
 }
 
 .panel {
