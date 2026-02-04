@@ -829,6 +829,115 @@ body {
   margin: 0 16px;
 }
 
+/* ===== CLOSE OPTIONS BAR (Restart | Peak, shown when Close is clicked) ===== */
+.close-options-bar {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: inline-flex;
+  padding: 8px;
+  align-items: center;
+  border-radius: 99px;
+  border: 1px solid rgba(198, 198, 198, 0.15);
+  background: rgba(109, 109, 109, 0.40);
+  box-shadow: 0 10px 84.1px 0 rgba(0, 0, 0, 0.64);
+  backdrop-filter: blur(22.5px);
+}
+
+.close-options-bar.hidden {
+  display: none;
+}
+
+.close-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.close-option:focus-visible {
+  outline: 2px solid var(--accent-hero);
+  outline-offset: 2px;
+}
+
+.close-option-restart {
+  display: flex;
+  height: 48px;
+  min-width: 96px;
+  padding: 0 16px;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  border-radius: 99px;
+  background: #000;
+  color: #FFF;
+  font-family: "JetBrains Mono";
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: normal;
+}
+
+.close-option-restart:hover {
+  background: #1a1a1a;
+}
+
+.close-option-restart .close-option-icon {
+  width: 18px;
+  height: 18px;
+  color: #fff;
+}
+
+.close-option-restart svg.close-option-icon {
+  stroke: #fff;
+}
+
+.close-options-divider {
+  width: 1px;
+  background: rgba(100, 100, 100, 0.8);
+  flex-shrink: 0;
+}
+
+.close-option-peak {
+  display: flex;
+  height: 48px;
+  min-width: 96px;
+  padding: 0 16px;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  border-radius: 99px;
+  background: #FFF;
+  color: #000;
+font-family: "JetBrains Mono";
+font-size: 16px;
+font-style: normal;
+font-weight: 700;
+line-height: normal;
+}
+
+.close-option-peak:hover {
+  background: #f0f0f0;
+}
+
+.close-option-peak .close-option-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.close-option-label {
+  line-height: 1;
+}
+
 .terminal-body {
   flex: 1;
   padding: 12px;

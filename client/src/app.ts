@@ -286,9 +286,15 @@ class VoiceScannerApp {
     this.debugClose?.addEventListener('click', () => this.hideDebugPanel());
 
     document.getElementById('control-peak')?.addEventListener('click', () => this.toggleSidePanels());
-    document.getElementById('control-close')?.addEventListener('click', () => this.handleDisconnect());
+    document.getElementById('control-close')?.addEventListener('click', () => {
+      this.handleDisconnect();
+      this.showCloseOptions();
+    });
     document.getElementById('control-speaker')?.addEventListener('click', () => this.toggleSpeakerIcon());
     document.getElementById('control-mic')?.addEventListener('click', () => this.toggleMicIcon());
+
+    document.getElementById('close-option-restart')?.addEventListener('click', () => this.onRestartOption());
+    document.getElementById('close-option-peak')?.addEventListener('click', () => this.onPeakOption());
 
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
@@ -306,6 +312,42 @@ class VoiceScannerApp {
     const connectBtn = document.getElementById('connect-btn');
     connectBtn?.classList.add('connecting');
     this.connect();
+  }
+
+  /**
+   * Show Restart/Peak options in center and hide media control bar (when Close is clicked)
+   */
+  private showCloseOptions(): void {
+    const mediaBar = document.querySelector('.media-control-bar');
+    const closeOptionsBar = document.getElementById('close-options-bar');
+    mediaBar?.classList.add('hidden');
+    closeOptionsBar?.classList.remove('hidden');
+  }
+
+  /**
+   * Restart: hide options bar, disconnect, then connect (same flow as connect-btn)
+   */
+  private async onRestartOption(): Promise<void> {
+    this.hideCloseOptions();
+    await this.disconnect();
+    this.handleConnect();
+  }
+
+  /**
+   * Peak: toggle side panels and show media bar again
+   */
+  private onPeakOption(): void {
+    this.toggleSidePanels();
+  }
+
+  /**
+   * Hide Restart/Peak options and show media control bar
+   */
+  private hideCloseOptions(): void {
+    const mediaBar = document.querySelector('.media-control-bar');
+    const closeOptionsBar = document.getElementById('close-options-bar');
+    closeOptionsBar?.classList.add('hidden');
+    mediaBar?.classList.remove('hidden');
   }
 
   /**

@@ -144,6 +144,19 @@
         </button>
       </div>
 
+      <!-- Restart / Peak options (shown when Close is clicked; replaces media bar) -->
+      <div class="close-options-bar hidden" id="close-options-bar" aria-label="Restart or Peak">
+        <button type="button" class="close-option close-option-restart" id="close-option-restart" aria-label="Restart">
+          <img src="/ArrowClockwise.svg" alt="" class="close-option-icon" />
+          <span class="close-option-label">Restart</span>
+        </button>
+        <img src="/Line 3.svg" alt="" class="control-bar-divider" aria-hidden="true" />
+        <button type="button" class="close-option close-option-peak" id="close-option-peak" aria-label="Peak">
+          <img src="/Eye (1).svg" alt="" class="close-option-icon" />
+          <span class="close-option-label">Peak</span>
+        </button>
+      </div>
+
       <!-- Gemini Wave Visualizer -->
       <div class="wave-container" id="gemini-wave-container">
         <canvas id="gemini-wave-canvas" class="wave-canvas"></canvas>
