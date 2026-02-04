@@ -896,6 +896,43 @@ body {
   /* Space for larger wave */
 }
 
+/* Back button (pill, white, dark border) */
+.back-btn {
+  position: absolute;
+  top: 81px;
+  left: 155px;
+  z-index: 10;
+  cursor: pointer;
+  display: inline-flex;
+  height: 32px;
+  padding: 0 12px;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  border-radius: 99px;
+  background: #FFF;
+  border: none;
+}
+
+.back-btn:hover {
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.32) 0%, rgba(0, 0, 0, 0.32) 100%), #FFF;
+}
+
+.back-btn-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.back-btn-text {
+  color: #000;
+  text-align: center;
+  font-family: "JetBrains Mono";
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
 /* Connect Area */
 .connect-area {
   display: flex;
