@@ -278,6 +278,11 @@ class VoiceScannerApp {
     connectBtn?.addEventListener('click', () => this.handleConnect());
     disconnectBtn?.addEventListener('click', () => this.handleDisconnect());
 
+    // Back button: open NesterLabs in the same tab
+    document.getElementById('back-btn')?.addEventListener('click', () => {
+      window.location.href = 'https://www.nesterlabs.com/';
+    });
+
     // Legacy scanner frame click (if still exists)
     this.scannerFrame?.addEventListener('click', () => this.handleOrbClick());
 
