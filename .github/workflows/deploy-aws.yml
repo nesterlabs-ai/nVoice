@@ -32,8 +32,9 @@ on:
         type: boolean
 
 env:
-  AWS_REGION: us-west-2
-  ENVIRONMENT: dev
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+  ENVIRONMENT: ${{ vars.ENVIRONMENT || 'dev' }}
+  PUBLIC_URL: ${{ vars.PUBLIC_URL || 'https://ai.nesterlabs.com' }}
 
 jobs:
   # Detect what changed to only build necessary images
@@ -43,6 +44,7 @@ jobs:
     outputs:
       backend: ${{ steps.changes.outputs.backend }}
       frontend: ${{ steps.changes.outputs.frontend }}
+      deployment: ${{ steps.changes.outputs.deployment }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -56,6 +58,9 @@ jobs:
               - 'pyproject.toml'
             frontend:
               - 'client/**'
+            deployment:
+              - 'deployment/docker/docker-compose.prod.yml'
+              - 'deployment/docker/Caddyfile.prod'
 
   # Build and push backend image
   build-backend:
@@ -136,7 +141,7 @@ jobs:
       github.event.inputs.skip_deploy != 'true' &&
       (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
       (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') &&
-      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success' || needs.changes.outputs.deployment == 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -194,8 +199,8 @@ jobs:
 
       - name: Health check
         run: |
-          echo "Verifying deployment..."
-          curl -f --retry 3 --retry-delay 10 https://${{ secrets.LIGHTSAIL_HOST }}.nip.io/health || \
+          echo "Verifying deployment at ${{ env.PUBLIC_URL }}..."
+          curl -f --retry 3 --retry-delay 10 ${{ env.PUBLIC_URL }}/health || \
           curl -f --retry 3 --retry-delay 10 http://${{ secrets.LIGHTSAIL_HOST }}:7860/health
           echo "Health check passed!"
 
