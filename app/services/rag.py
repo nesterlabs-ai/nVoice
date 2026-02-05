@@ -2,14 +2,21 @@
 RAG (Retrieval Augmented Generation) service for the Voice Assistant.
 
 This module provides RAG functionality using different backends:
-- LightRAG: External LightRAG API integration
+- LightRAG: External LightRAG API integration with A2UI template support
 - Pinecone: Vector database with LangChain integration
 - Mock: For testing purposes
+
+A2UI Integration:
+- LightRAG can accept A2UI templates and fill them with retrieved data
+- Templates are sent with the query, and LLM fills them from RAG context
+- This enables dynamic visual responses based on knowledge base content
 """
 
 import json
+import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 import httpx
 from loguru import logger
@@ -54,6 +61,26 @@ def get_shared_client(timeout: float = 30.0, verify: bool = False) -> httpx.Asyn
     return _shared_client
 
 
+@dataclass
+class A2UIResponse:
+    """Response from RAG service with A2UI support.
+
+    Attributes:
+        text: Natural language response text
+        a2ui: A2UI document structure (filled template) or None
+        references: List of source document references
+        tier: Template tier that was used
+        template_type: Type of template that was filled
+        query_time_ms: Total query time in milliseconds
+    """
+    text: str
+    a2ui: Optional[Dict[str, Any]] = None
+    references: Optional[List[Dict[str, Any]]] = None
+    tier: Optional[str] = None
+    template_type: Optional[str] = None
+    query_time_ms: float = 0.0
+
+
 class BaseRAGService(ABC):
     """Abstract base class for RAG services."""
 
@@ -68,6 +95,29 @@ class BaseRAGService(ABC):
             The RAG response string
         """
         pass
+
+    async def get_response_with_a2ui(
+        self,
+        query: str,
+        a2ui_template: Optional[Dict[str, Any]] = None,
+        template_instructions: Optional[str] = None,
+    ) -> A2UIResponse:
+        """Query the RAG service with A2UI template support.
+
+        This method allows sending an A2UI template to be filled by the RAG/LLM.
+        Default implementation falls back to get_response() without A2UI.
+
+        Args:
+            query: The user's question
+            a2ui_template: Optional A2UI template structure to fill
+            template_instructions: Optional instructions for template filling
+
+        Returns:
+            A2UIResponse with text and optionally filled A2UI template
+        """
+        # Default implementation: just get text response
+        text = await self.get_response(query)
+        return A2UIResponse(text=text)
 
     @abstractmethod
     def get_status(self) -> Dict[str, Any]:
@@ -280,6 +330,180 @@ class LightRAGService(BaseRAGService):
             logger.error(f"LightRAG error: {e}")
             return f"I encountered an error: {str(e)}"
 
+    async def get_response_with_a2ui(
+        self,
+        query: str,
+        a2ui_template: Optional[Dict[str, Any]] = None,
+        template_instructions: Optional[str] = None,
+    ) -> A2UIResponse:
+        """Query LightRAG with A2UI template support.
+
+        This method sends the query along with an A2UI template to LightRAG.
+        LightRAG's LLM will fill the template with data from the knowledge base.
+
+        Args:
+            query: The user's question
+            a2ui_template: A2UI template structure to fill (from template library)
+            template_instructions: Instructions for how to fill the template
+
+        Returns:
+            A2UIResponse with text response and filled A2UI template
+        """
+        start_time = time.time()
+
+        logger.info("=" * 60)
+        logger.info("🎨 RAG+A2UI QUERY STARTING")
+        logger.info(f"   Query: '{query[:60]}...'")
+        logger.info(f"   Template provided: {a2ui_template is not None}")
+        if a2ui_template:
+            template_type = a2ui_template.get("root", {}).get("type", "unknown")
+            logger.info(f"   Template type: {template_type}")
+        logger.info("=" * 60)
+
+        try:
+            # Build payload with A2UI template
+            payload = {
+                "query": query,
+                "mode": self.mode,
+                "stream": False,  # Non-streaming for A2UI (need complete response)
+                "top_k": self.top_k,
+                "chunk_top_k": self.chunk_top_k,
+                "max_entity_tokens": self.max_entity_tokens,
+                "max_relation_tokens": self.max_relation_tokens,
+                "max_total_tokens": self.max_total_tokens,
+                "include_references": True,
+            }
+
+            # Add A2UI template if provided
+            if a2ui_template:
+                payload["a2ui_template"] = a2ui_template
+                payload["response_format"] = "both"  # Request both text and A2UI
+
+                # Default instructions if not provided
+                if not template_instructions:
+                    template_instructions = (
+                        "Fill this A2UI template with actual data from the retrieved context. "
+                        "Add as many items as the data supports. Use REAL data from the context. "
+                        "Do NOT return empty arrays or placeholder text."
+                    )
+                payload["template_instructions"] = template_instructions
+
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "ngrok-skip-browser-warning": "true",
+                "Connection": "keep-alive",
+            }
+            if self.api_key:
+                headers["X-API-Key"] = self.api_key
+
+            # Use shared client for connection pooling
+            if self.use_connection_pooling:
+                client = get_shared_client(timeout=self.timeout, verify=False)
+            else:
+                client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(self.timeout, connect=5.0),
+                    verify=False,
+                    limits=httpx.Limits(max_connections=1),
+                )
+
+            try:
+                # Use non-streaming endpoint for A2UI (need complete JSON response)
+                response = await client.post(
+                    f"{self.api_url}/query",
+                    json=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                response_data = response.json()
+
+            finally:
+                if not self.use_connection_pooling:
+                    await client.aclose()
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info(f"⏱️ RAG+A2UI query completed in {elapsed_ms:.1f}ms")
+
+            # Parse response
+            text_response = response_data.get("response", "")
+            a2ui_data = response_data.get("a2ui")
+            references = response_data.get("references", [])
+
+            # Extract tier and template info from response metadata
+            metadata = response_data.get("metadata", {})
+            tier = metadata.get("tier")
+            template_type = metadata.get("template_type")
+
+            # If A2UI is in v2 format (list), we don't support it - nullify
+            if isinstance(a2ui_data, list):
+                logger.warning("⚠️ LightRAG returned v2 format A2UI (list) - not supported, nullifying")
+                a2ui_data = None
+
+            # Validate A2UI has actual content
+            if a2ui_data and isinstance(a2ui_data, dict):
+                props = a2ui_data.get("root", {}).get("props", {})
+                has_content = False
+
+                for key, value in props.items():
+                    if isinstance(value, list) and len(value) > 0:
+                        for item in value:
+                            if isinstance(item, dict) and any(
+                                v for v in item.values() if v and str(v).strip()
+                            ):
+                                has_content = True
+                                break
+                        if has_content:
+                            break
+                    elif isinstance(value, str) and value.strip() and key in ("title", "content", "subtitle"):
+                        has_content = True
+                        break
+
+                if not has_content:
+                    logger.warning("⚠️ A2UI template has no real data - nullifying")
+                    a2ui_data = None
+
+            if a2ui_data:
+                filled_type = a2ui_data.get("root", {}).get("type", "unknown")
+                logger.info(f"✅ RAG+A2UI SUCCESS: Got filled {filled_type} template")
+            else:
+                logger.info("✅ RAG+A2UI SUCCESS: Text only (no A2UI template filled)")
+
+            logger.info(f"   Response length: {len(text_response)} chars")
+            logger.info(f"   References: {len(references)} documents")
+
+            return A2UIResponse(
+                text=text_response,
+                a2ui=a2ui_data,
+                references=references,
+                tier=tier,
+                template_type=template_type,
+                query_time_ms=elapsed_ms,
+            )
+
+        except httpx.TimeoutException:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.error(f"❌ RAG+A2UI timeout after {elapsed_ms:.1f}ms")
+            return A2UIResponse(
+                text="I'm having trouble accessing the knowledge base. Please try again.",
+                query_time_ms=elapsed_ms,
+            )
+        except httpx.HTTPStatusError as e:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.error(f"❌ RAG+A2UI HTTP error: {e.response.status_code}")
+            return A2UIResponse(
+                text="I encountered an error while searching the knowledge base.",
+                query_time_ms=elapsed_ms,
+            )
+        except Exception as e:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.error(f"❌ RAG+A2UI error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return A2UIResponse(
+                text=f"I encountered an error: {str(e)}",
+                query_time_ms=elapsed_ms,
+            )
+
     async def health_check(self) -> Dict[str, Any]:
         """Check if the LightRAG API is healthy.
 
@@ -293,7 +517,7 @@ class LightRAGService(BaseRAGService):
             }
             if self.api_key:
                 headers["X-API-Key"] = self.api_key
-            
+
             # Use shared client for faster health checks
             client = get_shared_client(timeout=10.0, verify=False)
             response = await client.get(
@@ -342,12 +566,6 @@ def create_rag_service(config: Dict[str, Any]) -> BaseRAGService:
     if rag_type == "lightrag":
         logger.info("Creating LightRAG Service")
         return LightRAGService(config=rag_config)
-    elif rag_type == "pinecone":
-        logger.info("Creating Pinecone RAG Service")
-        # Import here to avoid circular imports and optional dependency
-        from app.services.pinecone_rag import PineconeRAGService
-
-        return PineconeRAGService(config=rag_config)
     else:
         logger.info("Creating Mock RAG Service")
         return RAGService(config=rag_config)

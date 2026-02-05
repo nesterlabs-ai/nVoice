@@ -141,3 +141,4 @@ NesterConversationalBot/
 *.html
 !client/index.html
 !client/*.html
+.aider*

@@ -14,6 +14,7 @@ Features:
 
 from typing import Optional
 import time
+import asyncio
 import numpy as np
 
 from loguru import logger
@@ -25,9 +26,9 @@ from pipecat.frames.frames import (
     AudioRawFrame,
     BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
-    OutputTransportMessageFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.processors.frameworks.rtvi import RTVIServerMessageFrame
 
 from app.services.tone_detector import ToneDetector, TONE_TO_VOICE, DEFAULT_VOICE
 from app.services.msp_emotion_detector import (
@@ -118,9 +119,14 @@ class ToneAwareProcessor(FrameProcessor):
         self._latest_emotion: str = "neutral"
         self._latest_tone: str = "neutral"
         self._latest_confidence: float = 0.0
+        self._emotion_timestamp: float = 0.0  # NON-BLOCKING: Track when emotion was last updated
+        self._emotion_ttl_seconds: float = 10.0  # NON-BLOCKING: Expire emotions after 10 seconds
 
         # NEW: Hybrid detection state
         self._latest_transcript: str = ""  # Store last transcript for hybrid mode
+
+        # NON-BLOCKING: Background task tracking
+        self._background_tasks: set = set()  # Track running background tasks
 
         # ===== STABILITY SYSTEM =====
         # Tuned for MSP-PODCAST dimensional emotions:
@@ -148,10 +154,13 @@ class ToneAwareProcessor(FrameProcessor):
         # VAD threshold for silence detection
         self._vad_threshold: int = 500  # Skip audio below this amplitude
 
+        # A2UI query capture - forward user queries to VisualHintProcessor
+        self._visual_hint_processor = None
+
         mode_str = "HYBRID (Audio 70% + LLM Text 30%)" if use_hybrid_mode else "AUDIO-ONLY"
         logger.info(
-            f"ToneAwareProcessor {mode_str}: MSP-PODCAST, conf=0.25, buffer=1000ms, "
-            f"stability=2, cooldown={cooldown_seconds}s"
+            f"ToneAwareProcessor {mode_str} NON-BLOCKING: MSP-PODCAST, conf=0.25, buffer=1000ms, "
+            f"stability=2, cooldown={cooldown_seconds}s, TTL={self._emotion_ttl_seconds}s, ZERO LATENCY"
         )
 
     async def initialize(self) -> None:
@@ -175,6 +184,15 @@ class ToneAwareProcessor(FrameProcessor):
         """
         self.tts_service = tts_service
         logger.info("TTS service connected to ToneAwareProcessor")
+
+    def set_visual_hint_processor(self, visual_hint_processor) -> None:
+        """Set the VisualHintProcessor reference for A2UI query capture.
+
+        Args:
+            visual_hint_processor: The VisualHintProcessor instance
+        """
+        self._visual_hint_processor = visual_hint_processor
+        logger.info("🎨 VisualHintProcessor connected to ToneAwareProcessor for A2UI query capture")
 
     def _can_switch_cooldown(self) -> bool:
         """Check if cooldown period has passed since last switch."""
@@ -225,7 +243,17 @@ class ToneAwareProcessor(FrameProcessor):
         self._current_tone = tone
 
     def _get_current_tone(self) -> str:
-        """Get the current tone."""
+        """Get the current tone (with freshness check)."""
+        # Check if emotion has expired
+        if self._emotion_timestamp > 0:
+            age = time.time() - self._emotion_timestamp
+            if age > self._emotion_ttl_seconds:
+                # Emotion expired, reset to neutral
+                if self._current_tone != "neutral":
+                    logger.info(f"⏰ Emotion expired ({age:.1f}s > {self._emotion_ttl_seconds}s), reset to neutral")
+                    self._current_tone = "neutral"
+                    self._latest_tone = "neutral"
+                    self._latest_emotion = "neutral"
         return self._current_tone
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
@@ -279,6 +307,11 @@ class ToneAwareProcessor(FrameProcessor):
                 self._latest_transcript = text
                 logger.info(f"💾 Stored transcript for hybrid: '{text[:50]}'...")
 
+                # Forward to VisualHintProcessor for A2UI query capture
+                if self._visual_hint_processor is not None:
+                    self._visual_hint_processor.set_current_query(text)
+                    logger.debug(f"🎨 Forwarded query to VisualHintProcessor: '{text[:50]}...'")
+
             # If MSP-PODCAST not connected, use text-based detection
             if not self.emotion_detector.is_connected and text and text.strip():
                 await self._process_text_fallback(text)
@@ -287,10 +320,10 @@ class ToneAwareProcessor(FrameProcessor):
         await self.push_frame(frame, direction)
 
     async def _process_audio_frame(self, frame: AudioRawFrame) -> None:
-        """Process audio frame with MSP-PODCAST model.
+        """Process audio frame with MSP-PODCAST model (NON-BLOCKING).
 
-        Buffers audio and sends to model every 1000ms for emotion detection.
-        Includes VAD filter to skip silence.
+        Buffers audio and launches emotion detection in background every 1000ms.
+        The pipeline continues immediately without waiting for emotion results.
 
         Args:
             frame: Audio frame with raw PCM data
@@ -312,120 +345,154 @@ class ToneAwareProcessor(FrameProcessor):
 
         # Process at 1000ms (MSP-PODCAST optimal for stable dimensions)
         if self._audio_buffer_duration_ms >= self._min_buffer_ms:
-            try:
-                # ===== HYBRID MODE: Audio + Text =====
-                if self.use_hybrid_mode and self.hybrid_detector:
-                    transcript_preview = self._latest_transcript[:50] if self._latest_transcript else "[EMPTY]"
-                    logger.info(
-                        f"🔄 HYBRID MODE: Processing audio + text "
-                        f"(transcript: '{transcript_preview}', len: {len(self._latest_transcript)})"
-                    )
+            # NON-BLOCKING: Launch emotion detection in background
+            # Copy buffer data before clearing (avoid race condition)
+            audio_buffer_copy = self._audio_buffer
+            transcript_copy = self._latest_transcript
 
-                    # Get audio emotion first
-                    audio_result = await self.emotion_detector.process_audio(
-                        self._audio_buffer,
-                        sample_rate=sample_rate
-                    )
-
-                    if audio_result:
-                        # Convert to dict format for hybrid detector
-                        audio_dict = {
-                            "emotion": audio_result.emotion,
-                            "arousal": audio_result.arousal,
-                            "valence": audio_result.valence,
-                            "dominance": audio_result.dominance,
-                            "confidence": audio_result.confidence
-                        }
-
-                        # Fuse with text sentiment
-                        hybrid_result = await self.hybrid_detector.detect_hybrid_emotion(
-                            audio_emotion_result=audio_dict,
-                            transcript=self._latest_transcript
-                        )
-
-                        # Log detailed hybrid results
-                        logger.info(
-                            f"🎯 HYBRID RESULT:\n"
-                            f"  Primary Emotion: {hybrid_result['primary_emotion']} "
-                            f"(confidence: {hybrid_result['overall_confidence']:.0%})\n"
-                            f"  Audio: {audio_dict['emotion']} ({audio_dict['confidence']:.0%}) "
-                            f"× {hybrid_result['weights']['audio']:.0%}\n"
-                            f"  Text:  {hybrid_result['components']['text']['emotion']} "
-                            f"({hybrid_result['components']['text']['confidence']:.0%}) "
-                            f"× {hybrid_result['weights']['text']:.0%}\n"
-                            f"  Mismatch: {hybrid_result['mismatch_detected']} "
-                            f"{hybrid_result.get('interpretation', '')}\n"
-                            f"  Fused A/V/D: {hybrid_result['arousal']:.2f}/"
-                            f"{hybrid_result['valence']:.2f}/{hybrid_result['dominance']:.2f}\n"
-                            f"  Tokens Used: {hybrid_result['tokens_used']}"
-                        )
-
-                        # Update state with hybrid results
-                        self._latest_arousal = hybrid_result['arousal']
-                        self._latest_dominance = hybrid_result['dominance']
-                        self._latest_valence = hybrid_result['valence']
-                        self._latest_emotion = hybrid_result['primary_emotion']
-                        self._latest_tone = hybrid_result['primary_emotion']
-                        self._latest_confidence = hybrid_result['overall_confidence']
-
-                        # Map to tone for voice switching
-                        tone_map = {
-                            "frustrated": "frustrated",
-                            "excited": "excited",
-                            "sad": "sad",
-                            "neutral": "neutral"
-                        }
-                        detected_tone = tone_map.get(hybrid_result['primary_emotion'], "neutral")
-
-                        # Emit hybrid emotion to frontend
-                        await self._emit_hybrid_emotion_event(hybrid_result)
-
-                        # Check voice switch with hybrid confidence
-                        if hybrid_result['overall_confidence'] >= self._confidence_threshold:
-                            await self._check_voice_switch(
-                                detected_tone,
-                                hybrid_result['overall_confidence']
-                            )
-
-                # ===== AUDIO-ONLY MODE (Original) =====
-                else:
-                    logger.info("🎤 AUDIO-ONLY MODE: Processing audio emotion")
-
-                    # Send to MSP-PODCAST for dimensional emotion detection
-                    result = await self.emotion_detector.process_audio(
-                        self._audio_buffer,
-                        sample_rate=sample_rate
-                    )
-
-                    if result:
-                        self._latest_arousal = result.arousal
-                        self._latest_dominance = result.dominance
-                        self._latest_valence = result.valence
-                        self._latest_emotion = result.emotion
-                        self._latest_tone = result.tone
-                        self._latest_confidence = result.confidence
-
-                        logger.info(
-                            f"🎤 AUDIO-ONLY RESULT: {result.emotion} "
-                            f"(confidence: {result.confidence:.0%}, "
-                            f"A={result.arousal:.2f}, V={result.valence:.2f})"
-                        )
-
-                        # Emit emotion data to frontend via WebSocket
-                        await self._emit_emotion_event(result)
-
-                        # Check if we should switch voice (only if above threshold)
-                        if result.confidence >= self._confidence_threshold:
-                            await self._check_voice_switch(result.tone, result.confidence)
-
-            except Exception as e:
-                logger.error(f"Emotion processing error: {e}")
-                import traceback
-                traceback.print_exc()
-
-            # Clear buffer
+            # Clear buffer immediately (don't wait for detection)
             self._audio_buffer = b""
             self._audio_buffer_duration_ms = 0
+
+            # Create background task for emotion detection
+            task = asyncio.create_task(
+                self._detect_emotion_async(audio_buffer_copy, sample_rate, transcript_copy)
+            )
+
+            # Track background task and clean up when done
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+
+            logger.debug("⚡ Emotion detection launched in background (non-blocking)")
+
+    async def _detect_emotion_async(
+        self,
+        audio_buffer: bytes,
+        sample_rate: int,
+        transcript: str
+    ) -> None:
+        """Background task for emotion detection (NON-BLOCKING).
+
+        This runs in parallel with the pipeline and updates emotion state
+        when ready. The pipeline never waits for this to complete.
+
+        Args:
+            audio_buffer: Audio data to process
+            sample_rate: Sample rate of audio
+            transcript: Transcript for hybrid mode
+        """
+        try:
+            # ===== HYBRID MODE: Audio + Text =====
+            if self.use_hybrid_mode and self.hybrid_detector:
+                transcript_preview = transcript[:50] if transcript else "[EMPTY]"
+                logger.debug(
+                    f"🔄 [BG] HYBRID MODE: Processing audio + text "
+                    f"(transcript: '{transcript_preview}')"
+                )
+
+                # Get audio emotion first
+                audio_result = await self.emotion_detector.process_audio(
+                    audio_buffer,
+                    sample_rate=sample_rate
+                )
+
+                if audio_result:
+                    # Convert to dict format for hybrid detector
+                    audio_dict = {
+                        "emotion": audio_result.emotion,
+                        "arousal": audio_result.arousal,
+                        "valence": audio_result.valence,
+                        "dominance": audio_result.dominance,
+                        "confidence": audio_result.confidence
+                    }
+
+                    # Fuse with text sentiment
+                    hybrid_result = await self.hybrid_detector.detect_hybrid_emotion(
+                        audio_emotion_result=audio_dict,
+                        transcript=transcript
+                    )
+
+                    # Log detailed hybrid results
+                    logger.info(
+                        f"🎯 [BG] HYBRID RESULT:\n"
+                        f"  Primary Emotion: {hybrid_result['primary_emotion']} "
+                        f"(confidence: {hybrid_result['overall_confidence']:.0%})\n"
+                        f"  Audio: {audio_dict['emotion']} ({audio_dict['confidence']:.0%}) "
+                        f"× {hybrid_result['weights']['audio']:.0%}\n"
+                        f"  Text:  {hybrid_result['components']['text']['emotion']} "
+                        f"({hybrid_result['components']['text']['confidence']:.0%}) "
+                        f"× {hybrid_result['weights']['text']:.0%}\n"
+                        f"  Mismatch: {hybrid_result['mismatch_detected']} "
+                        f"{hybrid_result.get('interpretation', '')}\n"
+                        f"  Fused A/V/D: {hybrid_result['arousal']:.2f}/"
+                        f"{hybrid_result['valence']:.2f}/{hybrid_result['dominance']:.2f}\n"
+                        f"  Tokens Used: {hybrid_result['tokens_used']}"
+                    )
+
+                    # Update state with hybrid results (thread-safe for asyncio)
+                    self._latest_arousal = hybrid_result['arousal']
+                    self._latest_dominance = hybrid_result['dominance']
+                    self._latest_valence = hybrid_result['valence']
+                    self._latest_emotion = hybrid_result['primary_emotion']
+                    self._latest_tone = hybrid_result['primary_emotion']
+                    self._latest_confidence = hybrid_result['overall_confidence']
+                    self._emotion_timestamp = time.time()  # Track freshness
+
+                    # Map to tone for voice switching
+                    tone_map = {
+                        "frustrated": "frustrated",
+                        "excited": "excited",
+                        "sad": "sad",
+                        "neutral": "neutral"
+                    }
+                    detected_tone = tone_map.get(hybrid_result['primary_emotion'], "neutral")
+
+                    # Emit hybrid emotion to frontend
+                    await self._emit_hybrid_emotion_event(hybrid_result)
+
+                    # Check voice switch with hybrid confidence
+                    if hybrid_result['overall_confidence'] >= self._confidence_threshold:
+                        await self._check_voice_switch(
+                            detected_tone,
+                            hybrid_result['overall_confidence']
+                        )
+
+            # ===== AUDIO-ONLY MODE (Original) =====
+            else:
+                logger.debug("🎤 [BG] AUDIO-ONLY MODE: Processing audio emotion")
+
+                # Send to MSP-PODCAST for dimensional emotion detection
+                result = await self.emotion_detector.process_audio(
+                    audio_buffer,
+                    sample_rate=sample_rate
+                )
+
+                if result:
+                    self._latest_arousal = result.arousal
+                    self._latest_dominance = result.dominance
+                    self._latest_valence = result.valence
+                    self._latest_emotion = result.emotion
+                    self._latest_tone = result.tone
+                    self._latest_confidence = result.confidence
+                    self._emotion_timestamp = time.time()  # Track freshness
+
+                    logger.info(
+                        f"🎤 [BG] AUDIO-ONLY RESULT: {result.emotion} "
+                        f"(confidence: {result.confidence:.0%}, "
+                        f"A={result.arousal:.2f}, V={result.valence:.2f})"
+                    )
+
+                    # Emit emotion data to frontend via WebSocket
+                    await self._emit_emotion_event(result)
+
+                    # Check if we should switch voice (only if above threshold)
+                    if result.confidence >= self._confidence_threshold:
+                        await self._check_voice_switch(result.tone, result.confidence)
+
+        except Exception as e:
+            logger.error(f"[BG] Emotion processing error: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def _process_text_fallback(self, text: str) -> None:
         """Process text with LLM-based tone detection (fallback).
@@ -439,12 +506,38 @@ class ToneAwareProcessor(FrameProcessor):
             tone = await self.tone_detector.detect_tone_llm(text)
             confidence = 0.7  # Text-based detection has moderate confidence
 
-            logger.info(f"TEXT FALLBACK: {tone} ({confidence:.0%})")
+            # Map tone to VAD (arousal, dominance, valence) values
+            # These are reasonable approximations for text-based detection
+            tone_to_vad = {
+                "neutral": {"arousal": 0.5, "dominance": 0.5, "valence": 0.5},
+                "excited": {"arousal": 0.8, "dominance": 0.6, "valence": 0.8},
+                "frustrated": {"arousal": 0.7, "dominance": 0.4, "valence": 0.3},
+                "sad": {"arousal": 0.3, "dominance": 0.3, "valence": 0.3},
+                "happy": {"arousal": 0.7, "dominance": 0.6, "valence": 0.8},
+                "angry": {"arousal": 0.8, "dominance": 0.7, "valence": 0.2},
+            }
+
+            vad = tone_to_vad.get(tone, tone_to_vad["neutral"])
+
+            # Update state variables
+            self._latest_arousal = vad["arousal"]
+            self._latest_dominance = vad["dominance"]
+            self._latest_valence = vad["valence"]
+            self._latest_emotion = tone
+            self._latest_tone = tone
+            self._latest_confidence = confidence
+
+            logger.info(f"TEXT FALLBACK: {tone} ({confidence:.0%}) - A:{vad['arousal']:.2f} D:{vad['dominance']:.2f} V:{vad['valence']:.2f}")
+
+            # Emit emotion event to frontend via WebSocket
+            await self._emit_text_emotion_event(tone, vad, confidence)
 
             await self._check_voice_switch(tone, confidence)
 
         except Exception as e:
             logger.error(f"Text tone detection error: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def _check_voice_switch(self, tone: str, confidence: float) -> None:
         """Check if voice should be switched based on detected tone.
@@ -575,30 +668,25 @@ class ToneAwareProcessor(FrameProcessor):
         """
         try:
             # Create hybrid emotion data payload for frontend
-            emotion_message = {
-                "label": "rtvi-ai",
-                "type": "server-message",
-                "data": {
-                    "message_type": "hybrid_emotion_detected",
-                    "primary_emotion": hybrid_result['primary_emotion'],
-                    "secondary_emotion": hybrid_result.get('secondary_emotion'),
-                    "arousal": round(hybrid_result['arousal'], 2),
-                    "valence": round(hybrid_result['valence'], 2),
-                    "dominance": round(hybrid_result['dominance'], 2),
-                    "confidence": round(hybrid_result['overall_confidence'], 2),
-                    "audio_emotion": hybrid_result['components']['audio']['emotion'],
-                    "text_emotion": hybrid_result['components']['text']['emotion'],
-                    "audio_weight": round(hybrid_result['weights']['audio'], 2),
-                    "text_weight": round(hybrid_result['weights']['text'], 2),
-                    "mismatch_detected": hybrid_result['mismatch_detected'],
-                    "interpretation": hybrid_result.get('interpretation', ''),
-                    "tokens_used": hybrid_result['tokens_used'],
-                    "timestamp": time.time(),
-                }
+            emotion_data = {
+                "message_type": "hybrid_emotion_detected",
+                "primary_emotion": hybrid_result['primary_emotion'],
+                "secondary_emotion": hybrid_result.get('secondary_emotion'),
+                "arousal": round(hybrid_result['arousal'], 2),
+                "valence": round(hybrid_result['valence'], 2),
+                "dominance": round(hybrid_result['dominance'], 2),
+                "confidence": round(hybrid_result['overall_confidence'], 2),
+                "audio_emotion": hybrid_result['components']['audio']['emotion'],
+                "text_emotion": hybrid_result['components']['text']['emotion'],
+                "audio_weight": round(hybrid_result['weights']['audio'], 2),
+                "text_weight": round(hybrid_result['weights']['text'], 2),
+                "mismatch_detected": hybrid_result['mismatch_detected'],
+                "interpretation": hybrid_result.get('interpretation', ''),
+                "tokens_used": hybrid_result['tokens_used'],
+                "timestamp": time.time(),
             }
 
-            # Push data frame to transport (will be sent via WebSocket)
-            data_frame = OutputTransportMessageFrame(message=emotion_message)
+            data_frame = RTVIServerMessageFrame(data=emotion_data)
             await self.push_frame(data_frame)
 
             logger.info(
@@ -618,29 +706,56 @@ class ToneAwareProcessor(FrameProcessor):
         try:
             # Create emotion data payload for frontend
             # Use RTVI-compliant "server-message" type for proper callback routing
-            emotion_message = {
-                "label": "rtvi-ai",
-                "type": "server-message",
-                "data": {
-                    "message_type": "emotion_detected",
-                    "arousal": round(result.arousal, 2),
-                    "dominance": round(result.dominance, 2),
-                    "valence": round(result.valence, 2),
-                    "emotion": result.emotion,
-                    "tone": result.tone,
-                    "confidence": round(result.confidence, 2),
-                    "timestamp": result.timestamp,
-                }
+            emotion_data = {
+                "message_type": "emotion_detected",
+                "arousal": round(result.arousal, 2),
+                "dominance": round(result.dominance, 2),
+                "valence": round(result.valence, 2),
+                "emotion": result.emotion,
+                "tone": result.tone,
+                "confidence": round(result.confidence, 2),
+                "timestamp": result.timestamp,
             }
 
-            # Push data frame to transport (will be sent via WebSocket)
-            data_frame = OutputTransportMessageFrame(message=emotion_message)
+            data_frame = RTVIServerMessageFrame(data=emotion_data)
             await self.push_frame(data_frame)
 
             logger.info(f"✓ Emitted emotion event via WebSocket: {result.emotion} ({result.confidence:.0%}) - A:{result.arousal:.2f} D:{result.dominance:.2f} V:{result.valence:.2f}")
 
         except Exception as e:
             logger.error(f"Error emitting emotion event: {e}")
+
+    async def _emit_text_emotion_event(self, tone: str, vad: dict, confidence: float) -> None:
+        """Emit text-based emotion detection event to frontend via WebSocket.
+
+        Used when MSP-PODCAST is unavailable and we fall back to text-based detection.
+
+        Args:
+            tone: Detected emotional tone
+            vad: Dictionary with arousal, dominance, valence values
+            confidence: Confidence score
+        """
+        try:
+            # Create emotion data payload for frontend (text fallback)
+            emotion_data = {
+                "message_type": "emotion_detected",
+                "arousal": round(vad["arousal"], 2),
+                "dominance": round(vad["dominance"], 2),
+                "valence": round(vad["valence"], 2),
+                "emotion": tone,
+                "tone": tone,
+                "confidence": round(confidence, 2),
+                "timestamp": time.time(),
+                "source": "text_fallback",
+            }
+
+            data_frame = RTVIServerMessageFrame(data=emotion_data)
+            await self.push_frame(data_frame)
+
+            logger.info(f"✓ Emitted text emotion event via WebSocket: {tone} ({confidence:.0%}) - A:{vad['arousal']:.2f} D:{vad['dominance']:.2f} V:{vad['valence']:.2f}")
+
+        except Exception as e:
+            logger.error(f"Error emitting text emotion event: {e}")
 
     async def _emit_tone_switch_event(self, old_tone: str, new_tone: str) -> None:
         """Emit tone switch event to frontend via WebSocket.
@@ -652,19 +767,14 @@ class ToneAwareProcessor(FrameProcessor):
         try:
             # Create tone switch payload for frontend
             # Use RTVI-compliant "server-message" type for proper callback routing
-            switch_message = {
-                "label": "rtvi-ai",
-                "type": "server-message",
-                "data": {
-                    "message_type": "tone_switched",
-                    "old_tone": old_tone,
-                    "new_tone": new_tone,
-                    "timestamp": time.time(),
-                }
+            switch_data = {
+                "message_type": "tone_switched",
+                "old_tone": old_tone,
+                "new_tone": new_tone,
+                "timestamp": time.time(),
             }
 
-            # Push data frame to transport (will be sent via WebSocket)
-            data_frame = OutputTransportMessageFrame(message=switch_message)
+            data_frame = RTVIServerMessageFrame(data=switch_data)
             await self.push_frame(data_frame)
 
             logger.debug(f"Emitted tone switch event: {old_tone} -> {new_tone}")
@@ -731,6 +841,16 @@ class ToneAwareProcessor(FrameProcessor):
                 logger.info(f"Voice reset to default: {DEFAULT_VOICE}")
 
     async def cleanup(self) -> None:
-        """Clean up resources."""
+        """Clean up resources and cancel background tasks."""
+        # Cancel any running background emotion detection tasks
+        if self._background_tasks:
+            logger.info(f"Cancelling {len(self._background_tasks)} background emotion tasks...")
+            for task in self._background_tasks:
+                if not task.done():
+                    task.cancel()
+            # Wait for all tasks to complete cancellation
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            self._background_tasks.clear()
+
         await self.emotion_detector.disconnect()
         logger.info("ToneAwareProcessor cleaned up")

@@ -13,7 +13,7 @@ from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
-from pipecat.transports.network.websocket_server import (
+from pipecat.transports.websocket.server import (
     WebsocketServerParams,
     WebsocketServerTransport,
 )

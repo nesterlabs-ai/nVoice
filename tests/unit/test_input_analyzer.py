@@ -34,13 +34,26 @@ class TestInputAnalyzer:
         feedback_phrases = [
             "Thank you",
             "Thanks",
-            "Goodbye",
-            "Bye",
             "That was helpful",
+            "Great response",
+            "I appreciate it",
         ]
 
         for phrase in feedback_phrases:
             assert analyzer.is_greeting_or_feedback(phrase) is True
+
+    def test_ending_detection(self, analyzer):
+        """Test that conversation ending phrases are correctly detected."""
+        ending_phrases = [
+            "Goodbye",
+            "Bye",
+            "See you",
+            "Talk to you later",
+            "End the conversation",
+        ]
+
+        for phrase in ending_phrases:
+            assert analyzer.is_conversation_ending(phrase) is True
 
     def test_question_detection(self, analyzer):
         """Test that questions are not detected as greetings/feedback."""
