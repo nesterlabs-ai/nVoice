@@ -26,7 +26,7 @@
   <!-- ===== NESTER DESIGN LANGUAGE LAYOUT ===== -->
 
   <!-- Header Bar -->
-  <header class="header-bar">
+  <!-- <header class="header-bar">
     <div class="header-left">
       <img src="/nester-icon.png" alt="Nester AI" class="header-logo" onerror="this.style.display='none'">
       <span class="brand-text">NESTER</span>
@@ -37,10 +37,11 @@
       <span class="header-status" id="connection-status">OFFLINE</span>
       <span class="header-time" id="timestamp">00:00:00</span>
     </div>
-  </header>
+  </header> -->
 
-  <!-- Main Layout -->
-  <main class="main-layout">
+  <!-- Main Layout (panels hidden by default; use Peak in media bar to show) -->
+  <main class="main-layout panels-hidden">
+    <img src="/dots.svg" alt="" class="main-layout-dots" aria-hidden="true" />
 
     <!-- LEFT PANEL: Emotion Metrics -->
     <aside class="left-panel">
@@ -77,6 +78,12 @@
 
     <!-- CENTER: Connect Button & Wave Visualizer -->
     <section class="center-section">
+      <!-- Back button -->
+      <button type="button" class="back-btn" id="back-btn" aria-label="Back">
+        <img src="/ArrowLeft.svg" alt="" class="back-btn-icon" />
+        <span class="back-btn-text">Back</span>
+      </button>
+
       <!-- Connect/Disconnect Button -->
       <div class="connect-area" id="connect-area">
         <button class="connect-btn" id="connect-btn">
@@ -85,14 +92,6 @@
         </button>
         <p class="connect-hint">Click to begin voice interaction</p>
       </div>
-
-      <!-- Floating Disconnect Button (shown when connected) -->
-      <button class="floating-disconnect-btn hidden" id="floating-disconnect-btn" aria-label="End conversation">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
 
       <!-- Status Display (shown when connected) -->
       <div class="status-display hidden" id="status-display">
@@ -118,6 +117,44 @@
           </div>
         </div>
         <span class="status-text" id="status-text">LISTENING</span>
+      </div>
+
+      <!-- Live subtitle (synced with conversation; 2 lines above wave) -->
+      <!-- <div class="live-subtitle" id="live-subtitle" aria-live="polite">
+        <div class="live-subtitle-line live-subtitle-user" id="live-subtitle-user"></div>
+        <div class="live-subtitle-line live-subtitle-bot" id="live-subtitle-bot"></div>
+      </div> -->
+
+      <!-- Media control bar (above Gemini Wave Visualizer): speaker, mic, close, peak -->
+      <div class="media-control-bar" aria-label="Media controls">
+        <button type="button" class="control-btn control-btn-speaker" id="control-speaker" aria-label="Sound">
+          <img src="/SpeakerHigh.svg" alt="" class="control-btn-icon" />
+        </button>
+        <img src="/Line 3.svg" alt="" class="control-bar-divider" aria-hidden="true" />
+        <button type="button" class="control-btn control-btn-mic" id="control-mic" aria-label="Microphone">
+          <img src="/Microphone (1).svg" alt="" class="control-btn-icon" />
+        </button>
+        <button type="button" class="control-btn control-btn-close" id="control-close" aria-label="Close">
+          <img src="/X (1).svg" alt="" class="control-btn-icon control-btn-icon-invert" />
+        </button>
+        <img src="/Line 3.svg" alt="" class="control-bar-divider" aria-hidden="true" />
+        <button type="button" class="control-btn control-btn-peak" id="control-peak" aria-label="Peak view">
+          <img src="/Eye (1).svg" alt="" class="control-btn-icon" />
+          <span class="control-btn-label">Peak</span>
+        </button>
+      </div>
+
+      <!-- Restart / Peak options (shown when Close is clicked; replaces media bar) -->
+      <div class="close-options-bar hidden" id="close-options-bar" aria-label="Restart or Peak">
+        <button type="button" class="close-option close-option-restart" id="close-option-restart" aria-label="Restart">
+          <img src="/ArrowClockwise.svg" alt="" class="close-option-icon" />
+          <span class="close-option-label">Restart</span>
+        </button>
+        <img src="/Line 3.svg" alt="" class="control-bar-divider" aria-hidden="true" />
+        <button type="button" class="close-option close-option-peak" id="close-option-peak" aria-label="Peak">
+          <img src="/Eye (1).svg" alt="" class="close-option-icon" />
+          <span class="close-option-label">Peak</span>
+        </button>
       </div>
 
       <!-- Gemini Wave Visualizer -->
@@ -185,7 +222,7 @@
     <div class="debug-content" id="debug-log"></div>
   </div>
 
-  <!-- Toggle Button -->
+  <!-- Toggle Buttons (Debug only; panels toggle is control-btn-peak in media bar) -->
   <div class="toggle-buttons">
     <button class="toggle-btn" id="debug-toggle" aria-label="Toggle Debug">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
