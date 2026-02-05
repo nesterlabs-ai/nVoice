@@ -725,7 +725,7 @@ networks:
     expose:
       - "80"
     environment:
-      - BACKEND_URL=
+      - BACKEND_URL=https://{app.domain.name}
     depends_on:
       backend:
         condition: service_healthy
@@ -755,11 +755,6 @@ cat > /opt/nester/Caddyfile << 'CADDYEOF'
 # Automatic HTTPS with Caddy for {domain}
 
 {domain} {{
-    # Frontend - default handler
-    handle {{
-        reverse_proxy frontend:80
-    }}
-
     # API endpoints
     handle /health* {{
         reverse_proxy backend:{backend_port}
@@ -796,21 +791,25 @@ cat > /opt/nester/Caddyfile << 'CADDYEOF'
         reverse_proxy backend:{backend_port}
     }}
 
-    # Security headers
-    header {{
-        X-Frame-Options "SAMEORIGIN"
-        X-Content-Type-Options "nosniff"
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy "strict-origin-when-cross-origin"
+    # Frontend - default handler (must be last)
+    handle {{
+        reverse_proxy frontend:80
     }}
 
     encode gzip
 }}
+CADDYEOF
 
-# HTTP to HTTPS redirect
-http://{domain} {{
+# Add redirect from IP-based nip.io domain (for backwards compatibility)
+INSTANCE_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "")
+if [ -n "$INSTANCE_IP" ] && [ "{domain}" != "$INSTANCE_IP.nip.io" ]; then
+    cat >> /opt/nester/Caddyfile << REDIRECTEOF
+
+# Redirect old nip.io to new domain
+$INSTANCE_IP.nip.io {{
     redir https://{domain}{{uri}} permanent
 }}
-CADDYEOF
+REDIRECTEOF
+fi
 echo "Caddyfile created for {domain}"
 """
