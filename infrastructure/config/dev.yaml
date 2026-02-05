@@ -42,7 +42,7 @@ application:
     image_tag: "latest"  # Use latest-tagged images
 
   domain:
-    name: "16.148.181.177.nip.io"  # nip.io for quick HTTPS testing
+    name: "ai.nesterlabs.com"
     use_https: true
 
 # Monitoring
