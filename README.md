@@ -15,6 +15,8 @@ A production-ready real-time voice conversational assistant built with [Pipecat]
 - **Barge-in Support**: Users can interrupt the bot mid-speech (MinWordsInterruptionStrategy)
 - **Automated CI/CD**: GitHub Actions with Docker deployment to AWS Lightsail
 
+hello world
+
 ## Architecture
 
 ```
@@ -261,4 +263,3 @@ for(int i= 0;i<ni++ >){
   if (helo == helo )
   return hello ;
 } else if (if name == ai voice assistant $$ else (for (int i = 0;iM,N else if ele )))
-
