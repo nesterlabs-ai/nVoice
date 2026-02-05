@@ -9,13 +9,12 @@ A production-ready real-time voice conversational assistant built with [Pipecat]
 - **Real-time Voice Conversation**: WebSocket-based audio streaming with 1-1.5 second response times
 - **Speech-to-Text**: Deepgram Nova-3 for accurate real-time transcription
 - **Emotion-Aware TTS**: Chatterbox TTS via Resemble AI with dynamic emotion control
-- **Hybrid Emotion Detection**: MSP-PODCAST wav2vec2 (audio 70%) + Gemini (text sentiment 30%)
+- **Hybrid Emotion Detection**: MSP-PODCAST wav2vec2 (audio 70%) + Groq LLM (text sentiment 30%)
 - **LightRAG Integration**: Graph-based knowledge retrieval with streaming support
 - **A2UI Visual Responses**: Dynamic UI components generated from voice queries
 - **Barge-in Support**: Users can interrupt the bot mid-speech (MinWordsInterruptionStrategy)
 - **Automated CI/CD**: GitHub Actions with Docker deployment to AWS Lightsail
 
-hello world
 
 ## Architecture
 
@@ -34,8 +33,8 @@ hello world
 │              Voice Assistant Pipeline            │
 ├──────────┬──────────┬───────────┬───────────────┤
 │   STT    │   LLM    │    RAG    │     TTS       │
-│ Deepgram │  Gemini  │ LightRAG  │  Chatterbox   │
-│  Nova-3  │   2.0    │  + A2UI   │  + Emotion    │
+│ Deepgram │  Groq    │ LightRAG  │  Chatterbox   │
+│  Nova-3  │ Llama-3  │  + A2UI   │  + Emotion    │
 └──────────┴──────────┴───────────┴───────────────┘
 ```
 
@@ -65,7 +64,7 @@ nester-ai-voice-assistant/
 - Node.js 18+ (for client)
 - API Keys:
   - Deepgram (STT)
-  - Google Gemini (LLM)
+  - Groq (LLM)
   - Resemble AI (TTS with emotion)
 
 ### Installation
@@ -173,7 +172,7 @@ server:
 ### Emotion Detection
 Hybrid system combining:
 - **Audio**: MSP-PODCAST trained wav2vec2 model (70% weight)
-- **Text**: Google Gemini sentiment analysis (30% weight)
+- **Text**: Groq LLM sentiment analysis (30% weight)
 
 Detected emotions dynamically adjust TTS voice characteristics via Chatterbox.
 
@@ -258,8 +257,4 @@ MIT License - Copyright (c) 2025 NesterLabs
 - [Pipecat](https://github.com/pipecat-ai/pipecat) - Real-time AI pipeline framework
 - [Deepgram](https://deepgram.com) - Speech-to-text
 - [Resemble AI](https://resemble.ai) - Chatterbox TTS
-- [Google AI](https://ai.google.dev) - Gemini LLM
-for(int i= 0;i<ni++ >){
-  if (helo == helo )
-  return hello ;
-} else if (if name == ai voice assistant $$ else (for (int i = 0;iM,N else if ele )))
+- [Groq](https://groq.com) - LLM inference
