@@ -136,6 +136,7 @@ class VoiceScannerApp {
   private speakerMuted: boolean = false;
   private micMuted: boolean = false;
   private localAudioTrack: MediaStreamTrack | null = null;
+  private botAudioTrack: MediaStreamTrack | null = null;
 
   // Visual cards state
   private activeVisualCard: HTMLElement | null = null;
@@ -987,7 +988,9 @@ class VoiceScannerApp {
    */
   private toggleSpeakerIcon(): void {
     this.speakerMuted = !this.speakerMuted;
-    this.botAudio.muted = this.speakerMuted;
+    if (this.botAudioTrack) {
+      this.botAudioTrack.enabled = !this.speakerMuted;
+    }
     const btn = document.getElementById('control-speaker');
     const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
     if (img) {
@@ -1743,6 +1746,7 @@ class VoiceScannerApp {
 
     // Set up bot output audio
     if (tracks.bot?.audio) {
+      this.botAudioTrack = tracks.bot.audio;
       this.setupAudioTrack(tracks.bot.audio);
     }
 
@@ -1768,6 +1772,7 @@ class VoiceScannerApp {
           this.setupInputAudioTrack(track);
         } else {
           // Remote bot track - for AI voice visualization
+          this.botAudioTrack = track;
           this.setupAudioTrack(track);
         }
       }
