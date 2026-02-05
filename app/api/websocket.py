@@ -44,10 +44,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # Import here to avoid circular imports
         from app.core.server import voice_assistant_server
         from app.core.voice_assistant import VoiceAssistant
-        from pipecat.transports.websocket.fastapi import (
-            FastAPIWebsocketTransport,
-            FastAPIWebsocketParams,
-        )
+        from pipecat.transports.websocket.fastapi import FastAPIWebsocketTransport
+        from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
         from pipecat.serializers.protobuf import ProtobufFrameSerializer
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.audio.vad.vad_analyzer import VADParams

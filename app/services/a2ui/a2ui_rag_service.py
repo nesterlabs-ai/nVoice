@@ -138,7 +138,10 @@ Generate a team-flip-cards A2UI template with the following structure:
         {
           "name": "Person Name",
           "role": "Role/Title",
-          "bio": "Brief bio"
+          "bio": "Brief bio",
+          "image": "https://example.com/photo.jpg",
+          "email": "person@example.com",
+          "linkedin": "https://linkedin.com/in/username"
         }
       ]
     }
@@ -146,6 +149,7 @@ Generate a team-flip-cards A2UI template with the following structure:
 }
 
 Extract team member information from the context and fill the members array.
+IMPORTANT: Include 'image' (photo URL), 'email', and 'linkedin' fields if available in the context.
 """,
 
     "faq-accordion": """
@@ -412,7 +416,12 @@ class A2UIRAGService:
 
         # Step 1: Detect tier and select template type
         logger.info("🎯 Step 1: Detecting tier and selecting template...")
-        tier_info = detect_tier(query, custom_template)
+
+        # Determine if semantic should be used based on tier_mode config
+        use_semantic = self.tier_mode in ["auto", "semantic"]
+        logger.info(f"   Using semantic matching: {use_semantic} (tier_mode={self.tier_mode})")
+
+        tier_info = detect_tier(query, custom_template, use_semantic=use_semantic)
         template_type = tier_info["template_type"]
         logger.info(f"   Tier detected: {tier_info['tier_name']}")
         logger.info(f"   Template type: {template_type}")

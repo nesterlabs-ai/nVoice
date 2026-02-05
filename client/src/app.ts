@@ -30,6 +30,8 @@ import { A2UIDocument, isA2UIUpdate } from './types/a2ui';
 import { EmotionChart } from './components/EmotionChart';
 // Topic Timeline import
 import { TopicTimeline } from './components/TopicTimeline';
+// Wave Visualization Config
+import { waveConfig } from './config/waveVisualization';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -116,6 +118,11 @@ class VoiceScannerApp {
   private streamingBubble: HTMLElement | null = null;
   private currentUtteranceId: string | null = null;
   private streamingWords: string[] = [];
+  private lastStreamingSeqId: number = 0;
+
+  // Dedup guards: SDK double-fires onUserTranscript / onBotTranscript
+  private lastFinalTranscriptText: string = '';
+  private lastBotTranscriptChunk: string = '';
 
   // Typewriter effect state for bot transcripts
   private currentBotBubble: HTMLElement | null = null;
@@ -1296,11 +1303,11 @@ class VoiceScannerApp {
         glowAlpha = 0.15;
     }
 
-    // Gemini-style wave parameters - wave rises from bottom
+    // Wave parameters from configuration
+    const { numPoints, maxWaveHeightRatio, layers, layerTimeOffset, layerSpeedIncrement, edgeFadePower, organicWaveAmplitude } = waveConfig;
     const baseY = height; // Start from bottom
-    const maxWaveHeight = height * 0.85; // Maximum height the wave can reach
-    const numPoints = 120; // Resolution of the wave curve
-    const numLayers = 4; // Number of layered waves for depth
+    const maxWaveHeight = height * maxWaveHeightRatio;
+    const numLayers = layers.length;
 
     // Get interpolated value from frequency data with smoothing
     const getAudioValue = (position: number): number => {
@@ -1313,55 +1320,16 @@ class VoiceScannerApp {
       return v0 * (1 - t) + v1 * t;
     };
 
-    // Define colors for each layer based on state
-    let layerColors: string[];
-    switch (this.voiceState) {
-      case 'idle':
-        layerColors = [
-          'rgba(239, 51, 57, 0.08)',
-          'rgba(249, 115, 22, 0.06)',
-          'rgba(168, 85, 247, 0.04)',
-          'rgba(239, 51, 57, 0.03)'
-        ];
-        break;
-      case 'listening':
-        layerColors = [
-          'rgba(34, 197, 94, 0.7)',
-          'rgba(74, 222, 128, 0.5)',
-          'rgba(34, 197, 94, 0.3)',
-          'rgba(22, 163, 74, 0.15)'
-        ];
-        break;
-      case 'thinking':
-        layerColors = [
-          'rgba(249, 115, 22, 0.5)',
-          'rgba(234, 179, 8, 0.4)',
-          'rgba(249, 115, 22, 0.25)',
-          'rgba(234, 179, 8, 0.1)'
-        ];
-        break;
-      case 'speaking':
-        layerColors = [
-          'rgba(239, 51, 57, 0.75)',
-          'rgba(255, 90, 95, 0.55)',
-          'rgba(249, 115, 22, 0.35)',
-          'rgba(168, 85, 247, 0.2)'
-        ];
-        break;
-      default:
-        layerColors = [
-          'rgba(239, 51, 57, 0.08)',
-          'rgba(249, 115, 22, 0.06)',
-          'rgba(168, 85, 247, 0.04)',
-          'rgba(239, 51, 57, 0.03)'
-        ];
-    }
-
     // Draw multiple layered waves from back to front
     for (let layer = numLayers - 1; layer >= 0; layer--) {
-      const layerScale = 1 - (layer * 0.15); // Back layers are slightly smaller
-      const layerOffset = layer * 0.3; // Time offset for organic movement
-      const layerSpeed = 1 + layer * 0.2; // Different speeds per layer
+      const layerConfig = layers[layer];
+      const layerScale = layerConfig.heightScale;
+      const layerBlur = layerConfig.blur;
+      const layerOffset = layer * layerTimeOffset;
+      const layerSpeed = 1 + layer * layerSpeedIncrement;
+
+      // Apply blur filter for this layer
+      ctx.filter = layerBlur > 0 ? `blur(${layerBlur}px)` : 'none';
 
       ctx.beginPath();
       ctx.moveTo(0, baseY);
@@ -1376,14 +1344,14 @@ class VoiceScannerApp {
 
         // Get audio value and add organic movement
         const audioValue = getAudioValue(dataPosition);
-        const organicWave = Math.sin(normalizedX * Math.PI * 3 + this.blobTime * layerSpeed + layerOffset) * 0.08;
+        const organicWave = Math.sin(normalizedX * Math.PI * 3 + this.blobTime * layerSpeed + layerOffset) * organicWaveAmplitude;
 
         // Calculate wave height - rises from bottom
         const waveIntensity = (audioValue + organicWave) * layerScale;
         const waveHeight = Math.max(0, waveIntensity) * maxWaveHeight;
 
         // Edge fade for smooth tapering at sides
-        const edgeFade = Math.pow(Math.sin(normalizedX * Math.PI), 0.6);
+        const edgeFade = Math.pow(Math.sin(normalizedX * Math.PI), edgeFadePower);
 
         const y = baseY - waveHeight * edgeFade;
         ctx.lineTo(x, y);
@@ -1394,15 +1362,12 @@ class VoiceScannerApp {
       ctx.lineTo(0, baseY);
       ctx.closePath();
 
-      // Fill with gradient from bottom to top
-      const gradient = ctx.createLinearGradient(0, baseY, 0, baseY - maxWaveHeight);
-      const color = layerColors[layer] || layerColors[0];
-      gradient.addColorStop(0, color);
-      gradient.addColorStop(0.7, color.replace(/[\d.]+\)$/, '0.3)'));
-      gradient.addColorStop(1, 'transparent');
-
-      ctx.fillStyle = gradient;
+      // Fill with solid color from config
+      ctx.fillStyle = layerConfig.color;
       ctx.fill();
+
+      // Reset filter for next layer
+      ctx.filter = 'none';
     }
 
   }
@@ -1797,6 +1762,10 @@ class VoiceScannerApp {
           },
           onUserTranscript: (data) => {
             if (data.final) {
+              // SDK double-fires final transcripts; skip the duplicate
+              if (data.text === this.lastFinalTranscriptText) return;
+              this.lastFinalTranscriptText = data.text;
+
               this.log(`You: ${data.text}`);
               // Finalize previous bot bubble before adding user message
               this.finalizeBotBubble();
@@ -1804,6 +1773,7 @@ class VoiceScannerApp {
               // Store query and reset accumulated answer for new turn
               this.lastUserQuery = data.text;
               this.accumulatedBotAnswer = '';
+              this.lastBotTranscriptChunk = '';
               // Clear A2UI from previous turn when new user query starts
               this.clearA2UI();
               // Stop any ongoing graph node cycling
@@ -1813,9 +1783,15 @@ class VoiceScannerApp {
             }
           },
           onBotTranscript: (data) => {
+            // SDK double-fires bot transcripts; skip the duplicate chunk
+            if (data.text === this.lastBotTranscriptChunk) return;
+            this.lastBotTranscriptChunk = data.text;
+            // New bot turn — allow the same user question again next time
+            this.lastFinalTranscriptText = '';
+
             this.log(`Bot: ${data.text}`);
-            // Use typewriter effect for bot transcript
-            this.addBotTranscriptWithTypewriter(data.text);
+            // Text display is handled by streaming_text events (VisualHintProcessor)
+            // to avoid duplicate bubbles. Only accumulate here for graph highlighting.
             // Accumulate bot answer chunks
             this.accumulatedBotAnswer += ' ' + data.text;
             // Debounce highlight call - wait 500ms after last chunk
@@ -1999,8 +1975,13 @@ class VoiceScannerApp {
       this.finalizeCurrentStreamingBubble();
       this.currentUtteranceId = data.utterance_id;
       this.streamingWords = [];
+      this.lastStreamingSeqId = 0;
       this.createStreamingBubble();
     }
+
+    // Dedup: skip any word we've already rendered for this utterance
+    if (data.sequence_id <= this.lastStreamingSeqId) return;
+    this.lastStreamingSeqId = data.sequence_id;
 
     // Add word with animation (skip empty final markers)
     if (data.text && data.text.trim()) {
@@ -2985,3 +2966,4 @@ window.addEventListener('DOMContentLoaded', () => {
   window.VoiceScannerApp = VoiceScannerApp;
   new VoiceScannerApp();
 });
+

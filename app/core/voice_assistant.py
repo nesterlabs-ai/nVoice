@@ -111,9 +111,9 @@ class VoiceAssistant:
         a2ui_enabled = a2ui_config.get("enabled", True)
         logger.info(f"🎨 A2UI system enabled (RAG-triggered only): {a2ui_enabled}")
         self.visual_hint_processor = VisualHintProcessor(
-            enabled=False,  # Disable visual hint processor entirely
-            stream_words=False,
-            detect_content=False,  # Disable legacy visual hints
+            enabled=True,
+            stream_words=True,  # Word-by-word streaming is the sole transcript renderer
+            detect_content=False,  # Legacy visual hints disabled
             use_a2ui=False,  # A2UI now handled via RAG calls in ConversationManager
         )
 
@@ -332,7 +332,7 @@ class VoiceAssistant:
 
             # Push greeting directly to TTS service (bypasses LLM/context/RTI loops)
             await self.tts.queue_frame(
-                TTSSpeakFrame("Hello! I'm the Nesterlabs voice assistant. How can I help you today?")
+                TTSSpeakFrame("Hi, I'm Nester AI. We're trying to reimagine intelligence here. So tell me, what are you trying to build?")
             )
             logger.info("🎤 Greeting pushed directly to TTS service")
 
@@ -398,21 +398,16 @@ class VoiceAssistant:
         logger.info(f"   Tier: {a2ui_doc.get('_metadata', {}).get('tier_name', 'unknown')}")
         logger.info("=" * 60)
 
-        message = {
-            "label": "rtvi-ai",
-            "type": "server-message",
-            "data": {
-                "message_type": "a2ui_update",
-                "a2ui": a2ui_doc,
-                "query": query,
-                "timestamp": time.time(),
-            }
+        message_data = {
+            "message_type": "a2ui_update",
+            "a2ui": a2ui_doc,
+            "query": query,
+            "timestamp": time.time(),
         }
 
         try:
-            # Push the A2UI update through the RTVI processor
-            from pipecat.frames.frames import OutputTransportMessageFrame
-            data_frame = OutputTransportMessageFrame(message=message)
+            from pipecat.processors.frameworks.rtvi import RTVIServerMessageFrame
+            data_frame = RTVIServerMessageFrame(data=message_data)
             await self.rtvi.push_frame(data_frame)
             logger.info("✅ A2UI update emitted to frontend successfully")
         except Exception as e:

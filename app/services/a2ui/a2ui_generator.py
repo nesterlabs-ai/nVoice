@@ -391,7 +391,10 @@ class A2UIGenerator:
                 {
                     "name": item.get("title", "")[:60],
                     "role": self._extract_role(item.get("description", "")),
-                    "bio": item.get("description", "")[:200]
+                    "bio": item.get("description", "")[:200],
+                    "image": item.get("image", ""),  # Image URL if available
+                    "email": item.get("email", ""),  # Email if available
+                    "linkedin": item.get("linkedin", "")  # LinkedIn if available
                 }
                 for item in items
             ]

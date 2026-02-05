@@ -14,8 +14,9 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
-from pipecat.frames.frames import Frame, TextFrame, OutputTransportMessageFrame
+from pipecat.frames.frames import Frame, TextFrame, LLMFullResponseStartFrame, LLMFullResponseEndFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.processors.frameworks.rtvi import RTVIServerMessageFrame
 
 # Import A2UI system
 try:
@@ -226,6 +227,7 @@ class VisualHintProcessor(FrameProcessor):
         self._current_utterance_id: Optional[str] = None
         self._sequence_counter: int = 0
         self._text_buffer: str = ""
+        self._word_buffer: str = ""  # Holds partial word across chunk boundaries
         self._current_query: str = ""  # Store the user's query for A2UI
         self._last_hint_times: Dict[str, float] = {}  # Track cooldowns per content type
         self._emitted_hints_this_utterance: set = set()  # Prevent duplicate hints
@@ -245,35 +247,39 @@ class VisualHintProcessor(FrameProcessor):
             await self.push_frame(frame, direction)
             return
 
-        # Only process downstream TextFrames from LLM
-        if isinstance(frame, TextFrame) and direction == FrameDirection.DOWNSTREAM:
-            text = frame.text if hasattr(frame, 'text') else str(frame)
-            logger.info(f"📝 VisualHint received TextFrame: '{text[:50]}...' (direction={direction})")
+        if direction == FrameDirection.DOWNSTREAM:
+            # New LLM response starting — reset utterance state
+            if isinstance(frame, LLMFullResponseStartFrame):
+                self._current_utterance_id = str(uuid.uuid4())
+                self._sequence_counter = 0
+                self._text_buffer = ""
+                self._word_buffer = ""
+                self._emitted_hints_this_utterance = set()
+                self._a2ui_emitted_this_utterance = False
+                logger.info(f"📝 LLMFullResponseStart → new utterance: {self._current_utterance_id}")
 
-            if text and text.strip():
-                # Start new utterance if needed
-                if self._current_utterance_id is None:
-                    self._current_utterance_id = str(uuid.uuid4())
-                    self._sequence_counter = 0
-                    self._text_buffer = ""
-                    self._emitted_hints_this_utterance = set()
-                    logger.info(f"📝 Started new utterance: {self._current_utterance_id}")
+            # LLM response finished — flush any partial word and finalize
+            elif isinstance(frame, LLMFullResponseEndFrame):
+                if self.stream_words and self._word_buffer:
+                    # Flush the leftover partial word
+                    self._sequence_counter += 1
+                    await self._emit_word(self._word_buffer, self._sequence_counter)
+                    self._word_buffer = ""
+                await self.finalize_utterance()
+                logger.info(f"📝 LLMFullResponseEnd → utterance finalized")
 
-                # Emit streaming text events (word by word)
-                if self.stream_words:
-                    await self._emit_streaming_text(text)
+            # Stream text chunks word-by-word
+            elif isinstance(frame, TextFrame):
+                text = frame.text if hasattr(frame, 'text') else str(frame)
+                if text and text.strip():
+                    if self.stream_words:
+                        await self._emit_streaming_text(text)
 
-                # Buffer text for content detection
-                self._text_buffer += text
+                    # Buffer full text for content detection
+                    self._text_buffer += text
 
-                # Detect content patterns and emit visual hints (legacy)
-                if self.detect_content:
-                    await self._detect_and_emit_hints()
-
-                # NOTE: A2UI generation is now handled ONLY via RAG calls
-                # The ConversationManager triggers A2UI when call_rag_system is invoked
-                # This prevents A2UI from triggering on every LLM response
-                # See: ConversationManager._handle_rag_call() -> A2UIRAGService.query()
+                    if self.detect_content:
+                        await self._detect_and_emit_hints()
 
         # Always pass frame downstream to TTS
         await self.push_frame(frame, direction)
@@ -281,35 +287,53 @@ class VisualHintProcessor(FrameProcessor):
     async def _emit_streaming_text(self, text: str) -> None:
         """Emit streaming text event for word-by-word display.
 
+        LLM streaming chunks do not respect word boundaries — a word like
+        "Acknowledged" may arrive as "Acknowled" + "ged" across two chunks.
+        We buffer the trailing partial word and prepend it to the next chunk.
+
         Args:
             text: Text chunk from LLM
         """
-        # Split into words, preserving punctuation attached to words
-        words = text.split()
+        # Prepend any leftover partial word from the previous chunk
+        text = self._word_buffer + text
+        self._word_buffer = ""
 
+        # If the chunk does NOT end with whitespace, the last token is a
+        # partial word — hold it back until the next chunk completes it.
+        if text and not text[-1].isspace():
+            # Split off everything after the last space
+            last_space = text.rfind(' ')
+            if last_space == -1:
+                # Entire chunk is one partial word — buffer it all
+                self._word_buffer = text
+                return
+            else:
+                self._word_buffer = text[last_space + 1:]
+                text = text[:last_space + 1]
+
+        # Now split the complete portion into words and emit each
+        words = text.split()
         for word in words:
             if word.strip():
                 self._sequence_counter += 1
+                await self._emit_word(word, self._sequence_counter)
 
-                message = {
-                    "label": "rtvi-ai",
-                    "type": "server-message",
-                    "data": {
-                        "message_type": "streaming_text",
-                        "text": word,
-                        "is_final": False,
-                        "sequence_id": self._sequence_counter,
-                        "utterance_id": self._current_utterance_id,
-                        "timestamp": time.time(),
-                    }
-                }
-
-                try:
-                    data_frame = OutputTransportMessageFrame(message=message)
-                    await self.push_frame(data_frame)
-                    logger.info(f"📤 Streamed word: '{word}' (seq={self._sequence_counter})")
-                except Exception as e:
-                    logger.warning(f"Failed to emit streaming text: {e}")
+    async def _emit_word(self, word: str, seq: int) -> None:
+        """Emit a single word as a streaming_text event."""
+        message_data = {
+            "message_type": "streaming_text",
+            "text": word,
+            "is_final": False,
+            "sequence_id": seq,
+            "utterance_id": self._current_utterance_id,
+            "timestamp": time.time(),
+        }
+        try:
+            data_frame = RTVIServerMessageFrame(data=message_data)
+            await self.push_frame(data_frame)
+            logger.debug(f"📤 Streamed word: '{word}' (seq={seq})")
+        except Exception as e:
+            logger.warning(f"Failed to emit streaming text: {e}")
 
     async def _detect_and_emit_hints(self) -> None:
         """Detect content patterns in buffered text and emit visual hints."""
@@ -436,18 +460,14 @@ class VisualHintProcessor(FrameProcessor):
         """
         visual_type = self.CONTENT_PATTERNS[content_type]["visual_type"]
 
-        message = {
-            "label": "rtvi-ai",
-            "type": "server-message",
-            "data": {
-                "message_type": "visual_hint",
-                "hint_type": visual_type,
-                "content_type": content_type,
-                "content": content,
-                "confidence": round(confidence, 2),
-                "trigger_text": self._text_buffer[-200:] if len(self._text_buffer) > 200 else self._text_buffer,
-                "timestamp": time.time(),
-            }
+        message_data = {
+            "message_type": "visual_hint",
+            "hint_type": visual_type,
+            "content_type": content_type,
+            "content": content,
+            "confidence": round(confidence, 2),
+            "trigger_text": self._text_buffer[-200:] if len(self._text_buffer) > 200 else self._text_buffer,
+            "timestamp": time.time(),
         }
 
         logger.info(
@@ -456,7 +476,7 @@ class VisualHintProcessor(FrameProcessor):
         )
 
         try:
-            data_frame = OutputTransportMessageFrame(message=message)
+            data_frame = RTVIServerMessageFrame(data=message_data)
             await self.push_frame(data_frame)
         except Exception as e:
             logger.warning(f"Failed to emit visual hint: {e}")
@@ -465,21 +485,17 @@ class VisualHintProcessor(FrameProcessor):
         """Finalize the current utterance, emitting is_final=True."""
         if self._current_utterance_id:
             # Emit final marker
-            message = {
-                "label": "rtvi-ai",
-                "type": "server-message",
-                "data": {
-                    "message_type": "streaming_text",
-                    "text": "",
-                    "is_final": True,
-                    "sequence_id": self._sequence_counter + 1,
-                    "utterance_id": self._current_utterance_id,
-                    "timestamp": time.time(),
-                }
+            message_data = {
+                "message_type": "streaming_text",
+                "text": "",
+                "is_final": True,
+                "sequence_id": self._sequence_counter + 1,
+                "utterance_id": self._current_utterance_id,
+                "timestamp": time.time(),
             }
 
             try:
-                data_frame = OutputTransportMessageFrame(message=message)
+                data_frame = RTVIServerMessageFrame(data=message_data)
                 await self.push_frame(data_frame)
             except Exception as e:
                 logger.warning(f"Failed to emit final marker: {e}")
@@ -567,28 +583,24 @@ class VisualHintProcessor(FrameProcessor):
         """
         logger.info("📤 EMITTING A2UI UPDATE TO FRONTEND")
         
-        message = {
-            "label": "rtvi-ai",
-            "type": "server-message",
-            "data": {
-                "message_type": "a2ui_update",
-                "a2ui": a2ui_doc,
-                "utterance_id": self._current_utterance_id,
-                "timestamp": time.time(),
-            }
+        message_data = {
+            "message_type": "a2ui_update",
+            "a2ui": a2ui_doc,
+            "utterance_id": self._current_utterance_id,
+            "timestamp": time.time(),
         }
 
         template_type = a2ui_doc.get('root', {}).get('type', 'unknown')
         tier = a2ui_doc.get('_metadata', {}).get('tier', 'unknown')
         tier_name = a2ui_doc.get('_metadata', {}).get('tier_name', 'unknown')
-        
+
         logger.info(f"   Message type: a2ui_update")
         logger.info(f"   Template: {template_type}")
         logger.info(f"   Tier: {tier} ({tier_name})")
         logger.info(f"   Utterance ID: {self._current_utterance_id}")
 
         try:
-            data_frame = OutputTransportMessageFrame(message=message)
+            data_frame = RTVIServerMessageFrame(data=message_data)
             await self.push_frame(data_frame)
             logger.info("✅ A2UI update pushed to transport successfully!")
         except Exception as e:

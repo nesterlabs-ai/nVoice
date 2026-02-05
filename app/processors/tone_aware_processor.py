@@ -26,9 +26,9 @@ from pipecat.frames.frames import (
     AudioRawFrame,
     BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
-    OutputTransportMessageFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+from pipecat.processors.frameworks.rtvi import RTVIServerMessageFrame
 
 from app.services.tone_detector import ToneDetector, TONE_TO_VOICE, DEFAULT_VOICE
 from app.services.msp_emotion_detector import (
@@ -668,30 +668,25 @@ class ToneAwareProcessor(FrameProcessor):
         """
         try:
             # Create hybrid emotion data payload for frontend
-            emotion_message = {
-                "label": "rtvi-ai",
-                "type": "server-message",
-                "data": {
-                    "message_type": "hybrid_emotion_detected",
-                    "primary_emotion": hybrid_result['primary_emotion'],
-                    "secondary_emotion": hybrid_result.get('secondary_emotion'),
-                    "arousal": round(hybrid_result['arousal'], 2),
-                    "valence": round(hybrid_result['valence'], 2),
-                    "dominance": round(hybrid_result['dominance'], 2),
-                    "confidence": round(hybrid_result['overall_confidence'], 2),
-                    "audio_emotion": hybrid_result['components']['audio']['emotion'],
-                    "text_emotion": hybrid_result['components']['text']['emotion'],
-                    "audio_weight": round(hybrid_result['weights']['audio'], 2),
-                    "text_weight": round(hybrid_result['weights']['text'], 2),
-                    "mismatch_detected": hybrid_result['mismatch_detected'],
-                    "interpretation": hybrid_result.get('interpretation', ''),
-                    "tokens_used": hybrid_result['tokens_used'],
-                    "timestamp": time.time(),
-                }
+            emotion_data = {
+                "message_type": "hybrid_emotion_detected",
+                "primary_emotion": hybrid_result['primary_emotion'],
+                "secondary_emotion": hybrid_result.get('secondary_emotion'),
+                "arousal": round(hybrid_result['arousal'], 2),
+                "valence": round(hybrid_result['valence'], 2),
+                "dominance": round(hybrid_result['dominance'], 2),
+                "confidence": round(hybrid_result['overall_confidence'], 2),
+                "audio_emotion": hybrid_result['components']['audio']['emotion'],
+                "text_emotion": hybrid_result['components']['text']['emotion'],
+                "audio_weight": round(hybrid_result['weights']['audio'], 2),
+                "text_weight": round(hybrid_result['weights']['text'], 2),
+                "mismatch_detected": hybrid_result['mismatch_detected'],
+                "interpretation": hybrid_result.get('interpretation', ''),
+                "tokens_used": hybrid_result['tokens_used'],
+                "timestamp": time.time(),
             }
 
-            # Push data frame to transport (will be sent via WebSocket)
-            data_frame = OutputTransportMessageFrame(message=emotion_message)
+            data_frame = RTVIServerMessageFrame(data=emotion_data)
             await self.push_frame(data_frame)
 
             logger.info(
@@ -711,23 +706,18 @@ class ToneAwareProcessor(FrameProcessor):
         try:
             # Create emotion data payload for frontend
             # Use RTVI-compliant "server-message" type for proper callback routing
-            emotion_message = {
-                "label": "rtvi-ai",
-                "type": "server-message",
-                "data": {
-                    "message_type": "emotion_detected",
-                    "arousal": round(result.arousal, 2),
-                    "dominance": round(result.dominance, 2),
-                    "valence": round(result.valence, 2),
-                    "emotion": result.emotion,
-                    "tone": result.tone,
-                    "confidence": round(result.confidence, 2),
-                    "timestamp": result.timestamp,
-                }
+            emotion_data = {
+                "message_type": "emotion_detected",
+                "arousal": round(result.arousal, 2),
+                "dominance": round(result.dominance, 2),
+                "valence": round(result.valence, 2),
+                "emotion": result.emotion,
+                "tone": result.tone,
+                "confidence": round(result.confidence, 2),
+                "timestamp": result.timestamp,
             }
 
-            # Push data frame to transport (will be sent via WebSocket)
-            data_frame = OutputTransportMessageFrame(message=emotion_message)
+            data_frame = RTVIServerMessageFrame(data=emotion_data)
             await self.push_frame(data_frame)
 
             logger.info(f"✓ Emitted emotion event via WebSocket: {result.emotion} ({result.confidence:.0%}) - A:{result.arousal:.2f} D:{result.dominance:.2f} V:{result.valence:.2f}")
@@ -747,24 +737,19 @@ class ToneAwareProcessor(FrameProcessor):
         """
         try:
             # Create emotion data payload for frontend (text fallback)
-            emotion_message = {
-                "label": "rtvi-ai",
-                "type": "server-message",
-                "data": {
-                    "message_type": "emotion_detected",
-                    "arousal": round(vad["arousal"], 2),
-                    "dominance": round(vad["dominance"], 2),
-                    "valence": round(vad["valence"], 2),
-                    "emotion": tone,
-                    "tone": tone,
-                    "confidence": round(confidence, 2),
-                    "timestamp": time.time(),
-                    "source": "text_fallback",  # Indicate this is from text-based detection
-                }
+            emotion_data = {
+                "message_type": "emotion_detected",
+                "arousal": round(vad["arousal"], 2),
+                "dominance": round(vad["dominance"], 2),
+                "valence": round(vad["valence"], 2),
+                "emotion": tone,
+                "tone": tone,
+                "confidence": round(confidence, 2),
+                "timestamp": time.time(),
+                "source": "text_fallback",
             }
 
-            # Push data frame to transport (will be sent via WebSocket)
-            data_frame = OutputTransportMessageFrame(message=emotion_message)
+            data_frame = RTVIServerMessageFrame(data=emotion_data)
             await self.push_frame(data_frame)
 
             logger.info(f"✓ Emitted text emotion event via WebSocket: {tone} ({confidence:.0%}) - A:{vad['arousal']:.2f} D:{vad['dominance']:.2f} V:{vad['valence']:.2f}")
@@ -782,19 +767,14 @@ class ToneAwareProcessor(FrameProcessor):
         try:
             # Create tone switch payload for frontend
             # Use RTVI-compliant "server-message" type for proper callback routing
-            switch_message = {
-                "label": "rtvi-ai",
-                "type": "server-message",
-                "data": {
-                    "message_type": "tone_switched",
-                    "old_tone": old_tone,
-                    "new_tone": new_tone,
-                    "timestamp": time.time(),
-                }
+            switch_data = {
+                "message_type": "tone_switched",
+                "old_tone": old_tone,
+                "new_tone": new_tone,
+                "timestamp": time.time(),
             }
 
-            # Push data frame to transport (will be sent via WebSocket)
-            data_frame = OutputTransportMessageFrame(message=switch_message)
+            data_frame = RTVIServerMessageFrame(data=switch_data)
             await self.push_frame(data_frame)
 
             logger.debug(f"Emitted tone switch event: {old_tone} -> {new_tone}")

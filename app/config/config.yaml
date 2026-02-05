@@ -56,7 +56,7 @@ input_analyzer:
 rag:
   type: "lightrag"  # Using external LightRAG API
   config:
-    api_url: "https://nonrecessive-arlie-vexedly.ngrok-free.dev/"  # LightRAG server
+    api_url: "https://nonrecessive-arlie-vexedly.ngrok-free.dev"  # LightRAG server
     api_key: "${LIGHTRAG_API_KEY}"  # API key for authentication
     mode: "mix"  # OPTIMIZED: "local" for 2-3x faster retrieval (entity-focused, was "mix")
     top_k: 10  # Number of top results to retrieve
@@ -71,11 +71,11 @@ rag:
 
 conversation:
   llm:
-    provider: "google"  # Using Google Gemini
-    model: "gemini-2.0-flash"  # Gemini 2.0 Flash - Fast and capable
-    api_key: "${GOOGLE_API_KEY}"
+    provider: "groq"  # Using Groq
+    model: "llama-3.3-70b-versatile"
+    api_key: "${GROQ_API_KEY}"
     temperature: 0.7  # Balanced - natural but focused responses
-    max_tokens: 200  # REDUCED: Shorter responses for faster TTS start (was 1000)
+    max_tokens: 300  # REDUCED: Shorter responses for faster TTS start (was 1000)
 
   system_prompt: |
     You are the Nesterlabs voice assistant. VOICE MODE ONLY - respond in natural sentences, no markdown.
@@ -100,6 +100,8 @@ conversation:
     - AI-First Product Design
     - Knowledge Graphs and Memory Systems
 
+    
+
     CONTACT INFO:
     - Email: contact@nesterlabs.com
     - Phone: +1 (408) 673-1340
@@ -116,7 +118,8 @@ conversation:
        - "Tell me more about...", "Can you explain...", "What projects..."
     4. For farewells (bye, goodbye, etc): call end_conversation IMMEDIATELY
     5. NEVER ramble. Short, natural, conversational responses only.
-
+    6. If the user asks a question that is not related to the company, services, or expertise, politely decline to answer and say you are not sure.
+    7. Always end responses with a leading question that redirects the conversation towards what the user wants to achieve. Keep the conversation continuous, engaging and ensure there's a back and forth between you and the user.
 # A2UI (Agentic UI) Configuration
 # Visual response generation system for dynamic UI components
 a2ui:

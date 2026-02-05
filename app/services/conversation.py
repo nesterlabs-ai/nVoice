@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, Optional
 from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
-from pipecat.frames.frames import TTSSpeakFrame, EndFrame, OutputTransportMessageFrame
+from pipecat.frames.frames import TTSSpeakFrame, EndFrame
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.google.llm import GoogleLLMService
@@ -23,6 +23,7 @@ from pipecat.services.llm_service import FunctionCallParams, LLMService
 
 from app.services.input_analyzer import InputAnalyzer
 from app.services.rag import RAGService, LightRAGService, A2UIResponse
+from app.services.groq_llm_service import GroqLLMService
 
 # Import A2UI system
 try:
@@ -133,12 +134,12 @@ class ConversationManager:
             )
             logger.info(f"Initialized OpenAI LLM service with model: {model}")
         elif provider == "groq":
-            # Groq (using OpenAI-compatible API)
+            # Groq — uses GroqLLMService which merges consecutive user
+            # messages to prevent intermittent "Failed to call a function" errors
             model = self.llm_config.get("model", "llama-3.3-70b-versatile")
-            self.llm_service = OpenAILLMService(
+            self.llm_service = GroqLLMService(
                 api_key=api_key,
                 model=model,
-                base_url="https://api.groq.com/openai/v1"
             )
             logger.info(f"Initialized Groq LLM service with model: {model}")
         else:
@@ -456,11 +457,23 @@ CONVERSATION ENDING PROTOCOL:
         Returns:
             The context aggregator instance
         """
+        from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
+
         if not self.llm_service:
             self.initialize_llm()
 
         self.context = self.create_context()  # Store for greeting access
-        self.context_aggregator = self.llm_service.create_context_aggregator(self.context)
+
+        # aggregation_timeout: how long to wait after a final transcription
+        # before firing the LLM.  Deepgram can split one spoken sentence into
+        # multiple final results when the speaker pauses mid-sentence
+        # (e.g. "What is the location" … pause … "of Nesterlabs?").
+        # 1.5s gives the second fragment time to arrive and get merged by
+        # GroqLLMService before the LLM call fires.
+        user_params = LLMUserAggregatorParams(aggregation_timeout=1.5)
+        self.context_aggregator = self.llm_service.create_context_aggregator(
+            self.context, user_params=user_params
+        )
         return self.context_aggregator
 
     def get_llm_service(self) -> LLMService:
