@@ -1,0 +1,187 @@
+# Deploy to AWS Lightsail
+# Triggers on push to main branch or manual dispatch
+#
+# Required GitHub Secrets:
+#   AWS_ACCESS_KEY_ID     - AWS credentials with ECR push permissions
+#   AWS_SECRET_ACCESS_KEY - AWS credentials
+#   AWS_ACCOUNT_ID        - Your AWS account ID (e.g., 196061557238)
+#   LIGHTSAIL_SSH_KEY     - Private SSH key for Lightsail instance
+#   LIGHTSAIL_HOST        - Static IP of Lightsail instance
+
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'client/**'
+      - 'deployment/docker/**'
+      - '.github/workflows/deploy-aws.yml'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force rebuild all images'
+        required: false
+        default: 'false'
+        type: boolean
+      skip_deploy:
+        description: 'Skip deployment (build only)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  AWS_REGION: us-west-2
+  ENVIRONMENT: dev
+
+jobs:
+  # Detect what changed to only build necessary images
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.changes.outputs.backend }}
+      frontend: ${{ steps.changes.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            backend:
+              - 'app/**'
+              - 'deployment/docker/Dockerfile'
+              - 'requirements.txt'
+              - 'pyproject.toml'
+            frontend:
+              - 'client/**'
+
+  # Build and push backend image
+  build-backend:
+    name: Build Backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event.inputs.force_build == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deployment/docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-backend:latest
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Build and push frontend image
+  build-frontend:
+    name: Build Frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event.inputs.force_build == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client
+          file: ./client/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-frontend:latest
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deploy to Lightsail
+  deploy:
+    name: Deploy to Lightsail
+    needs: [changes, build-backend, build-frontend]
+    if: |
+      always() &&
+      github.event.inputs.skip_deploy != 'true' &&
+      (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
+      (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') &&
+      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Lightsail instance
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ec2-user
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            echo "=== Starting deployment ==="
+            cd /opt/nester
+
+            # Run the deploy script (handles ECR login, pull, restart)
+            ./deploy.sh
+
+            echo "=== Deployment complete ==="
+
+  # Verify deployment
+  verify:
+    name: Health Check
+    needs: deploy
+    if: needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for services to stabilize
+        run: sleep 30
+
+      - name: Health check
+        run: |
+          echo "Verifying deployment..."
+          curl -f --retry 3 --retry-delay 10 https://${{ secrets.LIGHTSAIL_HOST }}.nip.io/health || \
+          curl -f --retry 3 --retry-delay 10 http://${{ secrets.LIGHTSAIL_HOST }}:7860/health
+          echo "Health check passed!"
+
+  # Notify on failure
+  notify:
+    name: Notify on Failure
+    needs: [build-backend, build-frontend, deploy, verify]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send failure notification
+        run: |
+          echo "::error::Deployment failed! Check the workflow logs for details."
+          # Add Slack/Discord notification here:
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"Deployment failed!"}' \
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}

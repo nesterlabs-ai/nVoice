@@ -11,17 +11,27 @@ language:
 stt:
   provider: "deepgram"
   config:
-    device: "cpu"
+    device: "cpu"  # CPU for Lightsail/EC2 deployments
     model: "nova-3"  # Nova 3 - Latest and most accurate Deepgram STT model
     api_key: "${DEEPGRAM_API_KEY}"
-    language: "en"
+    language: "en"  # Add country suffix if needed (e.g., "en-IN" for Indian English)
+
     # Optimized for natural conversation (wait for complete sentences)
-    smart_format: true       # Better formatting
-    endpointing: 800         # 800ms silence - wait for user to finish speaking
-    utterance_end_ms: 1500   # Wait longer to capture complete thoughts
-    interim_results: true    # Enable streaming for lower latency
-    punctuate: true          # Better text formatting
-    filler_words: false      # Remove "um", "uh" for cleaner transcripts
+    smart_format: true       # Adds punctuation & paragraphs (Deepgram waits ~3s for entities in streaming)
+    endpointing: 1000        # INCREASED: 1000ms captures full thoughts (was 800ms, default 10ms too aggressive)
+    utterance_end_ms: 2000   # INCREASED: 2000ms pairs with endpointing for complete utterances (was 1500ms)
+    interim_results: true    # Essential for low-latency streaming feedback
+    punctuate: true         # Redundant with smart_format but safe; enhances readability
+    filler_words: false       # DISABLED: Detects "um/uh" for emotion-aware agents (helps turn-taking)
+
+    # Additional optimizations for voice bots
+    vad_events: true         # Triggers VAD for better speech boundaries (prevents keepalive timeout)
+    channels: 1              # Mono for single-speaker conversations
+    sample_rate: 16000       # Standard 16kHz (matches Koala/AIC input)
+
+    # Keepalive to prevent WebSocket timeout (fixes "keepalive ping timeout" error)
+    keep_alive: true         # Enable keepalive pings to prevent connection drops during silence
+    no_delay: true          # Allow buffering to reduce disconnects
     
 
 tts:
@@ -46,9 +56,9 @@ input_analyzer:
 rag:
   type: "lightrag"  # Using external LightRAG API
   config:
-    api_url: "https://nonrecessive-arlie-vexedly.ngrok-free.dev/"  # LightRAG server
+    api_url: "https://nonrecessive-arlie-vexedly.ngrok-free.dev"  # LightRAG server
     api_key: "${LIGHTRAG_API_KEY}"  # API key for authentication
-    mode: "local"  # OPTIMIZED: "local" for 2-3x faster retrieval (entity-focused, was "mix")
+    mode: "mix"  # OPTIMIZED: "local" for 2-3x faster retrieval (entity-focused, was "mix")
     top_k: 10  # Number of top results to retrieve
     chunk_top_k: 10  # Number of top chunks to retrieve
     max_entity_tokens: 600  # Maximum tokens for entity extraction
@@ -61,155 +71,112 @@ rag:
 
 conversation:
   llm:
-    provider: "google"  # Using Google Gemini
-    model: "gemini-2.0-flash-exp"  # Gemini 2.0 Flash - Fast and capable
-    api_key: "${GOOGLE_API_KEY}"
+    provider: "groq"  # Using Groq
+    model: "llama-3.3-70b-versatile"
+    api_key: "${GROQ_API_KEY}"
     temperature: 0.7  # Balanced - natural but focused responses
-    max_tokens: 512  # Allow longer, more complete responses
+    max_tokens: 300  # REDUCED: Shorter responses for faster TTS start (was 1000)
 
   system_prompt: |
-    You are the Nesterlabs voice assistant. When asked "who are you" or "what are you", you MUST respond: "I'm the Nesterlabs voice assistant. I help visitors learn about Nesterlabs, our services, and connect with our team."
+    You are the Nesterlabs voice assistant. VOICE MODE ONLY - respond in natural sentences, no markdown.
 
-    # Voice Agent System Instructions for Nesterlabs
-    ## Agent Purpose
-    You are the Nesterlabs voice assistant. Your role is to help visitors learn about Nesterlabs, understand what we do, discover our past work, and guide them toward getting in touch with our team.
+    COMPANY KNOWLEDGE (answer directly from this):
+    - Nesterlabs is an AI-accelerated studio in Sunnyvale, California (SF Bay Area)
+    - Focus: AI product development, voice AI, conversational interfaces
+    - 85+ years combined team experience
+    - Clients: Early-stage startups to large enterprises
 
-    IMPORTANT: You are NOT a generic AI or language model. You are specifically the Nesterlabs voice assistant representing Nesterlabs company. Always identify yourself as the Nesterlabs voice assistant.
+    SERVICES (4 pillars):
+    - HUMAN: User research, product design, voice/emotion design, brand identity
+    - INTELLIGENCE: Agentic AI, NLP engines, conversational AI systems
+    - MEMORY: Knowledge graphs, RAG pipelines, context management, privacy/compliance
+    - CLOUD: Infrastructure security, DevOps, CI/CD for AI platforms
 
-    CRITICAL - AUTOMATIC GREETING:
-    - An automatic greeting is played when users first connect: "Hello! I'm the Nesterlabs voice assistant. How can I help you today?"
-    - DO NOT repeat this greeting or introduce yourself again
-    - Start directly answering user questions without re-introducing yourself
-    - Only identify yourself if explicitly asked "who are you" or "what are you"
+    EXPERTISE AREAS:
+    - Voice AI and Conversational Interfaces
+    - Agentic AI and Orchestration
+    - RAG and Context Engineering
+    - Natural Language Processing
+    - AI-First Product Design
+    - Knowledge Graphs and Memory Systems
 
-    ## Personality and Tone
-    Be warm, professional, and conversational. You represent a Silicon Valley AI company that values innovation, collaboration, and human-centered design. Speak naturally, as if you're a friendly colleague introducing someone to the company.
-    Avoid being overly salesy or pushy. Be helpful and informative, letting the quality of our work speak for itself.
-
-    IMPORTANT - VOICE OUTPUT FORMAT:
-    - This is a VOICE interface, not text chat
-    - NEVER use markdown formatting (no asterisks *, hashtags #, or brackets [])
-    - Instead of bullet points, use natural spoken lists: "We offer four services: first, Human - helping teams understand users. Second, Intelligence - building AI systems. Third, Memory - organizing information. And fourth, Cloud - secure infrastructure."
-    - Speak naturally as if you're having a conversation, not reading formatted text
-
-    ## VOICE ADAPTATION (IMPORTANT - You have this capability!)
-    Your voice automatically adapts to the user's emotional tone:
-    - When users sound frustrated or upset → You respond with a calmer, more empathetic voice
-    - When users sound excited or happy → You respond with a warmer, more energetic voice
-    - When users sound sad or worried → You respond with a warm, friendly, supportive voice
-    - For neutral conversations → You use your natural, clear voice
-
-    This happens automatically based on the emotional words users say. You do NOT need to do anything special - just acknowledge that your voice adapts to provide a more empathetic experience. If a user asks you to change your voice, confirm that your voice adapts based on their emotional tone.
-
-    ## COMPREHENSIVE NESTERLABS KNOWLEDGE (Answer directly - DO NOT use RAG for these)
-    You have detailed information built-in about Nesterlabs. Answer questions about these topics directly without calling RAG:
-
-    **COMPANY OVERVIEW:**
-    Nesterlabs is an AI-accelerated studio based in Sunnyvale, California (SF Bay Area), focused on reimagining intelligence through research, design, and technology. We blend creativity and strategy to craft seamless digital experiences that feel intuitive, human, and intelligent.
-
-    We help companies make advanced technologies usable, legible, and effective inside real products and workflows. From early-stage startups to large enterprises, we partner end-to-end across research, product design, AI engineering, and deployment.
-
-    Our founders collectively bring more than 85 years of experience in integrating advanced technologies and optimizing product experiences across product, technology, design, and information disciplines.
-
-    **OUR FOUR SERVICE PILLARS:**
-
-    1. HUMAN: We help teams deeply understand users through research and translate insights into clear product strategies. This includes product design, voice and emotion design, brand and identity, and immersive experiences that make complex technology feel simple and approachable.
-
-    2. INTELLIGENCE: We design and build intelligent systems such as agentic AI, natural language engines, and AI-powered synthesis pipelines. We turn unstructured data and complex workflows into conversational, smart experiences that users can interact with naturally.
-
-    3. MEMORY: We focus on how information is organized, retrieved, and used across conversations and systems. We work on knowledge graphs, retrieval pipelines, conversation analysis, and live context streamlining, with emphasis on privacy, compliance, and guardrails.
-
-    4. CLOUD: We help teams design and operate secure, compliant cloud and AI platforms. This includes infrastructure security, compliance, DevOps, and CI/CD to support modern AI and product workloads.
-
-    **EXPERTISE AREAS:**
-    - Voice AI & Conversational Interfaces (natural, emotionally aware conversations)
-    - Agentic AI & Orchestration (autonomous task completion)
-    - RAG & Context Engineering (reliable memory and retrieval)
-    - Natural Language Processing (intent recognition, generation)
-    - AI First Product Design (UX for AI-native products)
-    - Knowledge Graphs & Memory Systems (context consistency)
-    - Cloud & Infrastructure (secure, compliant platforms)
-
-    **EXAMPLE PROJECTS:**
-    - Visualizing Intelligence: Strategy, identity & web for AI studio
-    - Natural Conversations with Data: NLP & data platform
-    - Agentic Intake Coordinator: Voice AI for workflow automation
-    - AI First Bank: Conversational finance product (coming soon)
-
-    **CONTACT INFORMATION:**
-    - Email: contact@nesterlabs.com
-    - Phone: +1 (408) 673-1340
-    - Website: nesterlabs.com/contact
-    - Address: 701 Lakeway Dr #200, Sunnyvale CA 94085
-    - We respond within 1-2 business days
-
-    **ENGAGEMENT PROCESS:**
-    After reaching out, we typically have a discovery call (30-45 min) to understand your goals, then provide a tailored proposal with scope, approach, timeline, and pricing. Projects range from 2-week design sprints to 6+ month product development partnerships.
-
-    ## What You Should NOT Do
-    Do not discuss technical architecture, system design, or implementation details of projects. When asked technical questions, redirect to business outcomes and suggest they speak with our team for technical discussions.
-    Do not make up information. If you don't know something, offer to connect them with our team.
-    Do not discuss pricing or timelines — these vary by project and should be discussed directly with our team.
-
-    ## Handling Contact Requests
-    When someone wants to get in touch:
-    - Offer email: contact@nesterlabs.com
-    - Offer phone: +1 (408) 673-1340
-    - Mention they can visit nesterlabs.com/contact
-    - Explain that we'll have an initial conversation to understand their needs before proposing anything
-
-    ## RAG Tool Usage (Only for VERY specific questions beyond built-in knowledge)
-    Use the call_rag_system function ONLY when users ask for:
-    - Extremely detailed project case study information not summarized above
-    - Specific technical implementation details of past projects
-    - Questions about specific team members or individual credentials
-    - Very niche topics or details not covered in the comprehensive knowledge above
-
-    DO NOT use RAG for questions already covered above, including:
-    - "What is Nesterlabs?" → Answer directly
-    - "What services do you offer?" → Answer directly (HUMAN, INTELLIGENCE, MEMORY, CLOUD)
-    - "What do you do?" → Answer directly
-    - "Who are you?" → Answer directly: "I'm the Nesterlabs voice assistant..."
-    - "Where are you located?" → Answer directly: "Sunnyvale, California"
-    - "How can I contact you?" → Answer directly with contact info above
-    - "What projects have you done?" → Answer directly with example projects above
-    - "What's your expertise?" → Answer directly with expertise areas above
-    - "Tell me about your company" → Answer directly with company overview above
     
-    ONLY respond directly (without RAG or functions) for:
-    - Basic Nesterlabs information (covered above)
-    - Simple greetings: "hello", "hi", "how are you"
-    - Basic pleasantries: "thank you"
-    - General conversation
-    - Do NOT make up information - if you don't know, offer to connect them with our team
-    - Do NOT discuss pricing or timelines - these vary by project
 
-    CRITICAL - For farewells (goodbye, bye, end call, etc.):
-    - You MUST call the end_conversation function
-    - DO NOT respond directly to farewells - always use the function
-
-    KEY MESSAGES:
-    - Based in Silicon Valley, Sunnyvale, California
-    - 85+ years of combined founder expertise
-    - Specialize in Agentic AI, conversational interfaces, and voice AI
-    - Clients range from startups to Google
-    - Focus on business outcomes, not just technology
-    - Value partnership and collaboration
-
-    CONTACT REQUESTS:
-    When someone wants to get in touch:
+    CONTACT INFO:
     - Email: contact@nesterlabs.com
     - Phone: +1 (408) 673-1340
-    - Website: nesterlabs.com/contact
-    - Explain we'll have an initial conversation to understand their needs before proposing anything
+    - Address: 701 Lakeway Dr #200, Sunnyvale CA 94085
+    - Website: nesterlabs.com
 
-    RESPONSE STYLE:
-    - Respond in COMPLETE, natural sentences (2-4 sentences typically)
-    - Speak conversationally like a friendly human colleague, not a robot
-    - Give complete answers - don't fragment your response into tiny pieces
-    - Use natural, flowing language - avoid bullet points or lists
-    - Be warm, helpful, and informative without being pushy
-    - When answering questions, provide enough context to be helpful
+    RESPONSE RULES:
+    1. CRITICAL: Maximum 1-2 sentences per response. Be extremely concise for voice.
+    2. Answer simple questions DIRECTLY from above knowledge (1-2 sentences)
+    3. Call call_rag_system ONLY when user wants MORE DETAILS about:
+       - Specific projects or case studies
+       - In-depth service explanations
+       - Detailed expertise information
+       - "Tell me more about...", "Can you explain...", "What projects..."
+    4. For farewells (bye, goodbye, etc): call end_conversation IMMEDIATELY
+    5. NEVER ramble. Short, natural, conversational responses only.
+    6. If the user asks a question that is not related to the company, services, or expertise, politely decline to answer and say you are not sure.
+    7. Always end responses with a leading question that redirects the conversation towards what the user wants to achieve. Keep the conversation continuous, engaging and ensure there's a back and forth between you and the user.
+# A2UI (Agentic UI) Configuration
+# Visual response generation system for dynamic UI components
+a2ui:
+  enabled: true  # Enable A2UI visual response generation
+  config:
+    # Tier selection mode: "auto", "semantic", or "explicit"
+    # - auto: Pattern-based detection (fast, keyword matching)
+    # - semantic: Uses sentence transformer for semantic matching (slower but more accurate)
+    # - explicit: Only use templates when explicitly requested
+    tier_mode: "auto"
+
+    # Default template when no specific template is detected
+    default_template: "simple-card"
+
+    # Minimum confidence for template selection (0.0 - 1.0)
+    min_confidence: 0.5
+
+    # Enable streaming A2UI updates (progressive rendering)
+    streaming_enabled: true
+
+    # Buffer size before triggering A2UI generation (characters)
+    buffer_threshold: 100
+
+    # Available template types (for reference)
+    # - simple-card: Basic text response card
+    # - template-grid: Grid of cards for lists
+    # - timeline: Chronological events
+    # - contact-card: Contact information
+    # - comparison-chart: Side-by-side comparison
+    # - stats-flow-layout: Dashboard with KPIs
+    # - team-flip-cards: Team profiles
+    # - service-hover-reveal: Service listings
+    # - magazine-hero: Long-form content
+    # - faq-accordion: Q&A accordion
+    # - image-gallery: Image galleries
+    # - video-gallery: Video galleries
+    # - sales-dashboard: Sales metrics
+
+# Noise Suppression (Koala by Picovoice)
+# Real-time noise reduction for cleaner audio input
+noise_suppression:
+  enabled: true  # Enable Koala noise suppression
+  provider: "koala"
+  config:
+    access_key: "${KOALA_ACCESS_KEY}"  # Picovoice access key
+
+# Speech Enhancement (ai-coustics AIC)
+# Noise reduction + speech clarity improvement
+speech_enhancement:
+  enabled: false  # DISABLED - Pipecat AICFilter uses SDK v1; your key is v2 (LICENSE_VERSION_UNSUPPORTED)
+  provider: "aic"
+  config:
+    license_key: "${AIC_LICENSE_KEY}"  # Get from https://ai-coustics.com/pipecat
+    model_type: 0  # Model type (0 = default)
+    enhancement_level: 1.0  # Speech enhancement level (0.0-1.0)
+    voice_gain: 1.0  # Voice gain multiplier
+    noise_gate_enable: true  # Enable noise gate
 
 # Server and VAD (Voice Activity Detection) settings
 server:
@@ -222,11 +189,29 @@ server:
   # Uses MSP-PODCAST wav2vec2 + Google Gemini for hybrid audio+text sentiment
   emotion_detection_enabled: true
 
-  # VAD settings - BALANCED to reduce false interruptions from background noise
+  # VAD settings - STRICTER to prevent false barge-ins from background noise
   # Higher values = stricter (less sensitive to noise, but may miss quiet speech)
   # Lower values = more sensitive (catches quiet speech, but may pick up noise)
   vad:
-    confidence: 0.85       # HIGH - only trigger on clear speech (reduces noise triggers)
-    start_secs: 0.4        # SLOWER - require 400ms of speech before triggering (filters short noises)
+    confidence: 0.88       # HIGHER - only trigger on clear speech (reduces noise triggers)
+    start_secs: 0.5        # SLOWER - require 500ms of speech before triggering (filters short noises)
     stop_secs: 1.0         # Wait 1s of silence before ending utterance
-    min_volume: 0.6        # MEDIUM - ignore quiet background noise
+    min_volume: 0.65       # HIGHER - ignore quiet background noise
+
+  # Barge-in (interruption) settings
+  # MinWordsInterruptionStrategy prevents false interruptions from:
+  # - Background noise picked up by VAD
+  # - Short sounds like "yeah", "ok", "mm-hmm" (backchanneling)
+  # Requires user to speak 3+ words to interrupt bot
+  interruption:
+    enabled: true          # Enable barge-in support
+    min_words: 3           # Require at least 3 words to interrupt (filters noise + backchanneling)
+
+  # Smart interruption - Context-aware validation
+  # Prevents false interruptions from background conversations/TV/music
+  # Warns user when background noise is detected
+  smart_interruption:
+    enabled: false         # DISABLED - StartFrame error needs to be fixed first
+    min_confidence: 0.7    # Minimum confidence for valid interruption
+    warn_on_noise: false   # Warn user about background noise
+    warning_cooldown: 10   # Seconds between background noise warnings
