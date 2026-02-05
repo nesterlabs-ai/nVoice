@@ -135,6 +135,7 @@ class VoiceScannerApp {
   // Media control bar: speaker/mic icon toggle (slash = muted)
   private speakerMuted: boolean = false;
   private micMuted: boolean = false;
+  private localAudioTrack: MediaStreamTrack | null = null;
 
   // Visual cards state
   private activeVisualCard: HTMLElement | null = null;
@@ -986,6 +987,7 @@ class VoiceScannerApp {
    */
   private toggleSpeakerIcon(): void {
     this.speakerMuted = !this.speakerMuted;
+    this.botAudio.muted = this.speakerMuted;
     const btn = document.getElementById('control-speaker');
     const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
     if (img) {
@@ -999,6 +1001,9 @@ class VoiceScannerApp {
    */
   private toggleMicIcon(): void {
     this.micMuted = !this.micMuted;
+    if (this.localAudioTrack) {
+      this.localAudioTrack.enabled = !this.micMuted;
+    }
     const btn = document.getElementById('control-mic');
     const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
     if (img) {
@@ -1743,6 +1748,7 @@ class VoiceScannerApp {
 
     // Set up local microphone input for visualization
     if (tracks.local?.audio) {
+      this.localAudioTrack = tracks.local.audio;
       this.setupInputAudioTrack(tracks.local.audio);
     }
   }
@@ -1758,6 +1764,7 @@ class VoiceScannerApp {
       if (track.kind === 'audio') {
         if (participant?.local) {
           // Local microphone track - for user voice visualization
+          this.localAudioTrack = track;
           this.setupInputAudioTrack(track);
         } else {
           // Remote bot track - for AI voice visualization
