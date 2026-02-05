@@ -315,12 +315,14 @@ class VoiceScannerApp {
   }
 
   /**
-   * Show Restart/Peak options in center and hide media control bar (when Close is clicked)
+   * Show Restart/Peak options in center and hide media control bar + connect button (when Close is clicked)
    */
   private showCloseOptions(): void {
     const mediaBar = document.querySelector('.media-control-bar');
     const closeOptionsBar = document.getElementById('close-options-bar');
+    const connectArea = document.getElementById('connect-area');
     mediaBar?.classList.add('hidden');
+    connectArea?.classList.add('hidden');
     closeOptionsBar?.classList.remove('hidden');
   }
 
@@ -341,13 +343,15 @@ class VoiceScannerApp {
   }
 
   /**
-   * Hide Restart/Peak options and show media control bar
+   * Hide Restart/Peak options and show media control bar + connect button
    */
   private hideCloseOptions(): void {
     const mediaBar = document.querySelector('.media-control-bar');
     const closeOptionsBar = document.getElementById('close-options-bar');
+    const connectArea = document.getElementById('connect-area');
     closeOptionsBar?.classList.add('hidden');
     mediaBar?.classList.remove('hidden');
+    connectArea?.classList.remove('hidden');
   }
 
   /**
@@ -383,7 +387,11 @@ class VoiceScannerApp {
     } else {
       connectBtn?.classList.remove('connecting');
       connectBtn?.classList.remove('shrinking');
-      connectArea?.classList.remove('hidden');
+      // Don't show connect-area when close-options bar is visible (Restart serves that purpose)
+      const closeOptionsBar = document.getElementById('close-options-bar');
+      if (closeOptionsBar?.classList.contains('hidden')) {
+        connectArea?.classList.remove('hidden');
+      }
       statusDisplay?.classList.add('hidden');
       connectionStatus?.classList.remove('online');
       if (connectionStatus) connectionStatus.textContent = 'OFFLINE';

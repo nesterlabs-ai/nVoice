@@ -832,9 +832,9 @@ body {
 /* ===== CLOSE OPTIONS BAR (Restart | Peak, shown when Close is clicked) ===== */
 .close-options-bar {
   position: absolute;
-  bottom: 40px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   z-index: 6;
   display: inline-flex;
   padding: 8px;
