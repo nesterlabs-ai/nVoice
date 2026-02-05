@@ -119,11 +119,11 @@
         <span class="status-text" id="status-text">LISTENING</span>
       </div>
 
-      <!-- Live subtitle (synced with conversation; 2 lines above wave) -->
-      <!-- <div class="live-subtitle" id="live-subtitle" aria-live="polite">
-        <div class="live-subtitle-line live-subtitle-user" id="live-subtitle-user"></div>
-        <div class="live-subtitle-line live-subtitle-bot" id="live-subtitle-bot"></div>
-      </div> -->
+      <!-- Live subtitle: single line, centered above wave, shows current speaker only -->
+      <div class="live-subtitle" id="live-subtitle" aria-live="polite">
+        <span class="live-subtitle-label" id="live-subtitle-label"></span>
+        <span class="live-subtitle-text" id="live-subtitle-text"></span>
+      </div>
 
       <!-- Media control bar (above Gemini Wave Visualizer): speaker, mic, close, peak -->
       <div class="media-control-bar" aria-label="Media controls">

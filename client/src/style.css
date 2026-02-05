@@ -1316,41 +1316,88 @@ line-height: normal;
   }
 }
 
-/* ===== LIVE SUBTITLE (above wave; synced with conversation) ===== */
+/* ===== LIVE SUBTITLE (centered above wave, current speaker only) ===== */
 .live-subtitle {
   position: absolute;
-  bottom: calc(280px + 44px + 12px);
-  /* above media control bar */
-  left: var(--panel-gap);
-  right: var(--panel-gap);
-  min-height: 2.8em;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 4px;
-  pointer-events: none;
+  bottom: calc(280px + 44px + 24px);
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 5;
-}
-
-.live-subtitle-line {
-  font-size: 14px;
-  line-height: 1.4;
-  color: var(--text-secondary);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 72%;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
-  -webkit-box-orient: vertical;
-  max-width: 100%;
 }
 
-.live-subtitle-user {
+.live-subtitle.visible {
+  opacity: 1;
+}
+
+/* Glassmorphism pill background */
+.live-subtitle::before {
+  content: '';
+  position: absolute;
+  inset: -8px -18px;
+  border-radius: 999px;
+  background: rgba(18, 18, 24, 0.52);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(198, 198, 198, 0.1);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  z-index: -1;
+}
+
+.live-subtitle-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.live-subtitle-label.user {
   color: rgba(14, 165, 233, 0.95);
 }
 
-.live-subtitle-bot {
-  color: var(--text-primary);
+.live-subtitle-label.bot {
+  color: rgba(168, 85, 247, 0.9);
+}
+
+.live-subtitle-text {
+  font-size: 15px;
+  line-height: 1.3;
+  color: rgba(240, 240, 245, 0.92);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Word-pop animation for each new word */
+@keyframes subtitleWordPop {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.live-subtitle-text .sub-word {
+  display: inline;
+  opacity: 0;
+  animation: subtitleWordPop 0.25s ease forwards;
 }
 
 /* ===== WAVE VISUALIZER ===== */

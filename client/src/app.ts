@@ -40,6 +40,7 @@ class VoiceScannerApp {
   private transport: WebSocketTransport | null = null;
   private botPlayerAnalyser: AnalyserNode | null = null;
   private botPlayerDataArray: Uint8Array | null = null;
+  private botPlayerContext: AudioContext | null = null;
 
   // UI Elements
   private scannerFrame: HTMLElement | null = null;
@@ -126,17 +127,16 @@ class VoiceScannerApp {
   private isTypewriting: boolean = false;
   private typewriterSpeed: number = 30; // ms per word
 
-  // Live subtitle above wave (2 lines, synced with voice)
-  private liveSubtitleUser: HTMLElement | null = null;
-  private liveSubtitleBot: HTMLElement | null = null;
-  private lastUserSubtitleText: string = '';
-  private lastBotSubtitleText: string = '';
+  // Live subtitle above wave (single line, current speaker only)
+  private liveSubtitle: HTMLElement | null = null;
+  private liveSubtitleLabel: HTMLElement | null = null;
+  private liveSubtitleText: HTMLElement | null = null;
+  private subtitleClearTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Media control bar: speaker/mic icon toggle (slash = muted)
   private speakerMuted: boolean = false;
   private micMuted: boolean = false;
   private localAudioTrack: MediaStreamTrack | null = null;
-  private botAudioTrack: MediaStreamTrack | null = null;
 
   // Visual cards state
   private activeVisualCard: HTMLElement | null = null;
@@ -205,8 +205,9 @@ class VoiceScannerApp {
     this.welcomeMessage = document.getElementById('welcome-message');
     this.transcriptList = document.getElementById('transcript-list');
     this.transcriptStatus = document.getElementById('transcript-status');
-    this.liveSubtitleUser = document.getElementById('live-subtitle-user');
-    this.liveSubtitleBot = document.getElementById('live-subtitle-bot');
+    this.liveSubtitle = document.getElementById('live-subtitle');
+    this.liveSubtitleLabel = document.getElementById('live-subtitle-label');
+    this.liveSubtitleText = document.getElementById('live-subtitle-text');
     this.debugPanel = document.getElementById('debug-panel');
     this.debugLog = document.getElementById('debug-log');
     this.debugToggle = document.getElementById('debug-toggle');
@@ -769,12 +770,7 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
-    if (isUser) {
-      this.lastUserSubtitleText = text;
-    } else {
-      this.lastBotSubtitleText = text;
-    }
-    this.updateLiveSubtitle();
+    this.updateLiveSubtitle(isUser ? 'user' : 'bot', text);
 
     const bubble = document.createElement('div');
     bubble.className = `transcript-bubble ${isUser ? 'user' : 'bot'}`;
@@ -801,13 +797,32 @@ class VoiceScannerApp {
   /**
    * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice)
    */
-  private updateLiveSubtitle(): void {
-    if (this.liveSubtitleUser) {
-      this.liveSubtitleUser.textContent = this.lastUserSubtitleText ? `You: ${this.lastUserSubtitleText}` : '';
+  private updateLiveSubtitle(role: 'user' | 'bot', text: string): void {
+    if (!this.liveSubtitle || !this.liveSubtitleLabel || !this.liveSubtitleText) return;
+    if (!text) return;
+
+    // Reset auto-clear timer
+    if (this.subtitleClearTimeout) {
+      clearTimeout(this.subtitleClearTimeout);
     }
-    if (this.liveSubtitleBot) {
-      this.liveSubtitleBot.textContent = this.lastBotSubtitleText ? `NesterAI: ${this.lastBotSubtitleText}` : '';
-    }
+
+    // Update label and role styling
+    this.liveSubtitleLabel.textContent = role === 'user' ? 'You' : 'NesterAI';
+    this.liveSubtitleLabel.className = 'live-subtitle-label ' + role;
+
+    // Render each word as an animated span
+    const words = text.split(/\s+/).filter(w => w.length > 0);
+    this.liveSubtitleText.innerHTML = words.map(w =>
+      `<span class="sub-word">${w}</span>`
+    ).join(' ');
+
+    // Show the subtitle
+    this.liveSubtitle.classList.add('visible');
+
+    // Auto-hide after 4s of no new updates
+    this.subtitleClearTimeout = setTimeout(() => {
+      this.liveSubtitle?.classList.remove('visible');
+    }, 4000);
   }
 
   /**
@@ -868,8 +883,7 @@ class VoiceScannerApp {
         textSpan.appendChild(wordSpan);
 
         // Sync live subtitle with typewriter (voice sync)
-        this.lastBotSubtitleText = (textSpan.textContent || '').trim();
-        this.updateLiveSubtitle();
+        this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
 
         // Scroll to bottom
         if (this.transcriptList) {
@@ -889,8 +903,7 @@ class VoiceScannerApp {
     if (this.currentBotBubble) {
       const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
       if (textSpan) {
-        this.lastBotSubtitleText = (textSpan.textContent || '').trim();
-        this.updateLiveSubtitle();
+        this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
       }
       this.currentBotBubble.classList.remove('typewriter');
       this.currentBotBubble.classList.add('finalized');
@@ -988,8 +1001,12 @@ class VoiceScannerApp {
    */
   private toggleSpeakerIcon(): void {
     this.speakerMuted = !this.speakerMuted;
-    if (this.botAudioTrack) {
-      this.botAudioTrack.enabled = !this.speakerMuted;
+    if (this.botPlayerContext) {
+      if (this.speakerMuted) {
+        this.botPlayerContext.suspend();
+      } else {
+        this.botPlayerContext.resume();
+      }
     }
     const btn = document.getElementById('control-speaker');
     const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
@@ -1712,6 +1729,11 @@ class VoiceScannerApp {
         return;
       }
 
+      // Store the player's AudioContext for speaker mute (suspend/resume)
+      if (wavPlayer.context) {
+        this.botPlayerContext = wavPlayer.context as AudioContext;
+      }
+
       // Get the analyser from the player
       if (wavPlayer.analyser) {
         this.botPlayerAnalyser = wavPlayer.analyser as AnalyserNode;
@@ -1746,7 +1768,6 @@ class VoiceScannerApp {
 
     // Set up bot output audio
     if (tracks.bot?.audio) {
-      this.botAudioTrack = tracks.bot.audio;
       this.setupAudioTrack(tracks.bot.audio);
     }
 
@@ -1772,7 +1793,6 @@ class VoiceScannerApp {
           this.setupInputAudioTrack(track);
         } else {
           // Remote bot track - for AI voice visualization
-          this.botAudioTrack = track;
           this.setupAudioTrack(track);
         }
       }
@@ -2123,9 +2143,6 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
-    this.lastBotSubtitleText = '';
-    this.updateLiveSubtitle();
-
     this.streamingBubble = document.createElement('div');
     this.streamingBubble.className = 'transcript-bubble bot streaming';
 
@@ -2161,8 +2178,7 @@ class VoiceScannerApp {
     this.streamingWords.push(word);
 
     // Sync live subtitle with streaming (voice sync)
-    this.lastBotSubtitleText = this.streamingWords.join(' ');
-    this.updateLiveSubtitle();
+    this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
 
     // Auto-scroll
     if (this.transcriptList) {
@@ -2175,8 +2191,7 @@ class VoiceScannerApp {
    */
   private finalizeCurrentStreamingBubble(): void {
     if (this.streamingBubble) {
-      this.lastBotSubtitleText = this.streamingWords.join(' ');
-      this.updateLiveSubtitle();
+      this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
 
       this.streamingBubble.classList.remove('streaming');
       this.streamingBubble.classList.add('finalized');
