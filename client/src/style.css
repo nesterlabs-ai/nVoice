@@ -888,7 +888,7 @@ body {
 }
 
 .close-option-restart:hover {
-  background: #1a1a1a;
+  background: linear-gradient(0deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.1) 100%), rgb(0, 0, 0);
 }
 
 .close-option-restart .close-option-icon {
@@ -926,7 +926,7 @@ line-height: normal;
 }
 
 .close-option-peak:hover {
-  background: #f0f0f0;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.20) 0%, rgba(0, 0, 0, 0.20) 100%), #FFF;
 }
 
 .close-option-peak .close-option-icon {
