@@ -132,16 +132,31 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Config sync indicator (for visibility in Actions UI)
+  sync-config:
+    name: Sync Config
+    needs: changes
+    if: needs.changes.outputs.deployment == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Config changes detected
+        run: |
+          echo "::notice::Deployment config files changed - will sync to server"
+          echo "Files that trigger this job:"
+          echo "  - deployment/docker/docker-compose.prod.yml"
+          echo "  - deployment/docker/Caddyfile.prod"
+
   # Deploy to Lightsail
   deploy:
     name: Deploy to Lightsail
-    needs: [changes, build-backend, build-frontend]
+    needs: [changes, build-backend, build-frontend, sync-config]
     if: |
       always() &&
       github.event.inputs.skip_deploy != 'true' &&
       (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
       (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') &&
-      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success' || needs.changes.outputs.deployment == 'true')
+      (needs.sync-config.result == 'success' || needs.sync-config.result == 'skipped') &&
+      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success' || needs.sync-config.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -197,17 +212,23 @@ jobs:
       - name: Wait for services to stabilize
         run: sleep 30
 
-      - name: Health check
+      - name: Backend health check
         run: |
-          echo "Verifying deployment at ${{ env.PUBLIC_URL }}..."
+          echo "Checking backend at ${{ env.PUBLIC_URL }}/health..."
           curl -f --retry 3 --retry-delay 10 ${{ env.PUBLIC_URL }}/health || \
           curl -f --retry 3 --retry-delay 10 http://${{ secrets.LIGHTSAIL_HOST }}:7860/health
-          echo "Health check passed!"
+          echo "Backend health check passed!"
+
+      - name: Frontend health check
+        run: |
+          echo "Checking frontend at ${{ env.PUBLIC_URL }}..."
+          curl -f --retry 3 --retry-delay 10 -o /dev/null -w "%{http_code}" ${{ env.PUBLIC_URL }}/ | grep -q "200"
+          echo "Frontend health check passed!"
 
   # Notify on failure
   notify:
     name: Notify on Failure
-    needs: [build-backend, build-frontend, deploy, verify]
+    needs: [build-backend, build-frontend, sync-config, deploy, verify]
     if: failure()
     runs-on: ubuntu-latest
     steps:
