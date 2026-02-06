@@ -5,6 +5,7 @@ Creates an IAM user with ECR pull/push permissions and stores
 credentials in Secrets Manager. Used by:
 - Lightsail instance for pulling images
 - GitHub Actions for building and pushing images
+- Docker awslogs driver for CloudWatch Logs (optional)
 """
 
 from constructs import Construct
@@ -33,11 +34,13 @@ class EcrCredentials(Construct):
         config: NesterConfig,
         backend_repo_arn: str,
         frontend_repo_arn: str,
+        log_group_arn: str = None,
     ) -> None:
         super().__init__(scope, id)
 
         self.config = config
         prefix = config.resource_prefix
+        self.log_group_arn = log_group_arn
 
         # Create IAM user for ECR access (pull for Lightsail, push for CI/CD)
         self.ecr_user = iam.User(
@@ -95,6 +98,20 @@ class EcrCredentials(Construct):
                 resources=[f"arn:aws:secretsmanager:{config.aws.region}:*:secret:{config.secrets.name_prefix}/*"],
             )
         )
+
+        # Grant CloudWatch Logs permissions (for Docker awslogs driver)
+        if log_group_arn:
+            self.ecr_user.add_to_policy(
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "logs:CreateLogStream",
+                        "logs:PutLogEvents",
+                        "logs:DescribeLogStreams",
+                    ],
+                    resources=[f"{log_group_arn}:*"],
+                )
+            )
 
         # Create access key for the user
         self.access_key = iam.AccessKey(
