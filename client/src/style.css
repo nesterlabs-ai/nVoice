@@ -1681,14 +1681,12 @@ line-height: normal;
 }
 
 /* ===== A2UI PANEL ===== */
+/* Positioned 42px below back-btn; top = back-btn top (81px) + height (32px) + gap (42px) = 155px */
 .a2ui-panel {
   position: fixed;
-  bottom: 200px;
+  top: 155px;
   left: 50%;
   transform: translateX(-50%);
-  width: calc(100% - var(--panel-width) * 2 - var(--panel-gap) * 4);
-  max-width: 800px;
-  max-height: 50vh;
   background: var(--bg-panel);
   backdrop-filter: blur(18px);
   border: 1px solid var(--border-color);
@@ -1699,6 +1697,11 @@ line-height: normal;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--transition-fast);
+  width: 80%;
+  height: calc(100vh - 155px - 252px); /* Reserve space for wave + media bar */
+  border-radius: 11px;
+  border: 1px solid #323232;
+  background: #0A0A0A;
 }
 
 .a2ui-panel.visible {
@@ -1802,7 +1805,8 @@ line-height: normal;
 
   .a2ui-panel {
     width: 90%;
-    bottom: 220px;
+    top: 114px; /* back-btn top 40px + 32px + 42px gap */
+    height: calc(100vh - 114px - 300px);
   }
 }
 
@@ -1839,8 +1843,14 @@ line-height: normal;
   }
 
   .back-btn {
-    left: 38px;
-    top: 40px;
+    left: 15px;
+    top: 21px;
+    height: 24px;
+    padding: 0 8px;
+  }
+
+  .back-btn-text {
+    font-size: 12px;
   }
 
   .left-panel,
@@ -1870,13 +1880,22 @@ line-height: normal;
     height: 160px;
   }
 
+  .center-section .media-control-bar {
+    position: absolute;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 0;
+    z-index: 6;
+  }
+
   .center-section {
     padding-bottom: 180px;
   }
 
   .a2ui-panel {
     width: 95%;
-    bottom: 180px;
-    max-height: 40vh;
+    top: 61px; /* back-btn top 21px + 32px + 42px gap */
+    height: calc(100vh - 95px - 184px);
   }
 }
