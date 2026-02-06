@@ -451,7 +451,7 @@ body {
   min-height: 100px;
   max-height: 150px;
   position: relative;
-  overflow: hidden;
+  /* overflow: hidden; */
 }
 
 .emotion-chart-section canvas {
@@ -1739,17 +1739,27 @@ line-height: normal;
 }
 
 @media (max-width: 1024px) {
+  .back-btn {
+    left: 38px;
+    top: 40px;
+  }
 
-  .left-panel,
-  .right-panel {
-    width: min(var(--panel-width), 260px);
+  .right-panel .conversation-panel {
+    flex: unset;
+    height: 297px;
+  }
+
+  .right-panel .topic-timeline-panel {
+    flex: unset;
+    height: 242px;
+  }
+
+  .right-panel .terminal-panel {
+    flex: unset;
+    height: 180px;
   }
 
   .left-panel {
-    flex-direction: row;
-    flex-wrap: wrap;
-    height: 180px;
-    max-height: 180px;
     bottom: auto;
   }
 
@@ -1760,7 +1770,7 @@ line-height: normal;
   }
 
   .right-panel {
-    max-height: 200px;
+    height: fit-content;
   }
 
   .center-section {
@@ -1793,6 +1803,20 @@ line-height: normal;
 
   .hide-on-mobile {
     display: none !important;
+  }
+
+  .right-panel .conversation-panel {
+    flex: unset;
+    min-height: unset;
+  }
+
+  .right-panel .topic-timeline-panel {
+    flex: unset;
+    min-height: unset;
+  }
+
+  .right-panel .terminal-panel {
+    flex: unset;
   }
 
   .back-btn {
