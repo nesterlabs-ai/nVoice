@@ -484,6 +484,27 @@ except Exception as e:
 " >> .env
 
 echo "Secrets configured successfully!"
+
+# Configure Docker daemon with AWS credentials for CloudWatch Logs
+echo "Configuring Docker daemon for CloudWatch Logs..."
+AWS_KEY=$(aws configure get aws_access_key_id)
+AWS_SECRET=$(aws configure get aws_secret_access_key)
+
+if [ -n "$AWS_KEY" ] && [ -n "$AWS_SECRET" ]; then
+    sudo mkdir -p /etc/systemd/system/docker.service.d
+    sudo tee /etc/systemd/system/docker.service.d/aws-credentials.conf > /dev/null << DOCKEREOF
+[Service]
+Environment="AWS_ACCESS_KEY_ID=$AWS_KEY"
+Environment="AWS_SECRET_ACCESS_KEY=$AWS_SECRET"
+Environment="AWS_REGION=$REGION"
+DOCKEREOF
+    sudo systemctl daemon-reload
+    sudo systemctl restart docker
+    echo "Docker daemon configured for CloudWatch Logs"
+else
+    echo "WARNING: Could not configure Docker for CloudWatch Logs (missing AWS credentials)"
+fi
+
 echo "Run './deploy.sh' to start the service"
 SETUPEOF
 chmod +x /opt/nester/setup-secrets.sh

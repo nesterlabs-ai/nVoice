@@ -61,6 +61,7 @@ jobs:
             deployment:
               - 'deployment/docker/docker-compose.prod.yml'
               - 'deployment/docker/Caddyfile.prod'
+              - 'deployment/docker/configure-docker-cloudwatch.sh'
 
   # Build and push backend image
   build-backend:
@@ -168,7 +169,7 @@ jobs:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ec2-user
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          source: "deployment/docker/docker-compose.prod.yml,deployment/docker/Caddyfile.prod"
+          source: "deployment/docker/docker-compose.prod.yml,deployment/docker/Caddyfile.prod,deployment/docker/configure-docker-cloudwatch.sh"
           target: "/tmp/deploy"
           strip_components: 2
 
@@ -192,6 +193,14 @@ jobs:
             if [ -f /tmp/deploy/Caddyfile.prod ]; then
               echo "Updating Caddyfile..."
               sudo cp /tmp/deploy/Caddyfile.prod /opt/nester/Caddyfile
+            fi
+
+            # Update CloudWatch config script (if exists)
+            if [ -f /tmp/deploy/configure-docker-cloudwatch.sh ]; then
+              echo "Updating configure-docker-cloudwatch.sh..."
+              sudo cp /tmp/deploy/configure-docker-cloudwatch.sh /opt/nester/configure-docker-cloudwatch.sh
+              sudo chmod +x /opt/nester/configure-docker-cloudwatch.sh
+              sudo chown ec2-user:ec2-user /opt/nester/configure-docker-cloudwatch.sh
             fi
 
             # Clean up
