@@ -1791,6 +1791,15 @@ line-height: normal;
     display: none;
   }
 
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  .back-btn {
+    left: 38px;
+    top: 40px;
+  }
+
   .left-panel,
   .right-panel {
     width: min(var(--panel-width), 240px);
