@@ -40,6 +40,7 @@ class VoiceScannerApp {
   private transport: WebSocketTransport | null = null;
   private botPlayerAnalyser: AnalyserNode | null = null;
   private botPlayerDataArray: Uint8Array | null = null;
+  private botPlayerContext: AudioContext | null = null;
 
   // UI Elements
   private scannerFrame: HTMLElement | null = null;
@@ -52,6 +53,7 @@ class VoiceScannerApp {
   private debugLog: HTMLElement | null = null;
   private debugToggle: HTMLElement | null = null;
   private debugClose: HTMLElement | null = null;
+  private mainLayout: HTMLElement | null = null;
   private emotionPanel: HTMLElement | null = null;
   private emotionToggle: HTMLElement | null = null;
   private emotionLabel: HTMLElement | null = null;
@@ -118,17 +120,23 @@ class VoiceScannerApp {
   private streamingBubble: HTMLElement | null = null;
   private currentUtteranceId: string | null = null;
   private streamingWords: string[] = [];
-  private lastStreamingSeqId: number = 0;
-
-  // Dedup guards: SDK double-fires onUserTranscript / onBotTranscript
-  private lastFinalTranscriptText: string = '';
-  private lastBotTranscriptChunk: string = '';
 
   // Typewriter effect state for bot transcripts
   private currentBotBubble: HTMLElement | null = null;
   private typewriterQueue: string[] = [];
   private isTypewriting: boolean = false;
   private typewriterSpeed: number = 30; // ms per word
+
+  // Live subtitle above wave (single line, current speaker only)
+  private liveSubtitle: HTMLElement | null = null;
+  private liveSubtitleLabel: HTMLElement | null = null;
+  private liveSubtitleText: HTMLElement | null = null;
+  private subtitleClearTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Media control bar: speaker/mic icon toggle (slash = muted)
+  private speakerMuted: boolean = false;
+  private micMuted: boolean = false;
+  private localAudioTrack: MediaStreamTrack | null = null;
 
   // Visual cards state
   private activeVisualCard: HTMLElement | null = null;
@@ -197,10 +205,14 @@ class VoiceScannerApp {
     this.welcomeMessage = document.getElementById('welcome-message');
     this.transcriptList = document.getElementById('transcript-list');
     this.transcriptStatus = document.getElementById('transcript-status');
+    this.liveSubtitle = document.getElementById('live-subtitle');
+    this.liveSubtitleLabel = document.getElementById('live-subtitle-label');
+    this.liveSubtitleText = document.getElementById('live-subtitle-text');
     this.debugPanel = document.getElementById('debug-panel');
     this.debugLog = document.getElementById('debug-log');
     this.debugToggle = document.getElementById('debug-toggle');
     this.debugClose = document.getElementById('debug-close');
+    this.mainLayout = document.querySelector('.main-layout');
     this.emotionPanel = document.getElementById('emotion-panel');
     this.emotionToggle = document.getElementById('emotion-toggle');
     this.emotionLabel = document.getElementById('emotion-label');
@@ -265,11 +277,14 @@ class VoiceScannerApp {
     // New connect/disconnect buttons
     const connectBtn = document.getElementById('connect-btn');
     const disconnectBtn = document.getElementById('disconnect-btn');
-    const floatingDisconnectBtn = document.getElementById('floating-disconnect-btn');
 
     connectBtn?.addEventListener('click', () => this.handleConnect());
     disconnectBtn?.addEventListener('click', () => this.handleDisconnect());
-    floatingDisconnectBtn?.addEventListener('click', () => this.handleDisconnect());
+
+    // Back button: open NesterLabs in the same tab
+    document.getElementById('back-btn')?.addEventListener('click', () => {
+      window.location.href = 'https://www.nesterlabs.com/';
+    });
 
     // Legacy scanner frame click (if still exists)
     this.scannerFrame?.addEventListener('click', () => this.handleOrbClick());
@@ -277,6 +292,17 @@ class VoiceScannerApp {
     // Debug panel
     this.debugToggle?.addEventListener('click', () => this.toggleDebugPanel());
     this.debugClose?.addEventListener('click', () => this.hideDebugPanel());
+
+    document.getElementById('control-peak')?.addEventListener('click', () => this.toggleSidePanels());
+    document.getElementById('control-close')?.addEventListener('click', () => {
+      this.handleDisconnect();
+      this.showCloseOptions();
+    });
+    document.getElementById('control-speaker')?.addEventListener('click', () => this.toggleSpeakerIcon());
+    document.getElementById('control-mic')?.addEventListener('click', () => this.toggleMicIcon());
+
+    document.getElementById('close-option-restart')?.addEventListener('click', () => this.onRestartOption());
+    document.getElementById('close-option-peak')?.addEventListener('click', () => this.onPeakOption());
 
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
@@ -297,6 +323,46 @@ class VoiceScannerApp {
   }
 
   /**
+   * Show Restart/Peak options in center and hide media control bar + connect button (when Close is clicked)
+   */
+  private showCloseOptions(): void {
+    const mediaBar = document.querySelector('.media-control-bar');
+    const closeOptionsBar = document.getElementById('close-options-bar');
+    const connectArea = document.getElementById('connect-area');
+    mediaBar?.classList.add('hidden');
+    connectArea?.classList.add('hidden');
+    closeOptionsBar?.classList.remove('hidden');
+  }
+
+  /**
+   * Restart: hide options bar, disconnect, then connect (same flow as connect-btn)
+   */
+  private async onRestartOption(): Promise<void> {
+    this.hideCloseOptions();
+    await this.disconnect();
+    this.handleConnect();
+  }
+
+  /**
+   * Peak: toggle side panels and show media bar again
+   */
+  private onPeakOption(): void {
+    this.toggleSidePanels();
+  }
+
+  /**
+   * Hide Restart/Peak options and show media control bar + connect button
+   */
+  private hideCloseOptions(): void {
+    const mediaBar = document.querySelector('.media-control-bar');
+    const closeOptionsBar = document.getElementById('close-options-bar');
+    const connectArea = document.getElementById('connect-area');
+    closeOptionsBar?.classList.add('hidden');
+    mediaBar?.classList.remove('hidden');
+    connectArea?.classList.remove('hidden');
+  }
+
+  /**
    * Handle disconnect button click
    */
   private handleDisconnect(): void {
@@ -310,7 +376,6 @@ class VoiceScannerApp {
     const connectArea = document.getElementById('connect-area');
     const connectBtn = document.getElementById('connect-btn');
     const statusDisplay = document.getElementById('status-display');
-    const floatingDisconnectBtn = document.getElementById('floating-disconnect-btn');
     const connectionStatus = document.getElementById('connection-status');
 
     if (connected) {
@@ -318,11 +383,10 @@ class VoiceScannerApp {
       connectBtn?.classList.remove('connecting');
       connectBtn?.classList.add('shrinking');
 
-      // After animation, hide connect area and show floating button
+      // After animation, hide connect area (disconnect is via control-close in media bar)
       setTimeout(() => {
         connectArea?.classList.add('hidden');
         connectBtn?.classList.remove('shrinking');
-        floatingDisconnectBtn?.classList.remove('hidden');
       }, 400);
 
       statusDisplay?.classList.remove('hidden');
@@ -331,9 +395,12 @@ class VoiceScannerApp {
     } else {
       connectBtn?.classList.remove('connecting');
       connectBtn?.classList.remove('shrinking');
-      connectArea?.classList.remove('hidden');
+      // Don't show connect-area when close-options bar is visible (Restart serves that purpose)
+      const closeOptionsBar = document.getElementById('close-options-bar');
+      if (closeOptionsBar?.classList.contains('hidden')) {
+        connectArea?.classList.remove('hidden');
+      }
       statusDisplay?.classList.add('hidden');
-      floatingDisconnectBtn?.classList.add('hidden');
       connectionStatus?.classList.remove('online');
       if (connectionStatus) connectionStatus.textContent = 'OFFLINE';
     }
@@ -703,6 +770,8 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
+    this.updateLiveSubtitle(isUser ? 'user' : 'bot', text);
+
     const bubble = document.createElement('div');
     bubble.className = `transcript-bubble ${isUser ? 'user' : 'bot'}`;
 
@@ -723,6 +792,37 @@ class VoiceScannerApp {
 
     // Scroll to bottom
     this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+  }
+
+  /**
+   * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice)
+   */
+  private updateLiveSubtitle(role: 'user' | 'bot', text: string): void {
+    if (!this.liveSubtitle || !this.liveSubtitleLabel || !this.liveSubtitleText) return;
+    if (!text) return;
+
+    // Reset auto-clear timer
+    if (this.subtitleClearTimeout) {
+      clearTimeout(this.subtitleClearTimeout);
+    }
+
+    // Update label and role styling
+    this.liveSubtitleLabel.textContent = role === 'user' ? 'You' : 'NesterAI';
+    this.liveSubtitleLabel.className = 'live-subtitle-label ' + role;
+
+    // Render each word as an animated span
+    const words = text.split(/\s+/).filter(w => w.length > 0);
+    this.liveSubtitleText.innerHTML = words.map(w =>
+      `<span class="sub-word">${w}</span>`
+    ).join(' ');
+
+    // Show the subtitle
+    this.liveSubtitle.classList.add('visible');
+
+    // Auto-hide after 4s of no new updates
+    this.subtitleClearTimeout = setTimeout(() => {
+      this.liveSubtitle?.classList.remove('visible');
+    }, 4000);
   }
 
   /**
@@ -782,6 +882,9 @@ class VoiceScannerApp {
         wordSpan.textContent = word + ' ';
         textSpan.appendChild(wordSpan);
 
+        // Sync live subtitle with typewriter (voice sync)
+        this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
+
         // Scroll to bottom
         if (this.transcriptList) {
           this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
@@ -798,11 +901,14 @@ class VoiceScannerApp {
    */
   private finalizeBotBubble(): void {
     if (this.currentBotBubble) {
+      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
+      if (textSpan) {
+        this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
+      }
       this.currentBotBubble.classList.remove('typewriter');
       this.currentBotBubble.classList.add('finalized');
 
       // Convert animated words to static text for performance
-      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
       if (textSpan) {
         const fullText = textSpan.textContent || '';
         textSpan.innerHTML = '';
@@ -881,6 +987,49 @@ class VoiceScannerApp {
    */
   private toggleDebugPanel(): void {
     this.debugPanel?.classList.toggle('visible');
+  }
+
+  /**
+   * Toggle left and right side panels visibility
+   */
+  private toggleSidePanels(): void {
+    this.mainLayout?.classList.toggle('panels-hidden');
+  }
+
+  /**
+   * Toggle speaker icon between SpeakerHigh.svg and SpeakerSlash.svg
+   */
+  private toggleSpeakerIcon(): void {
+    this.speakerMuted = !this.speakerMuted;
+    if (this.botPlayerContext) {
+      if (this.speakerMuted) {
+        this.botPlayerContext.suspend();
+      } else {
+        this.botPlayerContext.resume();
+      }
+    }
+    const btn = document.getElementById('control-speaker');
+    const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
+    if (img) {
+      img.src = this.speakerMuted ? '/SpeakerSlash.svg' : '/SpeakerHigh.svg';
+    }
+    btn?.setAttribute('aria-label', this.speakerMuted ? 'Sound muted' : 'Sound');
+  }
+
+  /**
+   * Toggle mic icon between Microphone (1).svg and MicrophoneSlash.svg
+   */
+  private toggleMicIcon(): void {
+    this.micMuted = !this.micMuted;
+    if (this.localAudioTrack) {
+      this.localAudioTrack.enabled = !this.micMuted;
+    }
+    const btn = document.getElementById('control-mic');
+    const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
+    if (img) {
+      img.src = this.micMuted ? '/MicrophoneSlash.svg' : '/Microphone (1).svg';
+    }
+    btn?.setAttribute('aria-label', this.micMuted ? 'Microphone muted' : 'Microphone');
   }
 
   /**
@@ -1580,6 +1729,11 @@ class VoiceScannerApp {
         return;
       }
 
+      // Store the player's AudioContext for speaker mute (suspend/resume)
+      if (wavPlayer.context) {
+        this.botPlayerContext = wavPlayer.context as AudioContext;
+      }
+
       // Get the analyser from the player
       if (wavPlayer.analyser) {
         this.botPlayerAnalyser = wavPlayer.analyser as AnalyserNode;
@@ -1619,6 +1773,7 @@ class VoiceScannerApp {
 
     // Set up local microphone input for visualization
     if (tracks.local?.audio) {
+      this.localAudioTrack = tracks.local.audio;
       this.setupInputAudioTrack(tracks.local.audio);
     }
   }
@@ -1634,6 +1789,7 @@ class VoiceScannerApp {
       if (track.kind === 'audio') {
         if (participant?.local) {
           // Local microphone track - for user voice visualization
+          this.localAudioTrack = track;
           this.setupInputAudioTrack(track);
         } else {
           // Remote bot track - for AI voice visualization
@@ -1762,10 +1918,6 @@ class VoiceScannerApp {
           },
           onUserTranscript: (data) => {
             if (data.final) {
-              // SDK double-fires final transcripts; skip the duplicate
-              if (data.text === this.lastFinalTranscriptText) return;
-              this.lastFinalTranscriptText = data.text;
-
               this.log(`You: ${data.text}`);
               // Finalize previous bot bubble before adding user message
               this.finalizeBotBubble();
@@ -1773,7 +1925,6 @@ class VoiceScannerApp {
               // Store query and reset accumulated answer for new turn
               this.lastUserQuery = data.text;
               this.accumulatedBotAnswer = '';
-              this.lastBotTranscriptChunk = '';
               // Clear A2UI from previous turn when new user query starts
               this.clearA2UI();
               // Stop any ongoing graph node cycling
@@ -1783,15 +1934,9 @@ class VoiceScannerApp {
             }
           },
           onBotTranscript: (data) => {
-            // SDK double-fires bot transcripts; skip the duplicate chunk
-            if (data.text === this.lastBotTranscriptChunk) return;
-            this.lastBotTranscriptChunk = data.text;
-            // New bot turn — allow the same user question again next time
-            this.lastFinalTranscriptText = '';
-
             this.log(`Bot: ${data.text}`);
-            // Text display is handled by streaming_text events (VisualHintProcessor)
-            // to avoid duplicate bubbles. Only accumulate here for graph highlighting.
+            // Use typewriter effect for bot transcript
+            this.addBotTranscriptWithTypewriter(data.text);
             // Accumulate bot answer chunks
             this.accumulatedBotAnswer += ' ' + data.text;
             // Debounce highlight call - wait 500ms after last chunk
@@ -1975,13 +2120,8 @@ class VoiceScannerApp {
       this.finalizeCurrentStreamingBubble();
       this.currentUtteranceId = data.utterance_id;
       this.streamingWords = [];
-      this.lastStreamingSeqId = 0;
       this.createStreamingBubble();
     }
-
-    // Dedup: skip any word we've already rendered for this utterance
-    if (data.sequence_id <= this.lastStreamingSeqId) return;
-    this.lastStreamingSeqId = data.sequence_id;
 
     // Add word with animation (skip empty final markers)
     if (data.text && data.text.trim()) {
@@ -2037,6 +2177,9 @@ class VoiceScannerApp {
     textContainer.appendChild(wordSpan);
     this.streamingWords.push(word);
 
+    // Sync live subtitle with streaming (voice sync)
+    this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
+
     // Auto-scroll
     if (this.transcriptList) {
       this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
@@ -2048,6 +2191,8 @@ class VoiceScannerApp {
    */
   private finalizeCurrentStreamingBubble(): void {
     if (this.streamingBubble) {
+      this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
+
       this.streamingBubble.classList.remove('streaming');
       this.streamingBubble.classList.add('finalized');
 
