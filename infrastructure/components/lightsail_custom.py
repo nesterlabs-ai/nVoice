@@ -310,6 +310,9 @@ class LightsailCustomResource(Construct):
             "WEBSOCKET_PORT": str(app.server.websocket_port),
             "SESSION_TIMEOUT": str(app.server.session_timeout),
             "LOG_LEVEL": app.server.log_level,
+            # AWS config for CloudWatch Logs (awslogs driver)
+            "AWS_REGION": region,
+            "CLOUDWATCH_LOG_GROUP": f"/nester-ai/{self.config.environment}",
         }
 
         if app.domain.name:
