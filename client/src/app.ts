@@ -132,6 +132,7 @@ class VoiceScannerApp {
   private liveSubtitleLabel: HTMLElement | null = null;
   private liveSubtitleText: HTMLElement | null = null;
   private subtitleClearTimeout: ReturnType<typeof setTimeout> | null = null;
+  private pendingBotSubtitle: string | null = null; // Bot text waiting for TTS to start
 
   // Media control bar: speaker/mic icon toggle (slash = muted)
   private speakerMuted: boolean = false;
@@ -801,6 +802,12 @@ class VoiceScannerApp {
     if (!this.liveSubtitle || !this.liveSubtitleLabel || !this.liveSubtitleText) return;
     if (!text) return;
 
+    // For bot text, wait until TTS starts speaking before showing subtitle
+    if (role === 'bot') {
+      this.pendingBotSubtitle = text;
+      return; // Don't show yet, wait for BotStartedSpeaking event
+    }
+
     // Reset auto-clear timer
     if (this.subtitleClearTimeout) {
       clearTimeout(this.subtitleClearTimeout);
@@ -809,6 +816,40 @@ class VoiceScannerApp {
     // Update label and role styling
     this.liveSubtitleLabel.textContent = role === 'user' ? 'You' : 'NesterAI';
     this.liveSubtitleLabel.className = 'live-subtitle-label ' + role;
+
+    // Render each word as an animated span
+    const words = text.split(/\s+/).filter(w => w.length > 0);
+    this.liveSubtitleText.innerHTML = words.map(w =>
+      `<span class="sub-word">${w}</span>`
+    ).join(' ');
+
+    // Show the subtitle
+    this.liveSubtitle.classList.add('visible');
+
+    // Auto-hide after 4s of no new updates
+    this.subtitleClearTimeout = setTimeout(() => {
+      this.liveSubtitle?.classList.remove('visible');
+    }, 4000);
+  }
+
+  /**
+   * Show pending bot subtitle (called when TTS actually starts)
+   */
+  private showPendingBotSubtitle(): void {
+    if (!this.pendingBotSubtitle) return;
+    if (!this.liveSubtitle || !this.liveSubtitleLabel || !this.liveSubtitleText) return;
+
+    const text = this.pendingBotSubtitle;
+    this.pendingBotSubtitle = null;
+
+    // Reset auto-clear timer
+    if (this.subtitleClearTimeout) {
+      clearTimeout(this.subtitleClearTimeout);
+    }
+
+    // Update label and role styling
+    this.liveSubtitleLabel.textContent = 'NesterAI';
+    this.liveSubtitleLabel.className = 'live-subtitle-label bot';
 
     // Render each word as an animated span
     const words = text.split(/\s+/).filter(w => w.length > 0);
@@ -1803,6 +1844,9 @@ class VoiceScannerApp {
       this.log('Bot started speaking');
       // Note: Bot audio visualization uses simulated data since RTVI doesn't expose bot audio track
       this.setVoiceState('speaking');
+
+      // Show subtitle now that TTS is actually playing
+      this.showPendingBotSubtitle();
     });
 
     this.rtviClient.on(RTVIEvent.BotStoppedSpeaking, () => {
