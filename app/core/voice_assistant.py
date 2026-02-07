@@ -83,7 +83,13 @@ class VoiceAssistant:
         self.rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
         self.latency_analyzer = LatencyAnalyzer()
 
-        # STT mute filter for greeting control
+        # STT mute filter - mutes STT only during the first bot greeting
+        # MUTE_UNTIL_FIRST_BOT_COMPLETE: blocks user audio only during initial greeting TTS,
+        # then allows all user input through (including barge-in interruptions)
+        # Self-interruption prevention relies on:
+        #   1. Client-side echoCancellation: true (getUserMedia constraint)
+        #   2. MinWordsInterruptionStrategy(min_words=4) - filters noise/backchannel
+        #   3. Strict VAD params (confidence=0.88, min_volume=0.65)
         self.stt_mute_filter = STTMuteFilter(
             config=STTMuteConfig(strategies={STTMuteStrategy.MUTE_UNTIL_FIRST_BOT_COMPLETE})
         )
@@ -166,11 +172,13 @@ class VoiceAssistant:
         rag_config = self.config.get("rag", {})
         self.rag_service = create_rag_service(rag_config)
 
-        # Initialize Conversation Manager with A2UI support
+        # Initialize Conversation Manager with A2UI support and SmartTurn v3
         conversation_config = self.config.get("conversation", {})
         language_config = self.config.get("language", {})
         a2ui_config = self.config.get("a2ui", {})
         a2ui_enabled = a2ui_config.get("enabled", True)
+        server_config = self.config.get("server", {})
+        smart_turn_config = server_config.get("smart_turn", {})
 
         # Include system_prompt in llm_config so ConversationManager can access it
         llm_config = conversation_config.get("llm", {}).copy()
@@ -181,6 +189,7 @@ class VoiceAssistant:
             llm_config=llm_config,
             language_config=language_config,
             a2ui_enabled=a2ui_enabled,
+            smart_turn_config=smart_turn_config,  # SmartTurn v3 config for ML-based turn detection
         )
 
         logger.info("All services initialized successfully")
@@ -204,6 +213,8 @@ class VoiceAssistant:
         stt = self.stt_service.get_service()
         tts = self.tts_service.get_service()
         llm = self.conversation_manager.get_llm_service()
+
+        # Get context aggregator (SmartTurn v3 is now configured here via UserTurnStrategies)
         context_aggregator = self.conversation_manager.get_context_aggregator()
 
         # Store LLM, TTS and context for greeting injection
@@ -251,10 +262,12 @@ class VoiceAssistant:
             logger.info("🛡️ SmartInterruptionProcessor DISABLED - not added to pipeline")
 
         # Continue with rest of pipeline
+        # STTMuteFilter MUST be before context_aggregator.user() to block
+        # VAD/transcription frames during bot speech (prevents self-interruption)
         pipeline_processors.extend([
             self.tone_processor,          # AFTER STT to receive both audio AND transcriptions for hybrid mode
-            context_aggregator.user(),    # Context BEFORE mute filter
-            self.stt_mute_filter,         # Mute AFTER context sees frames
+            self.stt_mute_filter,         # Mute BEFORE context - blocks VAD/STT frames during bot speech
+            context_aggregator.user(),    # Context aggregator (receives only unmuted frames)
             self.rtvi,
             llm,
             self.visual_hint_processor,   # Stream text and detect content for visual cards
@@ -293,12 +306,15 @@ class VoiceAssistant:
             allow_interruptions=True,  # Enable barge-in - user can interrupt bot speech
         )
 
-        # Add interruption strategy if available (requires 2+ words to interrupt)
+        # Add interruption strategy if available
         # Note: This ONLY applies when interrupting bot speech
         # Normal input (when bot is silent) accepts any speech including "hello"
         if INTERRUPTION_STRATEGY_AVAILABLE:
-            pipeline_params.interruption_strategies = [MinWordsInterruptionStrategy(min_words=2)]
-            logger.info("🎤 Interruption enabled: MinWordsInterruptionStrategy (min_words=2)")
+            server_config = self.config.get("server", {})
+            interruption_config = server_config.get("interruption", {})
+            min_words = interruption_config.get("min_words", 4)
+            pipeline_params.interruption_strategies = [MinWordsInterruptionStrategy(min_words=min_words)]
+            logger.info(f"🎤 Interruption enabled: MinWordsInterruptionStrategy (min_words={min_words})")
         else:
             logger.warning("⚠️ Interruption strategy not available - using basic allow_interruptions")
 

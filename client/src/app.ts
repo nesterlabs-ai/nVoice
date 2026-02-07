@@ -797,16 +797,11 @@ class VoiceScannerApp {
 
   /**
    * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice)
+   * Shows text immediately for both user (interim transcripts) and bot (streaming text)
    */
   private updateLiveSubtitle(role: 'user' | 'bot', text: string): void {
     if (!this.liveSubtitle || !this.liveSubtitleLabel || !this.liveSubtitleText) return;
     if (!text) return;
-
-    // For bot text, wait until TTS starts speaking before showing subtitle
-    if (role === 'bot') {
-      this.pendingBotSubtitle = text;
-      return; // Don't show yet, wait for BotStartedSpeaking event
-    }
 
     // Reset auto-clear timer
     if (this.subtitleClearTimeout) {
@@ -826,10 +821,15 @@ class VoiceScannerApp {
     // Show the subtitle
     this.liveSubtitle.classList.add('visible');
 
-    // Auto-hide after 4s of no new updates
+    // Store for bot subtitle sync (used by showPendingBotSubtitle if needed)
+    if (role === 'bot') {
+      this.pendingBotSubtitle = text;
+    }
+
+    // Auto-hide after 8s of no new updates (longer persistence)
     this.subtitleClearTimeout = setTimeout(() => {
       this.liveSubtitle?.classList.remove('visible');
-    }, 4000);
+    }, 8000);
   }
 
   /**
@@ -860,10 +860,10 @@ class VoiceScannerApp {
     // Show the subtitle
     this.liveSubtitle.classList.add('visible');
 
-    // Auto-hide after 4s of no new updates
+    // Auto-hide after 8s of no new updates (consistent with updateLiveSubtitle)
     this.subtitleClearTimeout = setTimeout(() => {
       this.liveSubtitle?.classList.remove('visible');
-    }, 4000);
+    }, 8000);
   }
 
   /**
@@ -1961,6 +1961,11 @@ class VoiceScannerApp {
             this.addTerminalMessage('Voice AI initialized and ready.', 'success');
           },
           onUserTranscript: (data) => {
+            // Show live subtitle for ALL transcripts (interim + final) - real-time feedback
+            if (data.text && data.text.trim()) {
+              this.updateLiveSubtitle('user', data.text);
+            }
+
             if (data.final) {
               this.log(`You: ${data.text}`);
               // Finalize previous bot bubble before adding user message
@@ -1978,10 +1983,9 @@ class VoiceScannerApp {
             }
           },
           onBotTranscript: (data) => {
+            // Bot transcript is handled by streaming_text path (VisualHintProcessor)
+            // Only accumulate text here for graph highlighting - do NOT create a duplicate bubble
             this.log(`Bot: ${data.text}`);
-            // Use typewriter effect for bot transcript
-            this.addBotTranscriptWithTypewriter(data.text);
-            // Accumulate bot answer chunks
             this.accumulatedBotAnswer += ' ' + data.text;
             // Debounce highlight call - wait 500ms after last chunk
             if (this.graphHighlightTimeout) {
@@ -2067,8 +2071,32 @@ class VoiceScannerApp {
       this.rtviClient = new RTVIClient(config);
       this.setupTrackListeners();
 
+      // Patch getUserMedia to inject echo cancellation constraints
+      // WebSocket transport calls getUserMedia({ audio: true }) with no echo cancellation,
+      // which causes the bot's TTS output to be picked up by the mic and trigger self-interruption
+      const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = async (constraints?: MediaStreamConstraints) => {
+        if (constraints?.audio) {
+          const audioConstraints = typeof constraints.audio === 'object' ? constraints.audio : {};
+          constraints = {
+            ...constraints,
+            audio: {
+              ...audioConstraints,
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          };
+          console.log('[Audio] Injected echo cancellation into getUserMedia');
+        }
+        return originalGetUserMedia(constraints);
+      };
+
       await this.rtviClient.initDevices();
       await this.rtviClient.connect();
+
+      // Restore original getUserMedia after connection is established
+      navigator.mediaDevices.getUserMedia = originalGetUserMedia;
 
     } catch (error) {
       this.isConnecting = false;

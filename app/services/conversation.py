@@ -15,11 +15,18 @@ from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.frames.frames import TTSSpeakFrame, EndFrame
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.services.llm_service import FunctionCallParams, LLMService
+
+# Universal context system (pipecat 0.0.98)
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+    LLMAssistantAggregatorParams,
+)
 
 from app.services.input_analyzer import InputAnalyzer
 from app.services.rag import RAGService, LightRAGService, A2UIResponse
@@ -32,6 +39,16 @@ try:
 except ImportError as e:
     A2UI_AVAILABLE = False
     logger.warning(f"A2UI system not available: {e}")
+
+# SmartTurn v3 - ML-based end-of-turn detection (optional)
+# Use LoggingSmartTurnAnalyzer wrapper for detailed turn detection logs
+try:
+    from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
+    from app.processors.logging_turn_analyzer import LoggingSmartTurnAnalyzer
+    SMART_TURN_AVAILABLE = True
+except ImportError:
+    SMART_TURN_AVAILABLE = False
+    logger.info("SmartTurn v3 not available - using transcription-based turn detection")
 
 # Voice constant (default only - actual voice is controlled by ToneAwareProcessor)
 DEFAULT_VOICE = "aura-2-athena-en"  # Natural, clear female voice - default
@@ -73,7 +90,8 @@ class ConversationManager:
                  rag_service: RAGService,
                  llm_config: Dict[str, Any] = None,
                  language_config: Dict[str, Any] = None,
-                 a2ui_enabled: bool = True):
+                 a2ui_enabled: bool = True,
+                 smart_turn_config: Dict[str, Any] = None):
         """Initialize the Conversation Manager.
 
         Args:
@@ -82,15 +100,17 @@ class ConversationManager:
             llm_config: Configuration for the LLM service
             language_config: Language configuration settings
             a2ui_enabled: Enable A2UI visual generation from RAG responses
+            smart_turn_config: SmartTurn v3 configuration (enabled, cpu_count, timeout)
         """
         self.input_analyzer = input_analyzer
         self.rag_service = rag_service
         self.llm_config = llm_config or {}
         self.language_config = language_config or {}
+        self.smart_turn_config = smart_turn_config or {}
         self.llm_service = None
         self.tts_service = None
         self.context_aggregator = None
-        self.context = None  # Store OpenAILLMContext for greeting access
+        self.context = None  # Store LLMContext for greeting access
         self._thinking_phrase_index = 0  # Counter for cycling through phrases
 
         # A2UI integration
@@ -384,11 +404,13 @@ class ConversationManager:
 
         return ToolsSchema(standard_tools=[rag_function, end_conversation_function])
 
-    def create_context(self) -> OpenAILLMContext:
+    def create_context(self) -> LLMContext:
         """Create the LLM context with system messages and tools.
 
+        Uses the new universal LLMContext (replaces deprecated OpenAILLMContext).
+
         Returns:
-            OpenAILLMContext for the conversation
+            LLMContext for the conversation
         """
         tools = self.create_function_schemas()
 
@@ -422,7 +444,7 @@ CRITICAL RAG RULES (SPEED IS IMPORTANT):
 - Only add a brief intro like "Here's what I found:" if needed
 - NEVER delay speaking by over-processing the RAG response
 """
-        
+
         # CRITICAL: Add explicit identity enforcement at the start
         # This ensures the bot NEVER identifies as a generic LLM
         identity_enforcement = """
@@ -448,32 +470,40 @@ CONVERSATION ENDING PROTOCOL:
             {"role": "system", "content": system_message},
         ]
 
-        context = OpenAILLMContext(messages, tools)
+        # Use new universal LLMContext (replaces deprecated OpenAILLMContext)
+        context = LLMContext(messages=messages, tools=tools)
         return context
 
     def create_context_aggregator(self) -> Any:
         """Create the context aggregator for the conversation.
 
-        Returns:
-            The context aggregator instance
-        """
-        from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
+        Uses LLMContextAggregatorPair (pipecat 0.0.98).
+        SmartTurn v3 is configured at the transport level via turn_analyzer param.
 
+        Returns:
+            The context aggregator pair instance
+        """
         if not self.llm_service:
             self.initialize_llm()
 
         self.context = self.create_context()  # Store for greeting access
 
-        # aggregation_timeout: how long to wait after a final transcription
-        # before firing the LLM.  Deepgram can split one spoken sentence into
-        # multiple final results when the speaker pauses mid-sentence
-        # (e.g. "What is the location" … pause … "of Nesterlabs?").
-        # 1.5s gives the second fragment time to arrive and get merged by
-        # GroqLLMService before the LLM call fires.
-        user_params = LLMUserAggregatorParams(aggregation_timeout=1.5)
-        self.context_aggregator = self.llm_service.create_context_aggregator(
-            self.context, user_params=user_params
+        # Create user params (pipecat 0.0.98 - no user_turn_strategies or user_mute_strategies)
+        user_params = LLMUserAggregatorParams()
+
+        # Create assistant params (default)
+        assistant_params = LLMAssistantAggregatorParams(
+            expect_stripped_words=True  # TTS typically sends stripped words
         )
+
+        # Create the universal context aggregator pair
+        self.context_aggregator = LLMContextAggregatorPair(
+            context=self.context,
+            user_params=user_params,
+            assistant_params=assistant_params
+        )
+
+        logger.info("📋 Context aggregator created (LLMContextAggregatorPair)")
         return self.context_aggregator
 
     def get_llm_service(self) -> LLMService:
@@ -488,7 +518,7 @@ CONVERSATION ENDING PROTOCOL:
 
     def get_context_aggregator(self) -> Any:
         """Get the context aggregator instance.
-        
+
         Returns:
             The context aggregator instance
         """

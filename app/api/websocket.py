@@ -5,8 +5,9 @@ This module provides the WebSocket endpoint for real-time voice communication
 supporting multiple concurrent user connections with capacity management.
 
 Features:
-- Koala noise suppression (Picovoice)
+- Optional noise suppression (configurable)
 - ai-coustics AIC speech enhancement (noise reduction + clarity)
+- SmartTurn v3 ML-based end-of-turn detection
 - Emotion detection via MSP-PODCAST + Gemini
 """
 
@@ -24,8 +25,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     - Session tracking and management
     - Heartbeat monitoring for stale connections
     - Isolated VoiceAssistant instance per connection
-    - Koala noise suppression (preferred)
-    - ai-coustics AIC speech enhancement (alternative)
+    - SmartTurn v3 ML-based end-of-turn detection
+    - Optional noise suppression (configurable)
+    - ai-coustics AIC speech enhancement (optional)
 
     Args:
         websocket: FastAPI WebSocket connection
@@ -49,50 +51,37 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         from pipecat.serializers.protobuf import ProtobufFrameSerializer
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.audio.vad.vad_analyzer import VADParams
-        from pipecat.audio.interruptions.min_words_interruption_strategy import MinWordsInterruptionStrategy
+        # MinWordsInterruptionStrategy moved to voice_assistant.py (PipelineParams level)
 
         # Get configuration from config.yaml
-        server_config = voice_assistant_server.server_config
+        # Note: server_config from voice_assistant_server may not have all keys if initialized
+        # before config was loaded, so read directly from full config
+        full_config = voice_assistant_server.config or {}
+        server_config = full_config.get("server", {})
         vad_config = server_config.get("vad", {})
         interruption_config = server_config.get("interruption", {})
-        koala_config = voice_assistant_server.config.get("noise_suppression", {})
-        aic_config = voice_assistant_server.config.get("speech_enhancement", {})
+        koala_config = full_config.get("noise_suppression", {})
+        aic_config = full_config.get("speech_enhancement", {})
 
         # Log raw config to debug why config values aren't being applied
         logger.info(f"[Session {session_id}] 📋 Raw server_config keys: {list(server_config.keys())}")
         logger.info(f"[Session {session_id}] 📋 Raw vad_config: {vad_config}")
+        logger.info(f"[Session {session_id}] 📋 Noise suppression config: {koala_config}")
+        logger.info(f"[Session {session_id}] 📋 Speech enhancement config: {aic_config}")
 
-        # ===== AUDIO FILTER CHAIN: KOALA + AIC =====
-        # Step 1: Koala removes background noise
-        # Step 2: AIC enhances speech clarity
-        # Both can run together for maximum audio quality
+        # ===== AUDIO FILTER CONFIGURATION =====
+        # Noise suppression is currently disabled in config.yaml
+        # AIC speech enhancement is also disabled (SDK version mismatch)
         audio_filters = []
 
-        # ===== KOALA NOISE SUPPRESSION (Step 1) =====
-        # Real-time noise reduction using Picovoice Koala
-        if koala_config.get("enabled", False):
-            try:
-                from pipecat.audio.filters.koala_filter import KoalaFilter
+        # ===== NOISE SUPPRESSION (Optional) =====
+        noise_enabled = koala_config.get("enabled", False)
+        noise_provider = koala_config.get("provider", "none")
 
-                # Get config values
-                koala_params = koala_config.get("config", {})
-                access_key = koala_params.get("access_key", "")
-
-                # Resolve environment variable if needed
-                if access_key.startswith("${") and access_key.endswith("}"):
-                    env_var = access_key[2:-1]
-                    access_key = os.getenv(env_var, "")
-
-                if access_key:
-                    koala_filter = KoalaFilter(access_key=access_key)
-                    audio_filters.append(("Koala", koala_filter))
-                    logger.info(f"[Session {session_id}] 🔇 Koala noise suppression ENABLED (Step 1: Remove background noise)")
-                else:
-                    logger.warning(f"[Session {session_id}] ⚠️ Koala access key not found, noise suppression disabled")
-            except ImportError:
-                logger.warning(f"[Session {session_id}] ⚠️ Koala not installed. Run: pip install 'pipecat-ai[koala]'")
-            except Exception as e:
-                logger.error(f"[Session {session_id}] ❌ Failed to initialize Koala: {e}")
+        if noise_enabled and noise_provider != "none":
+            logger.info(f"[Session {session_id}] 🔇 Noise suppression: {noise_provider.upper()} (enabled)")
+        else:
+            logger.info(f"[Session {session_id}] 🔇 Noise suppression: DISABLED (raw audio input)")
 
         # ===== AI-COUSTICS AIC SPEECH ENHANCEMENT (Step 2) =====
         # Noise reduction + speech clarity improvement
@@ -131,7 +120,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
         # Select filter(s) to use
         # NOTE: Pipecat transport only supports single audio_in_filter
-        # Priority: AIC (includes noise reduction) > Koala (noise reduction only)
+        # Priority: AIC (includes noise reduction) > Krisp VIVA (noise cancellation only)
         # For best quality: use AIC alone (it does both noise reduction + enhancement)
         audio_in_filter = None
         if len(audio_filters) > 1:
@@ -141,7 +130,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             audio_in_filter = filter_instance
             logger.info(
                 f"[Session {session_id}] 🔗 Using AIC (includes noise reduction + speech enhancement)\n"
-                f"  Note: AIC provides both features, so Koala is redundant"
+                f"  Note: AIC provides both features, so Krisp VIVA is redundant"
             )
         elif len(audio_filters) == 1:
             # Single filter
@@ -162,24 +151,32 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
         vad_analyzer = SileroVADAnalyzer(params=vad_params)
 
-        # Interruption strategy - prevents false barge-ins from background noise
-        # Requires user to speak at least 3 words to interrupt (filters noise + backchanneling)
-        interruption_enabled = interruption_config.get("enabled", True)
-        min_words = interruption_config.get("min_words", 3)
-
-        interruption_strategy = None
-        if interruption_enabled:
-            interruption_strategy = MinWordsInterruptionStrategy(min_words=min_words)
-            logger.info(
-                f"[Session {session_id}] 🛡️ Interruption strategy: MinWords (min_words={min_words}) "
-                f"- filters noise + backchanneling"
-            )
+        # Interruption strategy is configured in voice_assistant.py via PipelineParams
+        # (MinWordsInterruptionStrategy is a pipeline-level param, not transport-level)
 
         logger.info(
             f"[Session {session_id}] 🎤 VAD configured: confidence={vad_params.confidence}, "
             f"start_secs={vad_params.start_secs}, stop_secs={vad_params.stop_secs}, "
             f"min_volume={vad_params.min_volume}"
         )
+
+        # ===== SMARTTURN V3 - Configured at transport level (pipecat 0.0.98) =====
+        smart_turn_config = server_config.get("smart_turn", {})
+        turn_analyzer = None
+        if smart_turn_config.get("enabled", False):
+            try:
+                from app.processors.logging_turn_analyzer import LoggingSmartTurnAnalyzer
+                cpu_count = smart_turn_config.get("cpu_count", 1)
+                turn_analyzer = LoggingSmartTurnAnalyzer(
+                    cpu_count=cpu_count,
+                    session_id=session_id
+                )
+                logger.info(f"[Session {session_id}] 🧠 SmartTurn v3: ENABLED at transport level (ONNX ML model)")
+            except Exception as e:
+                logger.error(f"[Session {session_id}] 🧠 SmartTurn v3: Failed to initialize: {e}")
+                logger.info(f"[Session {session_id}] 🧠 Falling back to transcription-based detection")
+        else:
+            logger.info(f"[Session {session_id}] 🧠 SmartTurn v3: DISABLED (using transcription-based detection)")
 
         # Create transport parameters for this connection
         transport_params = FastAPIWebsocketParams(
@@ -193,7 +190,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             audio_in_filter=audio_in_filter,  # AIC or Koala (single filter only)
             audio_in_sample_rate=16000,  # Koala/AIC require 16 kHz input
             audio_out_sample_rate=24000,  # Chatterbox TTS outputs 24 kHz
-            interruption_strategy=interruption_strategy,  # MinWords strategy to prevent false barge-ins
+            turn_analyzer=turn_analyzer,  # SmartTurn v3 ML-based end-of-turn detection
         )
 
         # Build filter description for logging
@@ -218,17 +215,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         logger.info(f"[Session {session_id}] VoiceAssistant instance created")
 
         # Log complete audio processing pipeline
-        interruption_desc = f"MinWords(min={min_words})" if interruption_enabled else "Disabled"
+        smart_turn_desc = "SmartTurn v3 (transport)" if turn_analyzer else "Transcription-based"
         logger.info(
             f"[Session {session_id}] 📊 AUDIO PIPELINE SUMMARY:\n"
             f"  ┌─ Input: Microphone (16kHz)\n"
             f"  ├─ Filters: {filter_desc}\n"
             f"  ├─ VAD: Silero (conf={vad_params.confidence}, start={vad_params.start_secs}s, vol={vad_params.min_volume})\n"
-            f"  ├─ Barge-in: {interruption_desc} (prevents false interruptions)\n"
+            f"  ├─ Turn Detection: {smart_turn_desc}\n"
+            f"  ├─ STT Mute: ALWAYS (blocks VAD/STT during bot speech)\n"
             f"  ├─ STT: Deepgram Nova-3\n"
-            f"  ├─ Emotion: MSP-PODCAST + Gemini (hybrid, NON-BLOCKING)\n"
-            f"  ├─ LLM: Gemini 2.0 Flash\n"
-            f"  └─ TTS: Chatterbox (24kHz, emotion-aware)"
+            f"  ├─ LLM: Groq Llama-3.3-70b\n"
+            f"  └─ TTS: ElevenLabs (24kHz)"
         )
 
         # Run the voice assistant pipeline for this connection

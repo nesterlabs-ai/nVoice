@@ -96,8 +96,11 @@ class TextFilterProcessor(FrameProcessor):
         # Escape XML/SSML special characters to prevent TTS errors
         # The & character must be escaped FIRST (before other escapes that use &)
         text = text.replace('&', ' and ')  # Replace & with "and" for natural speech
-        text = text.replace('<', '')  # Remove < (could break SSML)
-        text = text.replace('>', '')  # Remove > (could break SSML)
+        text = text.replace('<', ' ')  # Replace < with space (preserves word boundaries)
+        text = text.replace('>', ' ')  # Replace > with space (preserves word boundaries)
+
+        # Clean up multiple spaces (again, after bracket removal may have added extra spaces)
+        text = re.sub(r'\s+', ' ', text)
 
         # Strip leading/trailing whitespace
         text = text.strip()

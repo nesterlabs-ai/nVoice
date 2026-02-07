@@ -154,12 +154,12 @@ class SpeechToTextService:
 
             if detect_language:
                 live_options_config["detect_language"] = True
+            elif language == "multi" or language == "hi" or self.config.get("support_hinglish", False):
+                # Multi-language mode: Hindi + English (Hinglish) support via Deepgram Nova-3
+                live_options_config["language"] = "multi"
             else:
-                if language == "hi" or self.config.get("support_hinglish", False):
-                    live_options_config["language"] = "multi"
-                else:
-                    language_mapping = {"en": Language.EN, "hi": Language.HI}
-                    live_options_config["language"] = language_mapping.get(language, Language.EN)
+                language_mapping = {"en": Language.EN, "hi": Language.HI}
+                live_options_config["language"] = language_mapping.get(language, Language.EN)
 
             live_options = LiveOptions(**live_options_config)
             logger.info(

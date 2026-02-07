@@ -4,8 +4,8 @@
 
 # Language configuration
 language:
-  primary: "en"  # Primary language (en for English)
-  support_hinglish: false  # Disabled - English only
+  primary: "hi"  # Hindi + English (Hinglish)
+  support_hinglish: true  # ENABLED - Hindi + English bilingual support
   auto_detect: false
 
 stt:
@@ -14,12 +14,12 @@ stt:
     device: "cpu"  # CPU for Lightsail/EC2 deployments
     model: "nova-3"  # Nova 3 - Latest and most accurate Deepgram STT model
     api_key: "${DEEPGRAM_API_KEY}"
-    language: "en"  # Add country suffix if needed (e.g., "en-IN" for Indian English)
+    language: "multi"  # Multi-language: supports Hindi + English (Hinglish) simultaneously
 
-    # Optimized for natural conversation (wait for complete sentences)
+    # Optimized for SmartTurn v3 ML-based turn detection
     smart_format: true       # Adds punctuation & paragraphs (Deepgram waits ~3s for entities in streaming)
-    endpointing: 1000        # INCREASED: 1000ms captures full thoughts (was 800ms, default 10ms too aggressive)
-    utterance_end_ms: 2000   # INCREASED: 2000ms pairs with endpointing for complete utterances (was 1500ms)
+    endpointing: 300         # LOW: 300ms lets SmartTurn ML model be primary turn decision-maker (was 1000ms)
+    utterance_end_ms: 1000   # REDUCED: 1000ms fast transcription delivery for SmartTurn (was 2000ms)
     interim_results: true    # Essential for low-latency streaming feedback
     punctuate: true         # Redundant with smart_format but safe; enhances readability
     filler_words: false       # DISABLED: Detects "um/uh" for emotion-aware agents (helps turn-taking)
@@ -35,14 +35,13 @@ stt:
     
 
 tts:
-  provider: "chatterbox"  # Chatterbox with emotion control via Resemble AI Cloud
+  provider: "elevenlabs"  # ElevenLabs TTS with low-latency turbo model
   config:
-    api_key: "${RESEMBLE_API_KEY}"
-    voice_uuid: "${RESEMBLE_VOICE_UUID}"
-    synthesis_url: "https://f.cluster.resemble.ai/synthesize"
-    stream_url: "https://f.cluster.resemble.ai/stream"
-    sample_rate: 24000
-    voice: "neutral"  # Initial voice/emotion state
+    api_key: "${ELEVENLABS_API_KEY}"
+    voice_id: "${ELEVENLABS_VOICE_ID}"
+    model_id: "eleven_turbo_v2_5"  # Turbo model for lowest latency
+    optimize_streaming_latency: 4  # Maximum latency optimization (0-4)
+    output_format: "pcm_24000"  # PCM at 24kHz for best quality
 
 input_analyzer:
   custom_patterns:
@@ -108,18 +107,27 @@ conversation:
     - Address: 701 Lakeway Dr #200, Sunnyvale CA 94085
     - Website: nesterlabs.com
 
+    LANGUAGE RULES:
+    - ALWAYS respond in the SAME language the user is speaking.
+    - If user speaks English, respond in English only.
+    - If user speaks Hindi, respond in Hindi only.
+    - If user mixes Hindi and English (Hinglish), respond in Hinglish.
+    - NEVER switch languages unless the user switches first.
+
     RESPONSE RULES:
     1. CRITICAL: Maximum 1-2 sentences per response. Be extremely concise for voice.
-    2. Answer simple questions DIRECTLY from above knowledge (1-2 sentences)
+    2. Answer simple questions DIRECTLY from above knowledge (1-2 sentences).
     3. Call call_rag_system ONLY when user wants MORE DETAILS about:
        - Specific projects or case studies
        - In-depth service explanations
        - Detailed expertise information
        - "Tell me more about...", "Can you explain...", "What projects..."
-    4. For farewells (bye, goodbye, etc): call end_conversation IMMEDIATELY
+    4. For farewells (bye, goodbye, etc): call end_conversation IMMEDIATELY.
     5. NEVER ramble. Short, natural, conversational responses only.
-    6. If the user asks a question that is not related to the company, services, or expertise, politely decline to answer and say you are not sure.
-    7. Always end responses with a leading question that redirects the conversation towards what the user wants to achieve. Keep the conversation continuous, engaging and ensure there's a back and forth between you and the user.
+    6. NEVER use filler phrases like "Let me check that for you", "Let me see", "Sure, let me look into that". Just give the answer directly.
+    7. NEVER repeat yourself. Say things once and move on.
+    8. If the user asks a question not related to the company, services, or expertise, politely decline and say you are not sure.
+    9. End responses with a brief question to keep the conversation going.
 # A2UI (Agentic UI) Configuration
 # Visual response generation system for dynamic UI components
 a2ui:
@@ -158,13 +166,14 @@ a2ui:
     # - video-gallery: Video galleries
     # - sales-dashboard: Sales metrics
 
-# Noise Suppression (Koala by Picovoice)
-# Real-time noise reduction for cleaner audio input
+# Noise Suppression
+# DISABLED - no noise suppression filter active
+# To enable Koala: set enabled: true, provider: "koala", add access_key
+# To enable Krisp VIVA: requires SDK download from sdk.krisp.ai
 noise_suppression:
-  enabled: true  # Enable Koala noise suppression
-  provider: "koala"
-  config:
-    access_key: "${KOALA_ACCESS_KEY}"  # Picovoice access key
+  enabled: false  # DISABLED - no noise filter
+  provider: "none"
+  config: {}
 
 # Speech Enhancement (ai-coustics AIC)
 # Noise reduction + speech clarity improvement
@@ -193,7 +202,7 @@ server:
   # Higher values = stricter (less sensitive to noise, but may miss quiet speech)
   # Lower values = more sensitive (catches quiet speech, but may pick up noise)
   vad:
-    confidence: 0.88       # HIGHER - only trigger on clear speech (reduces noise triggers)
+    confidence: 0.5       # HIGHER - only trigger on clear speech (reduces noise triggers)
     start_secs: 0.5        # SLOWER - require 500ms of speech before triggering (filters short noises)
     stop_secs: 1.0         # Wait 1s of silence before ending utterance
     min_volume: 0.65       # HIGHER - ignore quiet background noise
@@ -202,10 +211,10 @@ server:
   # MinWordsInterruptionStrategy prevents false interruptions from:
   # - Background noise picked up by VAD
   # - Short sounds like "yeah", "ok", "mm-hmm" (backchanneling)
-  # Requires user to speak 3+ words to interrupt bot
+  # With endpointing=300ms, transcriptions arrive fast so min_words must be higher
   interruption:
     enabled: true          # Enable barge-in support
-    min_words: 3           # Require at least 3 words to interrupt (filters noise + backchanneling)
+    min_words: 2           # Require 4+ words to interrupt (prevents 1-2 word false barge-ins)
 
   # Smart interruption - Context-aware validation
   # Prevents false interruptions from background conversations/TV/music
@@ -215,3 +224,12 @@ server:
     min_confidence: 0.7    # Minimum confidence for valid interruption
     warn_on_noise: false   # Warn user about background noise
     warning_cooldown: 10   # Seconds between background noise warnings
+
+  # Smart Turn v3 - ML-based end-of-turn detection
+  # Uses ONNX model to detect when user has finished speaking
+  # More accurate than simple silence detection
+  # Now properly integrated via LLMContextAggregatorPair with UserTurnStrategies
+  smart_turn:
+    enabled: true          # ENABLED - migrated to universal LLMContext with TurnAnalyzerUserTurnStopStrategy
+    cpu_count: 1           # Number of CPUs for ML inference (1 is usually enough)
+    timeout: 0.5           # Delay before triggering end-of-turn (seconds)
