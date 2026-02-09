@@ -821,6 +821,13 @@ body {
   background: linear-gradient(0deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.10) 100%), #000;
 }
 
+.control-btn-close:disabled,
+.control-btn-close.control-btn-close-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .control-btn-close .control-btn-icon,
 .control-btn-close .control-btn-icon-invert {
   width: 20px;
