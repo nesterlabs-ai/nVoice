@@ -18,14 +18,15 @@ stt:
 
     # Optimized for natural conversation (wait for complete sentences)
     smart_format: true       # Adds punctuation & paragraphs (Deepgram waits ~3s for entities in streaming)
-    endpointing: 1000        # INCREASED: 1000ms captures full thoughts (was 800ms, default 10ms too aggressive)
-    utterance_end_ms: 2000   # INCREASED: 2000ms pairs with endpointing for complete utterances (was 1500ms)
+    endpointing: 500          # 500ms — captures natural pauses while reducing latency (was 1000ms)
+    utterance_end_ms: 1200    # 1200ms — balanced for complete utterances (was 2000ms)
     interim_results: true    # Essential for low-latency streaming feedback
     punctuate: true         # Redundant with smart_format but safe; enhances readability
     filler_words: false       # DISABLED: Detects "um/uh" for emotion-aware agents (helps turn-taking)
 
     # Additional optimizations for voice bots
-    vad_events: true         # Triggers VAD for better speech boundaries (prevents keepalive timeout)
+    vad_events: false        # DISABLED: Deepgram VAD SpeechStarted events trigger InterruptionTaskFrames via STT
+                             # which bypass allow_interruptions=False and kill bot speech. Silero VAD handles detection locally.
     channels: 1              # Mono for single-speaker conversations
     sample_rate: 16000       # Standard 16kHz (matches Koala/AIC input)
 
@@ -35,14 +36,13 @@ stt:
     
 
 tts:
-  provider: "chatterbox"  # Chatterbox with emotion control via Resemble AI Cloud
+  provider: "elevenlabs"  # ElevenLabs TTS with Eleven v3 model
   config:
-    api_key: "${RESEMBLE_API_KEY}"
-    voice_uuid: "${RESEMBLE_VOICE_UUID}"
-    synthesis_url: "https://f.cluster.resemble.ai/synthesize"
-    stream_url: "https://f.cluster.resemble.ai/stream"
-    sample_rate: 24000
-    voice: "neutral"  # Initial voice/emotion state
+    api_key: "${ELEVENLABS_API_KEY}"
+    voice_id: "${ELEVENLABS_VOICE_ID}"
+    model_id: "eleven_multilingual_v2"  # Latest Eleven v3 model - high quality
+    output_format: "pcm_16000"  # Raw PCM for lowest latency
+    optimize_streaming_latency: 4  # Maximum optimization (0-4 scale)
 
 input_analyzer:
   custom_patterns:
@@ -186,32 +186,46 @@ server:
   fastapi_port: 7860
   session_timeout: 180
   # Emotion detection toggle
-  # Uses MSP-PODCAST wav2vec2 + Google Gemini for hybrid audio+text sentiment
-  emotion_detection_enabled: true
+  # DISABLED - simplifying to match Goonj's working approach
+  emotion_detection_enabled: false
 
-  # VAD settings - STRICTER to prevent false barge-ins from background noise
-  # Higher values = stricter (less sensitive to noise, but may miss quiet speech)
-  # Lower values = more sensitive (catches quiet speech, but may pick up noise)
+  # VAD settings - MATCHING GOONJ's working config
   vad:
-    confidence: 0.88       # HIGHER - only trigger on clear speech (reduces noise triggers)
-    start_secs: 0.5        # SLOWER - require 500ms of speech before triggering (filters short noises)
-    stop_secs: 1.0         # Wait 1s of silence before ending utterance
-    min_volume: 0.65       # HIGHER - ignore quiet background noise
+    confidence: 0.7        # Goonj uses 0.7 (balanced, not too strict)
+    start_secs: 0.4        # Goonj uses 0.4 (quick start)
+    stop_secs: 0.8         # Goonj uses 0.8 (reasonable pause detection)
+    min_volume: 0.7        # Goonj uses 0.7 (balanced)
+
+  # Noise handler processor - DISABLED to match Goonj
+  # Goonj doesn't use NoiseHandler - relies on VAD settings
+  noise_handler:
+    enabled: false
+    max_false_starts: 3
+    min_speech_duration: 0.5
+    recovery_delay: 2.0
+
+  # Minimal pre-filter - transcription-level noise filtering
+  # Drops low-confidence transcriptions and noise markers
+  prefilter:
+    enabled: true
+    confidence_threshold: 0.5  # Drop transcriptions below 50% confidence
+    min_length: 2             # Drop single-character transcriptions
+    greeting_protection: true  # Block transcriptions during initial greeting
+
+  # Interruption filter — DISABLED because allow_interruptions=False means no
+  # InterruptionFrames flow through the pipeline (InterruptionTaskFrames bypass it).
+  # The asyncio.shield in RAG call handler protects against any remaining edge cases.
+  interruption_filter:
+    enabled: false
+    grace_period: 0.5
+    min_speaking_time: 1.5
+    transcription_wait_timeout: 2.0
+    debug: false
 
   # Barge-in (interruption) settings
-  # MinWordsInterruptionStrategy prevents false interruptions from:
-  # - Background noise picked up by VAD
-  # - Short sounds like "yeah", "ok", "mm-hmm" (backchanneling)
-  # Requires user to speak 3+ words to interrupt bot
+  # DISABLED: MinWordsInterruptionStrategy generates InterruptionTaskFrames on every VAD event
+  # proven doesn't use this - relies on strict VAD settings instead
+  # With strict VAD (conf=0.85, vol=0.75), noise won't trigger VAD in the first place
   interruption:
-    enabled: true          # Enable barge-in support
-    min_words: 3           # Require at least 3 words to interrupt (filters noise + backchanneling)
-
-  # Smart interruption - Context-aware validation
-  # Prevents false interruptions from background conversations/TV/music
-  # Warns user when background noise is detected
-  smart_interruption:
-    enabled: false         # DISABLED - StartFrame error needs to be fixed first
-    min_confidence: 0.7    # Minimum confidence for valid interruption
-    warn_on_noise: false   # Warn user about background noise
-    warning_cooldown: 10   # Seconds between background noise warnings
+    enabled: false         # DISABLED - strict VAD handles noise filtering instead
+    min_words: 3           # (unused when disabled)

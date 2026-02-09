@@ -8,7 +8,15 @@ import re
 from typing import Optional
 
 from loguru import logger
-from pipecat.frames.frames import Frame, TextFrame, StartFrame, EndFrame, CancelFrame
+from pipecat.frames.frames import (
+    Frame,
+    TextFrame,
+    StartFrame,
+    EndFrame,
+    CancelFrame,
+    TranscriptionFrame,
+    InterimTranscriptionFrame,
+)
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 
@@ -99,8 +107,10 @@ class TextFilterProcessor(FrameProcessor):
         text = text.replace('<', '')  # Remove < (could break SSML)
         text = text.replace('>', '')  # Remove > (could break SSML)
 
-        # Strip leading/trailing whitespace
-        text = text.strip()
+        # NOTE: Do NOT strip() here - LLM generates word chunks with leading spaces
+        # like " the", " voice", etc. Stripping removes word separation!
+        # Only strip trailing whitespace to clean up line endings
+        text = text.rstrip()
 
         if text != original_text:
             logger.debug(f"Filtered text: '{original_text[:50]}...' → '{text[:50]}...'")
@@ -117,7 +127,12 @@ class TextFilterProcessor(FrameProcessor):
         # Handle lifecycle frames (StartFrame, EndFrame, etc.)
         await super().process_frame(frame, direction)
 
-        # Only filter text frames going downstream (to TTS)
+        # Only filter LLM text frames going downstream (to TTS).
+        # Exclude TranscriptionFrame/InterimTranscriptionFrame — these inherit TextFrame
+        # but must keep their type identity so TTS can filter them out.
+        if isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame)):
+            await self.push_frame(frame, direction)
+            return
         if isinstance(frame, TextFrame) and direction == FrameDirection.DOWNSTREAM:
             if self.enabled and frame.text:
                 # Clean the text and create new frame

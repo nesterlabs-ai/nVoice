@@ -16,6 +16,9 @@ httpx[http2]>=0.27.0  # HTTP/2 support for better performance
 librosa>=0.10.0  # Audio feature extraction with high-quality resampling
 numpy>=1.24.0    # Numerical operations for audio processing
 
+# WebRTC noise suppression (fallback when Koala not available)
+webrtc-noise-gain>=1.2.3  # Google WebRTC-based noise suppression
+
 # Emotion detection dependencies (MSP-PODCAST wav2vec2)
 torch>=2.0.0  # PyTorch for wav2vec2 emotion detection models
 transformers>=4.30.0  # Hugging Face transformers for wav2vec2 models

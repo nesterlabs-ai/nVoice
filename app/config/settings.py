@@ -80,7 +80,7 @@ class RAGSettings(BaseSettings):
     """RAG service configuration."""
 
     type: str = Field(default="lightrag", description="RAG service type")
-    api_url: str = Field(default="https://lightragnl.duckdns.org", description="LightRAG API URL")
+    api_url: str = Field(default="https://lightrag.nesterlabs.com", description="LightRAG API URL")
     mode: str = Field(default="local", description="Query mode")
     top_k: int = Field(default=3, description="Number of results to retrieve")
     timeout: int = Field(default=20, description="API timeout in seconds")
