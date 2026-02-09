@@ -168,7 +168,7 @@ class SpeechToTextService:
             )
 
             self.stt_service = TextNormalizedDeepgramSTTService(
-                api_key=api_key, live_options=live_options
+                api_key=api_key, live_options=live_options, should_interrupt=False
             )
         else:
             raise ValueError(f"Unsupported STT provider: {self.stt_provider}")

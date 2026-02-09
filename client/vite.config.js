@@ -5,9 +5,19 @@ export default defineConfig({
     plugins: [react()],
     server: {
         proxy: {
-            // Proxy /api requests to the backend server
+            // Proxy /connect to the backend server
             '/connect': {
-                target: 'http://0.0.0.0:7860', // Replace with your backend URL
+                target: 'http://0.0.0.0:7860',
+                changeOrigin: true,
+            },
+            // Proxy /graph/* endpoints to the backend server
+            '/graph': {
+                target: 'http://0.0.0.0:7860',
+                changeOrigin: true,
+            },
+            // Proxy /a2ui/* endpoints to the backend server
+            '/a2ui': {
+                target: 'http://0.0.0.0:7860',
                 changeOrigin: true,
             },
         },

@@ -97,11 +97,12 @@ class TextToSpeechService:
             self.tts_service = ElevenLabsTTSService(
                 api_key=api_key,
                 voice_id=selected_voice_id,
-                model=model_id,  # Use turbo model for lowest latency
-                optimize_streaming_latency=optimize_latency,  # Maximum optimization
-                output_format=output_format,  # Raw PCM for lowest latency
+                model=model_id,
+                optimize_streaming_latency=optimize_latency,
+                output_format=output_format,
+                inactivity_timeout=120.0,  # Prevent connection timeouts during silence
             )
-            logger.info(f"Using ElevenLabs TTS with model: {model_id}, latency optimization: {optimize_latency}")
+            logger.info(f"Using ElevenLabs TTS with model: {model_id}")
 
         elif self.tts_provider == "cartesia":
             api_key = self.config.get("api_key")

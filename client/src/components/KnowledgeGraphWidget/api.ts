@@ -1,17 +1,21 @@
 /**
- * LightRAG API Client
- * Communicates with the LightRAG server to fetch knowledge graph data
+ * Knowledge Graph API Client
+ * Communicates with the NesterAI backend proxy to fetch knowledge graph data
+ * The backend handles LightRAG authentication with the API key
  */
 
 import { KnowledgeGraph } from './types';
 
-// LightRAG server URL - can be configured via environment variable or window global
-const LIGHTRAG_URL = (window as any).__LIGHTRAG_URL__ ||
-                     (window as any).LIGHTRAG_URL ||
-                     'http://localhost:9621';
+// Use the backend proxy endpoint (same origin as the app)
+// This keeps the LightRAG API key secure on the server side
+const getApiBaseUrl = (): string => {
+  // In production, use the same origin
+  // In development, the Vite proxy handles it
+  return '';
+};
 
 /**
- * Fetch the knowledge graph from LightRAG
+ * Fetch the knowledge graph from LightRAG via backend proxy
  * @param label - Node label to filter by (use '*' for all nodes)
  * @param maxDepth - Maximum depth of graph traversal
  */
@@ -20,13 +24,14 @@ export async function fetchGraph(
   maxDepth: number = 3
 ): Promise<KnowledgeGraph> {
   try {
-    const url = `${LIGHTRAG_URL}/graphs?label=${encodeURIComponent(label)}&max_depth=${maxDepth}`;
-    console.log('[KnowledgeGraph] Fetching from:', url);
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/graph/data?label=${encodeURIComponent(label)}&max_depth=${maxDepth}`;
+    console.log('[KnowledgeGraph] Fetching from proxy:', url);
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',  // Skip ngrok interstitial page
       },
     });
 
@@ -45,38 +50,38 @@ export async function fetchGraph(
 
 /**
  * Fetch available graph labels from LightRAG
+ * Note: This endpoint may not be proxied yet - falls back gracefully
  */
 export async function fetchGraphLabels(): Promise<string[]> {
   try {
-    const response = await fetch(`${LIGHTRAG_URL}/graph/label/list`, {
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(`${baseUrl}/graph/labels`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
       },
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch labels: ${response.status}`);
+      console.warn('[KnowledgeGraph] Labels endpoint not available, returning empty');
+      return [];
     }
 
     return response.json();
   } catch (error) {
-    console.error('[KnowledgeGraph] Error fetching labels:', error);
-    throw error;
+    console.warn('[KnowledgeGraph] Error fetching labels:', error);
+    return [];
   }
 }
 
 /**
- * Check if LightRAG server is healthy
+ * Check if LightRAG server is healthy via backend proxy
  */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${LIGHTRAG_URL}/health`, {
+    const baseUrl = getApiBaseUrl();
+    const response = await fetch(`${baseUrl}/graph/health`, {
       method: 'GET',
-      headers: {
-        'ngrok-skip-browser-warning': 'true',
-      },
     });
     return response.ok;
   } catch {

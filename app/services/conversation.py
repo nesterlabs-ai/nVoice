@@ -8,6 +8,7 @@ A2UI Integration:
 - A2UI updates are emitted to frontend for visual rendering
 """
 
+import asyncio
 import re
 from typing import Any, Callable, Dict, Optional
 
@@ -15,7 +16,11 @@ from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.frames.frames import TTSSpeakFrame, EndFrame
-from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+)
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.openai.llm import OpenAILLMService
@@ -90,8 +95,9 @@ class ConversationManager:
         self.llm_service = None
         self.tts_service = None
         self.context_aggregator = None
-        self.context = None  # Store OpenAILLMContext for greeting access
+        self.context = None  # Store LLMContext for greeting access
         self._thinking_phrase_index = 0  # Counter for cycling through phrases
+        self._user_turn_generation = 0  # Tracks user turns for phantom interruption detection
 
         # A2UI integration
         self._a2ui_enabled = a2ui_enabled and A2UI_AVAILABLE
@@ -197,6 +203,10 @@ class ConversationManager:
                 if function_calls and any('end_conversation' in str(call) for call in function_calls):
                     return
 
+                # Increment generation counter — used by RAG cancellation handler to
+                # distinguish phantom interruptions from real user interruptions
+                self._user_turn_generation += 1
+
                 # RAG calls now use the same voice as set by ToneAwareProcessor
                 # (hybrid audio + text tone detection)
                 if self.tts_service:
@@ -254,68 +264,145 @@ class ConversationManager:
             or normalized.startswith("i apologize, but i encountered an error")
         )
 
-    async def _handle_rag_call(self, params: FunctionCallParams) -> None:
-        """Handle RAG system function calls with A2UI support.
+    async def _execute_rag_query(self, question: str) -> str:
+        """Execute a RAG query and emit A2UI if applicable.
 
-        Uses a single sequential query that retrieves both text and A2UI template
-        from the same LightRAG call. This avoids connection pooling issues that
-        occur with parallel requests.
+        This is extracted as a helper so it can run as an independent asyncio task
+        that survives cancellation from InterruptionTaskFrames.
+
+        Args:
+            question: The user's question
+
+        Returns:
+            Cleaned response text from RAG
+        """
+        import time
+        start_time = time.time()
+
+        if self._a2ui_enabled and self._a2ui_rag_service:
+            logger.info("🎨 Using SEQUENTIAL RAG + A2UI pipeline...")
+
+            a2ui_response: A2UIResponse = await self._a2ui_rag_service.query(
+                query=question,
+                force_text_only=False,
+            )
+
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info(f"⏱️ RAG+A2UI query completed in {elapsed_ms:.1f}ms")
+
+            if self._is_error_response(a2ui_response.text):
+                logger.warning("⚠️ RAG returned error text")
+                return a2ui_response.text
+
+            cleaned_response = self._strip_markdown(a2ui_response.text)
+
+            if a2ui_response.a2ui and self._a2ui_callback:
+                logger.info(f"📤 Emitting A2UI update to frontend: {a2ui_response.template_type}")
+                try:
+                    await self._a2ui_callback(a2ui_response.a2ui, question)
+                    logger.info("✅ A2UI emitted successfully")
+                except Exception as e:
+                    logger.error(f"❌ Failed to emit A2UI update: {e}")
+            else:
+                logger.info("ℹ️ No A2UI template generated for this query")
+
+            return cleaned_response
+        else:
+            response = await self.rag_service.get_response(question)
+            return self._strip_markdown(response)
+
+    async def _handle_rag_cancellation(self, rag_task: asyncio.Task, my_generation: int, question: str) -> None:
+        """Handle RAG call cancellation recovery.
+
+        Waits for the shielded RAG task to complete and checks whether the
+        cancellation was caused by phantom noise or real user speech.
+
+        - If generation counter unchanged (phantom): deliver result via TTS
+        - If generation counter changed (real interruption): discard stale result
+
+        Args:
+            rag_task: The still-running RAG asyncio task
+            my_generation: Generation counter at the time the RAG call started
+            question: Original user question (for logging)
+        """
+        try:
+            response = await rag_task
+        except Exception as e:
+            logger.error(f"❌ RAG task failed after cancellation: {e}")
+            return
+
+        if self._user_turn_generation == my_generation:
+            # No new function call since RAG started → phantom interruption
+            if response and self.tts_service:
+                logger.info(f"🔄 Phantom interruption — delivering RAG result via TTS for: {question[:50]}...")
+                await self.tts_service.queue_frame(TTSSpeakFrame(response))
+        else:
+            logger.info(f"🗑️ Real interruption — discarding stale RAG result for: {question[:50]}...")
+
+    def _clean_thinking_phrases_from_context(self):
+        """Remove thinking phrases from the end of conversation context.
+
+        The universal LLMAssistantAggregator captures TTSSpeakFrame content
+        (thinking phrases spoken during RAG calls) as assistant messages.
+        These must be removed before the LLM processes the function result,
+        otherwise the LLM sees a stale "response" after the tool result and
+        outputs raw function call markup instead of a proper answer.
+        """
+        if not self.context:
+            return
+        messages = self.context.messages
+        thinking_set = set(self.THINKING_PHRASES)
+        while (
+            messages
+            and messages[-1].get("role") == "assistant"
+            and messages[-1].get("content", "").strip() in thinking_set
+        ):
+            removed = messages.pop()
+            logger.debug(f"🧹 Removed thinking phrase from context: '{removed.get('content', '')[:40]}'")
+
+    async def _handle_rag_call(self, params: FunctionCallParams) -> None:
+        """Handle RAG system function calls with interruption protection.
+
+        Runs the RAG query as an independent asyncio task so it survives
+        cancellation by InterruptionTaskFrames. On cancellation, a background
+        task checks whether the interruption was phantom noise (delivers result
+        via TTS) or real user speech (discards stale result).
 
         Args:
             params: Function call parameters
         """
-        import time
         question = params.arguments.get("question", "")
+        my_generation = self._user_turn_generation
 
         try:
             logger.info(f"Processing RAG call for: {question}")
-            start_time = time.time()
 
-            # If A2UI is enabled, use the A2UI RAG service for combined query
-            if self._a2ui_enabled and self._a2ui_rag_service:
-                logger.info("🎨 Using SEQUENTIAL RAG + A2UI pipeline...")
-
-                # Single query that returns both text and A2UI template
-                a2ui_response: A2UIResponse = await self._a2ui_rag_service.query(
-                    query=question,
-                    force_text_only=False,
+            # Run as independent task so it survives cancellation
+            rag_task = asyncio.create_task(self._execute_rag_query(question))
+            try:
+                response = await rag_task
+            except asyncio.CancelledError:
+                logger.warning("⚠️ RAG function call cancelled by interruption")
+                # rag_task continues running independently (it's a separate task)
+                # Background task will deliver result via TTS if phantom noise
+                asyncio.create_task(
+                    self._handle_rag_cancellation(rag_task, my_generation, question)
                 )
+                raise
 
-                elapsed_ms = (time.time() - start_time) * 1000
-                logger.info(f"⏱️ RAG+A2UI query completed in {elapsed_ms:.1f}ms")
+            # Clean thinking phrases from context before delivering the result.
+            # The universal LLMAssistantAggregator captures TTSSpeakFrame content
+            # (thinking phrases spoken during RAG wait) as assistant messages.
+            # These appear AFTER the tool result in context, confusing the LLM
+            # into echoing raw function calls instead of using the RAG result.
+            self._clean_thinking_phrases_from_context()
 
-                # Check for error responses
-                if self._is_error_response(a2ui_response.text):
-                    logger.warning("⚠️ RAG returned error text")
-                    await params.result_callback(a2ui_response.text)
-                    return
-
-                # Strip markdown for voice output
-                cleaned_response = self._strip_markdown(a2ui_response.text)
-
-                # Send text response to LLM -> TTS
-                await params.result_callback(cleaned_response)
-
-                # If we got an A2UI document, emit it to frontend
-                if a2ui_response.a2ui and self._a2ui_callback:
-                    logger.info(f"📤 Emitting A2UI update to frontend: {a2ui_response.template_type}")
-                    try:
-                        await self._a2ui_callback(a2ui_response.a2ui, question)
-                        logger.info("✅ A2UI emitted successfully")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to emit A2UI update: {e}")
-                else:
-                    logger.info("ℹ️ No A2UI template generated for this query")
-
-            else:
-                # Standard RAG query without A2UI
-                response = await self.rag_service.get_response(question)
-                # Strip markdown formatting for voice output
-                cleaned_response = self._strip_markdown(response)
-                await params.result_callback(cleaned_response)
-
+            # Normal path — deliver response to LLM
+            await params.result_callback(response)
             logger.info(f"✅ RAG call completed for: {question[:50]}...")
 
+        except asyncio.CancelledError:
+            raise  # Propagate so Pipecat handles the interruption correctly
         except Exception as e:
             logger.error(f"Error in RAG call: {e}")
             import traceback
@@ -384,11 +471,11 @@ class ConversationManager:
 
         return ToolsSchema(standard_tools=[rag_function, end_conversation_function])
 
-    def create_context(self) -> OpenAILLMContext:
+    def create_context(self) -> LLMContext:
         """Create the LLM context with system messages and tools.
 
         Returns:
-            OpenAILLMContext for the conversation
+            LLMContext for the conversation
         """
         tools = self.create_function_schemas()
 
@@ -448,31 +535,45 @@ CONVERSATION ENDING PROTOCOL:
             {"role": "system", "content": system_message},
         ]
 
-        context = OpenAILLMContext(messages, tools)
+        context = LLMContext(messages=messages, tools=tools)
         return context
 
     def create_context_aggregator(self) -> Any:
         """Create the context aggregator for the conversation.
 
+        Uses the universal LLMContextAggregatorPair with TranscriptionUserTurnStopStrategy
+        instead of the deprecated OpenAI-specific aggregator. The new strategy triggers
+        the LLM as soon as a final transcription arrives AND the user stops speaking,
+        with a short 0.3s coalesce timer (vs the old fixed 0.7s timeout on every turn).
+
         Returns:
-            The context aggregator instance
+            The context aggregator instance (LLMContextAggregatorPair)
         """
-        from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
+        from pipecat.turns.user_turn_strategies import UserTurnStrategies
+        from pipecat.turns.user_stop.transcription_user_turn_stop_strategy import (
+            TranscriptionUserTurnStopStrategy,
+        )
 
         if not self.llm_service:
             self.initialize_llm()
 
         self.context = self.create_context()  # Store for greeting access
 
-        # aggregation_timeout: how long to wait after a final transcription
-        # before firing the LLM.  Deepgram can split one spoken sentence into
-        # multiple final results when the speaker pauses mid-sentence
-        # (e.g. "What is the location" … pause … "of Nesterlabs?").
-        # 1.5s gives the second fragment time to arrive and get merged by
-        # GroqLLMService before the LLM call fires.
-        user_params = LLMUserAggregatorParams(aggregation_timeout=1.5)
-        self.context_aggregator = self.llm_service.create_context_aggregator(
-            self.context, user_params=user_params
+        # TranscriptionUserTurnStopStrategy triggers the LLM when:
+        # 1. Final transcription received (text accumulated)
+        # 2. User stopped speaking (VAD silence)
+        # 3. No more interim results pending
+        # The timeout (0.3s) is a coalesce window for multiple transcriptions
+        # arriving close together — NOT a fixed wait like the old system.
+        user_params = LLMUserAggregatorParams(
+            user_turn_strategies=UserTurnStrategies(
+                stop=[TranscriptionUserTurnStopStrategy(timeout=0.3)]
+            ),
+        )
+
+        self.context_aggregator = LLMContextAggregatorPair(
+            context=self.context,
+            user_params=user_params,
         )
         return self.context_aggregator
 
