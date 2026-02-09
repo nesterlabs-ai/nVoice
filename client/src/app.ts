@@ -369,6 +369,30 @@ class VoiceScannerApp {
     this.disconnect();
   }
 
+  /** Icon paths for control-close button (normal vs disabled) */
+  private static readonly CLOSE_ICON_ENABLED = '/X (1).svg';
+  private static readonly CLOSE_ICON_DISABLED = '/X-disable.svg';
+
+  /**
+   * Enable or disable the control-close button. Disabled while WebSocket is connecting so user cannot close during pending API.
+   * Swaps the button icon to X-disable.svg when disabled.
+   */
+  private setCloseButtonEnabled(enabled: boolean): void {
+    const closeBtn = document.getElementById('control-close');
+    if (!closeBtn) return;
+    (closeBtn as HTMLButtonElement).disabled = !enabled;
+    closeBtn.setAttribute('aria-disabled', String(!enabled));
+    const icon = closeBtn.querySelector('img');
+    if (icon) {
+      icon.src = enabled ? VoiceScannerApp.CLOSE_ICON_ENABLED : VoiceScannerApp.CLOSE_ICON_DISABLED;
+    }
+    if (enabled) {
+      closeBtn.classList.remove('control-btn-close-disabled');
+    } else {
+      closeBtn.classList.add('control-btn-close-disabled');
+    }
+  }
+
   /**
    * Update UI for connection state
    */
@@ -395,6 +419,7 @@ class VoiceScannerApp {
     } else {
       connectBtn?.classList.remove('connecting');
       connectBtn?.classList.remove('shrinking');
+      this.setCloseButtonEnabled(true); // Ensure close is enabled when not connected
       // Don't show connect-area when bar is in close-mode (Restart serves that purpose)
       const mediaBar = document.getElementById('media-control-bar');
       if (!mediaBar?.classList.contains('close-mode')) {
@@ -1942,6 +1967,7 @@ class VoiceScannerApp {
 
     this.isConnecting = true;
     this.setVoiceState('thinking');
+    this.setCloseButtonEnabled(false); // Disable close until WebSocket is connected (or fails)
 
     this.addTerminalMessage('voice.scanner.connect();', 'command');
     this.addTerminalMessage('Establishing secure connection...', 'regular');
@@ -1963,6 +1989,7 @@ class VoiceScannerApp {
           onConnected: () => {
             this.isConnecting = false;
             this.isConnected = true;
+            this.setCloseButtonEnabled(true); // WebSocket connected; allow close
             this.log('Connected successfully!');
             this.setVoiceState('listening');
             this.updateConnectionUI(true);
@@ -1978,10 +2005,12 @@ class VoiceScannerApp {
             this.isConnecting = false;
             this.isConnected = false;
             this.rtviClient = null;
+            this.setCloseButtonEnabled(true);
             this.log('Disconnected');
             this.setVoiceState('idle');
             this.updateConnectionUI(false);
             this.stopAudioVisualization();
+            this.startIdleBlobAnimation(); // Keep wave animating in idle state
             this.addTerminalMessage('Connection terminated.', 'regular');
           },
           onBotReady: () => {
@@ -2022,6 +2051,7 @@ class VoiceScannerApp {
             }, 500);
           },
           onError: (error) => {
+            this.setCloseButtonEnabled(true); // Re-enable close on error
             const errorMsg = typeof error === 'object' ? JSON.stringify(error) : String(error);
             this.log(`Error: ${errorMsg}`);
             this.addTerminalMessage(errorMsg, 'error');
@@ -2102,6 +2132,7 @@ class VoiceScannerApp {
 
     } catch (error) {
       this.isConnecting = false;
+      this.setCloseButtonEnabled(true); // Re-enable close when connection fails
       this.log(`Connection failed: ${(error as Error).message}`);
       this.addTerminalMessage(`Connection failed: ${(error as Error).message}`, 'error');
       this.setVoiceState('idle');
@@ -2152,6 +2183,7 @@ class VoiceScannerApp {
       this.targetAmplitude = 0;
 
       this.stopAudioVisualization();
+      this.startIdleBlobAnimation(); // Restart wave animation (idle) so it keeps running after close/restart
 
       // Clear A2UI display
       this.clearA2UI();

@@ -667,8 +667,8 @@ body {
   flex-shrink: 0;
   margin-bottom: var(--panel-gap);
   border-radius: 99px;
-  border: 1px solid rgba(198, 198, 198, 0.15);
-  background: rgba(109, 109, 109, 0.40);
+  border: 1px solid rgba(242, 242, 242, 0.15);
+  background: rgba(184, 184, 184, 0.40);
   box-shadow: 0 10px 84.1px 0 rgba(0, 0, 0, 0.64);
   backdrop-filter: blur(22.5px);
   overflow: hidden;
@@ -766,12 +766,12 @@ body {
   align-items: center;
   gap: 8px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.50);
+  background: #EAEAEA80;
 }
 
 .control-btn-speaker:hover {
   border-radius: 99px;
-  background: linear-gradient(0deg, rgba(0, 0, 0, 0.24) 0%, rgba(0, 0, 0, 0.24) 100%), rgba(255, 255, 255, 0.50);
+  background: #C5C5C580
 }
 
 .control-btn-speaker .control-btn-icon {
@@ -789,13 +789,13 @@ body {
   align-items: center;
   gap: 8px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.50);
+  background: #EAEAEA80;
   margin-right: 8px;
 }
 
 .control-btn-mic:hover {
   border-radius: 99px;
-  background: linear-gradient(0deg, rgba(0, 0, 0, 0.24) 0%, rgba(0, 0, 0, 0.24) 100%), rgba(255, 255, 255, 0.50);
+  background: #C5C5C580
 }
 
 .control-btn-mic .control-btn-icon {
@@ -813,12 +813,19 @@ body {
   align-items: center;
   gap: 8px;
   border-radius: 99px;
-  background: #000;
+  background: #171717;
 }
 
 .control-btn-close:hover {
   border-radius: 99px;
-  background: linear-gradient(0deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.10) 100%), #000;
+  background: #313131;
+}
+
+.control-btn-close:disabled,
+.control-btn-close.control-btn-close-disabled {
+  background: #4F4F4F;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .control-btn-close .control-btn-icon,
@@ -841,12 +848,12 @@ body {
   align-items: center;
   gap: 8px;
   border-radius: 99px;
-  background: #FFF;
+  background: #EAEAEA;
 }
 
 .control-btn-peak:hover {
   border-radius: 99px;
-  background: linear-gradient(0deg, rgba(0, 0, 0, 0.32) 0%, rgba(0, 0, 0, 0.32) 100%), #FFF;
+  background: #C5C5C5
 }
 
 .control-btn-peak .control-btn-icon {
@@ -899,8 +906,8 @@ body {
   align-items: center;
   gap: 8px;
   border-radius: 99px;
-  background: #000;
-  color: #FFF;
+  background: #171717;
+  color: #FFFFFF;
   font-family: "JetBrains Mono";
   font-size: 16px;
   font-style: normal;
@@ -909,7 +916,7 @@ body {
 }
 
 .close-option-restart:hover {
-  background: linear-gradient(0deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.1) 100%), rgb(0, 0, 0);
+  background: #313131
 }
 
 .close-option-restart .close-option-icon {
@@ -937,17 +944,17 @@ body {
   align-items: center;
   gap: 8px;
   border-radius: 99px;
-  background: #FFF;
+  background: #EAEAEA;
   color: #000;
-font-family: "JetBrains Mono";
-font-size: 16px;
-font-style: normal;
-font-weight: 700;
-line-height: normal;
+  font-family: "JetBrains Mono";
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: normal;
 }
 
 .close-option-peak:hover {
-  background: linear-gradient(0deg, rgba(0, 0, 0, 0.20) 0%, rgba(0, 0, 0, 0.20) 100%), #FFF;
+  background: #C5C5C5
 }
 
 .close-option-peak .close-option-icon {
@@ -1405,10 +1412,12 @@ line-height: normal;
     opacity: 0;
     transform: translateY(4px);
   }
+
   60% {
     opacity: 1;
     transform: translateY(0);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -1719,7 +1728,8 @@ line-height: normal;
   pointer-events: none;
   transition: opacity var(--transition-fast);
   width: 80%;
-  height: calc(100vh - 155px - 252px); /* Reserve space for wave + media bar */
+  height: calc(100vh - 155px - 252px);
+  /* Reserve space for wave + media bar */
   border-radius: 11px;
   border: 1px solid #323232;
   background: #0A0A0A;
@@ -1826,7 +1836,8 @@ line-height: normal;
 
   .a2ui-panel {
     width: 90%;
-    top: 114px; /* back-btn top 40px + 32px + 42px gap */
+    top: 114px;
+    /* back-btn top 40px + 32px + 42px gap */
     height: calc(100vh - 114px - 300px);
   }
 }
@@ -1920,7 +1931,8 @@ line-height: normal;
 
   .a2ui-panel {
     width: 95%;
-    top: 61px; /* back-btn top 21px + 32px + 42px gap */
+    top: 61px;
+    /* back-btn top 21px + 32px + 42px gap */
     height: calc(100vh - 95px - 184px);
   }
 }
