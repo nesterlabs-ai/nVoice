@@ -4,13 +4,13 @@ WebSocket endpoint handler for FastAPI.
 This module provides the WebSocket endpoint for real-time voice communication
 supporting multiple concurrent user connections with capacity management.
 
-Features:
-- Koala noise suppression (Picovoice)
-- ai-coustics AIC speech enhancement (noise reduction + clarity)
+Features (strict VAD-style noise handling):
+- Strict Silero VAD (confidence=0.9, min_volume=0.8)
+- NoiseHandler processor for false start detection
+- MinimalPreFilter for transcription-level noise filtering
 - Emotion detection via MSP-PODCAST + Gemini
 """
 
-import os
 import uuid
 from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
@@ -24,8 +24,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     - Session tracking and management
     - Heartbeat monitoring for stale connections
     - Isolated VoiceAssistant instance per connection
-    - Koala noise suppression (preferred)
-    - ai-coustics AIC speech enhancement (alternative)
+    - strict VAD-style noise handling (strict VAD + processors, no audio filter)
 
     Args:
         websocket: FastAPI WebSocket connection
@@ -49,163 +48,45 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         from pipecat.serializers.protobuf import ProtobufFrameSerializer
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.audio.vad.vad_analyzer import VADParams
-        from pipecat.audio.interruptions.min_words_interruption_strategy import MinWordsInterruptionStrategy
-
         # Get configuration from config.yaml
         server_config = voice_assistant_server.server_config
         vad_config = server_config.get("vad", {})
-        interruption_config = server_config.get("interruption", {})
-        koala_config = voice_assistant_server.config.get("noise_suppression", {})
-        aic_config = voice_assistant_server.config.get("speech_enhancement", {})
 
-        # Log raw config to debug why config values aren't being applied
-        logger.info(f"[Session {session_id}] 📋 Raw server_config keys: {list(server_config.keys())}")
+        # Log raw config for debugging
         logger.info(f"[Session {session_id}] 📋 Raw vad_config: {vad_config}")
 
-        # ===== AUDIO FILTER CHAIN: KOALA + AIC =====
-        # Step 1: Koala removes background noise
-        # Step 2: AIC enhances speech clarity
-        # Both can run together for maximum audio quality
-        audio_filters = []
-
-        # ===== KOALA NOISE SUPPRESSION (Step 1) =====
-        # Real-time noise reduction using Picovoice Koala
-        if koala_config.get("enabled", False):
-            try:
-                from pipecat.audio.filters.koala_filter import KoalaFilter
-
-                # Get config values
-                koala_params = koala_config.get("config", {})
-                access_key = koala_params.get("access_key", "")
-
-                # Resolve environment variable if needed
-                if access_key.startswith("${") and access_key.endswith("}"):
-                    env_var = access_key[2:-1]
-                    access_key = os.getenv(env_var, "")
-
-                if access_key:
-                    koala_filter = KoalaFilter(access_key=access_key)
-                    audio_filters.append(("Koala", koala_filter))
-                    logger.info(f"[Session {session_id}] 🔇 Koala noise suppression ENABLED (Step 1: Remove background noise)")
-                else:
-                    logger.warning(f"[Session {session_id}] ⚠️ Koala access key not found, noise suppression disabled")
-            except ImportError:
-                logger.warning(f"[Session {session_id}] ⚠️ Koala not installed. Run: pip install 'pipecat-ai[koala]'")
-            except Exception as e:
-                logger.error(f"[Session {session_id}] ❌ Failed to initialize Koala: {e}")
-
-        # ===== AI-COUSTICS AIC SPEECH ENHANCEMENT (Step 2) =====
-        # Noise reduction + speech clarity improvement
-        if aic_config.get("enabled", False):
-            try:
-                from pipecat.audio.filters.aic_filter import AICFilter
-
-                # Get config values
-                aic_params = aic_config.get("config", {})
-                license_key = aic_params.get("license_key", "")
-
-                # Resolve environment variable if needed
-                if license_key.startswith("${") and license_key.endswith("}"):
-                    env_var = license_key[2:-1]
-                    license_key = os.getenv(env_var, "")
-
-                if license_key:
-                    aic_filter = AICFilter(
-                        license_key=license_key,
-                        model_type=aic_params.get("model_type", 0),
-                        enhancement_level=aic_params.get("enhancement_level", 1.0),
-                        voice_gain=aic_params.get("voice_gain", 1.0),
-                        noise_gate_enable=aic_params.get("noise_gate_enable", True),
-                    )
-                    audio_filters.append(("AIC", aic_filter))
-                    logger.info(
-                        f"[Session {session_id}] 🔊 AIC speech enhancement ENABLED "
-                        f"(Step 2: Enhance clarity, level={aic_params.get('enhancement_level', 1.0)})"
-                    )
-                else:
-                    logger.warning(f"[Session {session_id}] ⚠️ AIC license key not found, speech enhancement disabled")
-            except ImportError:
-                logger.warning(f"[Session {session_id}] ⚠️ AIC not installed. Run: pip install 'pipecat-ai[aic]'")
-            except Exception as e:
-                logger.error(f"[Session {session_id}] ❌ Failed to initialize AIC: {e}")
-
-        # Select filter(s) to use
-        # NOTE: Pipecat transport only supports single audio_in_filter
-        # Priority: AIC (includes noise reduction) > Koala (noise reduction only)
-        # For best quality: use AIC alone (it does both noise reduction + enhancement)
-        audio_in_filter = None
-        if len(audio_filters) > 1:
-            # Multiple filters enabled: Use AIC (it includes noise reduction)
-            # AIC provides both noise suppression AND speech enhancement
-            filter_name, filter_instance = audio_filters[1]  # AIC is second (index 1)
-            audio_in_filter = filter_instance
-            logger.info(
-                f"[Session {session_id}] 🔗 Using AIC (includes noise reduction + speech enhancement)\n"
-                f"  Note: AIC provides both features, so Koala is redundant"
-            )
-        elif len(audio_filters) == 1:
-            # Single filter
-            filter_name, filter_instance = audio_filters[0]
-            audio_in_filter = filter_instance
-            logger.info(f"[Session {session_id}] 🎚️ Single audio filter: {filter_name}")
-        else:
-            # No filters
-            logger.warning(f"[Session {session_id}] ⚠️ No audio filters enabled - raw audio will be used")
-
-        # Stricter VAD settings to prevent false barge-ins from background noise
-        # MinWordsInterruptionStrategy (below) provides additional filtering
+        # ===== VAD CONFIGURATION (Matching strict VAD) =====
+        # strict VAD uses strict VAD + NoiseHandler + PreFilter - NO audio_in_filter
+        # This approach is proven to work well for noise handling
         vad_params = VADParams(
-            confidence=vad_config.get("confidence", 0.88),     # HIGHER - only trigger on clear speech
-            start_secs=vad_config.get("start_secs", 0.5),      # SLOWER - require 500ms of speech (filters noise)
-            stop_secs=vad_config.get("stop_secs", 1.0),        # Wait 1s of silence before ending utterance
-            min_volume=vad_config.get("min_volume", 0.65),     # HIGHER - ignore quiet background noise
+            confidence=vad_config.get("confidence", 0.9),      # STRICT - matches strict VAD
+            start_secs=vad_config.get("start_secs", 0.3),      # Quick start once confidence met
+            stop_secs=vad_config.get("stop_secs", 1.2),        # LONGER - 1.2s silence to confirm end
+            min_volume=vad_config.get("min_volume", 0.8),      # STRICT - matches strict VAD
         )
         vad_analyzer = SileroVADAnalyzer(params=vad_params)
 
-        # Interruption strategy - prevents false barge-ins from background noise
-        # Requires user to speak at least 3 words to interrupt (filters noise + backchanneling)
-        interruption_enabled = interruption_config.get("enabled", True)
-        min_words = interruption_config.get("min_words", 3)
-
-        interruption_strategy = None
-        if interruption_enabled:
-            interruption_strategy = MinWordsInterruptionStrategy(min_words=min_words)
-            logger.info(
-                f"[Session {session_id}] 🛡️ Interruption strategy: MinWords (min_words={min_words}) "
-                f"- filters noise + backchanneling"
-            )
-
         logger.info(
-            f"[Session {session_id}] 🎤 VAD configured: confidence={vad_params.confidence}, "
+            f"[Session {session_id}] 🎤 VAD configured (strict VAD-style): confidence={vad_params.confidence}, "
             f"start_secs={vad_params.start_secs}, stop_secs={vad_params.stop_secs}, "
             f"min_volume={vad_params.min_volume}"
         )
 
         # Create transport parameters for this connection
+        # NOTE: Matching strict VAD's simpler configuration - no deprecated params, no interruption_strategy
+        # strict VAD relies on strict VAD + NoiseHandler + PreFilter instead of transport-level filtering
         transport_params = FastAPIWebsocketParams(
+            serializer=ProtobufFrameSerializer(),
             audio_in_enabled=True,
             audio_out_enabled=True,
             add_wav_header=False,
-            vad_enabled=True,
             vad_analyzer=vad_analyzer,
-            vad_audio_passthrough=True,
-            serializer=ProtobufFrameSerializer(),
-            audio_in_filter=audio_in_filter,  # AIC or Koala (single filter only)
-            audio_in_sample_rate=16000,  # Koala/AIC require 16 kHz input
-            audio_out_sample_rate=24000,  # Chatterbox TTS outputs 24 kHz
-            interruption_strategy=interruption_strategy,  # MinWords strategy to prevent false barge-ins
+            # Removed deprecated: vad_enabled, vad_audio_passthrough
+            # Removed: audio_in_filter (strict VAD doesn't use it - relies on strict VAD)
+            # Removed: interruption_strategy (handled in PipelineParams, not transport)
         )
 
-        # Build filter description for logging
-        if len(audio_filters) > 1:
-            # Both enabled: using AIC (which includes noise reduction)
-            filter_desc = f"AIC only (Koala disabled - AIC includes noise reduction)"
-        elif len(audio_filters) == 1:
-            filter_desc = audio_filters[0][0]
-        else:
-            filter_desc = "None (raw audio)"
-
-        logger.info(f"[Session {session_id}] 🔧 Transport configured with audio filter")
+        logger.info(f"[Session {session_id}] 🔧 Transport configured (strict VAD-style: strict VAD, no audio filter)")
 
         # Create transport for this specific connection
         transport = FastAPIWebsocketTransport(
@@ -217,17 +98,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         voice_assistant = VoiceAssistant(voice_assistant_server.config)
         logger.info(f"[Session {session_id}] VoiceAssistant instance created")
 
-        # Log complete audio processing pipeline
-        interruption_desc = f"MinWords(min={min_words})" if interruption_enabled else "Disabled"
+        # Log complete audio processing pipeline (strict VAD-style)
         logger.info(
-            f"[Session {session_id}] 📊 AUDIO PIPELINE SUMMARY:\n"
-            f"  ┌─ Input: Microphone (16kHz)\n"
-            f"  ├─ Filters: {filter_desc}\n"
-            f"  ├─ VAD: Silero (conf={vad_params.confidence}, start={vad_params.start_secs}s, vol={vad_params.min_volume})\n"
-            f"  ├─ Barge-in: {interruption_desc} (prevents false interruptions)\n"
+            f"[Session {session_id}] 📊 AUDIO PIPELINE SUMMARY (strict VAD-style):\n"
+            f"  ┌─ Input: Microphone\n"
+            f"  ├─ VAD: Silero STRICT (conf={vad_params.confidence}, start={vad_params.start_secs}s, stop={vad_params.stop_secs}s, vol={vad_params.min_volume})\n"
+            f"  ├─ NoiseHandler: Pattern detection + recovery mode\n"
             f"  ├─ STT: Deepgram Nova-3\n"
-            f"  ├─ Emotion: MSP-PODCAST + Gemini (hybrid, NON-BLOCKING)\n"
-            f"  ├─ LLM: Gemini 2.0 Flash\n"
+            f"  ├─ PreFilter: Confidence threshold + noise markers\n"
+            f"  ├─ Emotion: MSP-PODCAST + Gemini (hybrid)\n"
+            f"  ├─ LLM: Groq Llama-3.3-70b\n"
             f"  └─ TTS: Chatterbox (24kHz, emotion-aware)"
         )
 

@@ -28,7 +28,8 @@ class GraphKeywordExtractor:
     def __init__(
         self,
         api_key: str,
-        lightrag_url: str = "https://b5d0c37468ec.ngrok-free.app",
+        lightrag_url: str = "https://lightrag.nesterlabs.com",
+        lightrag_api_key: str = None,
         model: str = "gemini-2.0-flash",
     ):
         """Initialize the keyword extractor.
@@ -36,10 +37,12 @@ class GraphKeywordExtractor:
         Args:
             api_key: Google AI API key
             lightrag_url: LightRAG API base URL
+            lightrag_api_key: LightRAG API key for authentication
             model: Model name (default: gemini-2.0-flash)
         """
         self.api_key = api_key
         self.lightrag_url = lightrag_url.rstrip("/")
+        self.lightrag_api_key = lightrag_api_key or os.getenv("LIGHTRAG_API_KEY", "")
         self.model = model
         self.client = None
 
@@ -73,7 +76,13 @@ class GraphKeywordExtractor:
 
         try:
             url = f"{self.lightrag_url}/graphs?label=*&max_depth=10"
-            headers = {"ngrok-skip-browser-warning": "true"}  # Skip ngrok interstitial
+            headers = {
+                "ngrok-skip-browser-warning": "true",  # Skip ngrok interstitial
+            }
+            # Add LightRAG API key if available
+            if self.lightrag_api_key:
+                headers["X-API-Key"] = self.lightrag_api_key
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()
@@ -471,12 +480,14 @@ _extractor: Optional[GraphKeywordExtractor] = None
 def get_graph_keyword_extractor(
     api_key: str = None,
     lightrag_url: str = None,
+    lightrag_api_key: str = None,
 ) -> GraphKeywordExtractor:
     """Get or create global GraphKeywordExtractor instance.
 
     Args:
         api_key: Google AI API key (required on first call, or from env)
         lightrag_url: LightRAG API URL (optional, defaults to env or localhost)
+        lightrag_api_key: LightRAG API key for authentication
     """
     global _extractor
 
@@ -487,8 +498,15 @@ def get_graph_keyword_extractor(
             raise ValueError("Google API key required to initialize keyword extractor")
 
         if lightrag_url is None:
-            lightrag_url = os.getenv("LIGHTRAG_URL", "https://b5d0c37468ec.ngrok-free.app")
+            lightrag_url = os.getenv("LIGHTRAG_BASE_URL", "https://lightrag.nesterlabs.com")
 
-        _extractor = GraphKeywordExtractor(api_key=api_key, lightrag_url=lightrag_url)
+        if lightrag_api_key is None:
+            lightrag_api_key = os.getenv("LIGHTRAG_API_KEY", "")
+
+        _extractor = GraphKeywordExtractor(
+            api_key=api_key,
+            lightrag_url=lightrag_url,
+            lightrag_api_key=lightrag_api_key,
+        )
 
     return _extractor
