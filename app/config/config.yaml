@@ -186,8 +186,8 @@ server:
   fastapi_port: 7860
   session_timeout: 180
   # Emotion detection toggle
-  # DISABLED - simplifying to match Goonj's working approach
-  emotion_detection_enabled: false
+  # Uses MSP-PODCAST wav2vec2 + LLM text sentiment for hybrid audio+text emotion
+  emotion_detection_enabled: true
 
   # VAD settings - MATCHING GOONJ's working config
   vad:
