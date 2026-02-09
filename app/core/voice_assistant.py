@@ -343,14 +343,24 @@ class VoiceAssistant:
         async def on_client_connected(transport, client):
             logger.info(f"✅ Client connected: {client}")
 
-            # Wait for pipeline to be ready (1s for fastest greeting)
-            await asyncio.sleep(1.0)
+            # Wait for pipeline to be fully ready (StartFrame must be processed)
+            await asyncio.sleep(1.5)
+            logger.info("🎤 Pipeline ready, sending greeting...")
 
-            # Push greeting directly to TTS service (bypasses LLM/context/RTI loops)
-            await self.tts.queue_frame(
-                TTSSpeakFrame("Hi, I'm Nester AI. We're trying to reimagine intelligence here. So tell me, what are you trying to build?")
-            )
-            logger.info("🎤 Greeting pushed directly to TTS service")
+            # Queue greeting through the TASK so it flows through the full pipeline
+            # This is critical: STTMuteFilter needs to see TTS start/stop frames
+            # to know when bot speech begins/ends. Pushing directly to self.tts
+            # bypasses the pipeline and the mute filter never unmutes.
+            greeting_text = "Hi, I'm Nester AI. We're trying to reimagine intelligence here. So tell me, what are you trying to build?"
+            await self.task.queue_frame(TTSSpeakFrame(greeting_text))
+            logger.info("🎤 Greeting sent via task.queue_frame (flows through full pipeline)")
+
+            # Add greeting to conversation context so LLM knows it already greeted
+            if self.conversation_manager and self.conversation_manager.context:
+                self.conversation_manager.context.messages.append(
+                    {"role": "assistant", "content": greeting_text}
+                )
+                logger.info("📝 Greeting added to conversation context")
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
