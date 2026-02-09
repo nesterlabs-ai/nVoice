@@ -245,16 +245,17 @@ class VoiceAssistant:
         # Set up A2UI callback for emitting visual updates from RAG responses
         self.conversation_manager.set_a2ui_callback(self._emit_a2ui_update)
 
-        # NOTE: ToneProcessor and VisualHintProcessor initialization REMOVED
-        # Simplifying to match Goonj's working approach
+        # Connect TTS to tone processor for dynamic voice switching (emotion detection)
+        self.tone_processor.set_tts_service(tts)
 
-        # Create pipeline - SIMPLIFIED like Goonj
-        # TextFilterProcessor removes markdown before TTS
+        # Connect VisualHintProcessor to ToneProcessor for A2UI query capture
+        self.tone_processor.set_visual_hint_processor(self.visual_hint_processor)
+
+        # Initialize MSP-PODCAST wav2vec2 model for audio emotion detection
+        await self.tone_processor.initialize()
 
         # Build pipeline processors list
-        # SIMPLIFIED pipeline (matching Goonj's working approach):
-        # Input -> STT -> PreFilter -> Context -> LLM -> TextFilter -> TTS -> Output
-        # NOTE: Removed InterruptionFilter and NoiseHandler - Goonj doesn't use them
+        # Input -> STT -> PreFilter -> ToneAware -> Context -> LLM -> TextFilter -> TTS -> Output
         pipeline_processors = [
             transport.input(),
         ]
@@ -267,14 +268,16 @@ class VoiceAssistant:
             pipeline_processors.append(self.prefilter)
             logger.info("🔇 MinimalPreFilter added to pipeline (after STT)")
 
-        # NOTE: InterruptionFilterProcessor NOT in pipeline — with allow_interruptions=False,
-        # InterruptionTaskFrames are ignored by the task, and no InterruptionFrames
-        # are generated through the pipeline. The filter has no frames to act on.
+        # Add ToneAwareProcessor after STT to receive audio + transcription frames
+        # for hybrid emotion detection (70% audio MSP-PODCAST + 30% LLM text)
+        pipeline_processors.append(self.tone_processor)
+        logger.info("🎭 ToneAwareProcessor added to pipeline (after STT)")
 
         pipeline_processors.extend([
             context_aggregator.user(),    # Context aggregator adds messages to LLM context
             self.rtvi,
             llm,
+            self.visual_hint_processor,   # Stream text word-by-word
             self.text_filter,             # Remove markdown before TTS
             tts,
             transport.output(),
