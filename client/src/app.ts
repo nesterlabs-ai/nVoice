@@ -369,14 +369,23 @@ class VoiceScannerApp {
     this.disconnect();
   }
 
+  /** Icon paths for control-close button (normal vs disabled) */
+  private static readonly CLOSE_ICON_ENABLED = '/X (1).svg';
+  private static readonly CLOSE_ICON_DISABLED = '/X-disable.svg';
+
   /**
    * Enable or disable the control-close button. Disabled while WebSocket is connecting so user cannot close during pending API.
+   * Swaps the button icon to X-disable.svg when disabled.
    */
   private setCloseButtonEnabled(enabled: boolean): void {
     const closeBtn = document.getElementById('control-close');
     if (!closeBtn) return;
     (closeBtn as HTMLButtonElement).disabled = !enabled;
     closeBtn.setAttribute('aria-disabled', String(!enabled));
+    const icon = closeBtn.querySelector('img');
+    if (icon) {
+      icon.src = enabled ? VoiceScannerApp.CLOSE_ICON_ENABLED : VoiceScannerApp.CLOSE_ICON_DISABLED;
+    }
     if (enabled) {
       closeBtn.classList.remove('control-btn-close-disabled');
     } else {
