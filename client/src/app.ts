@@ -327,15 +327,13 @@ class VoiceScannerApp {
   }
 
   /**
-   * Show Restart/Peak options in center and hide media control bar + connect button (when Close is clicked)
+   * Show Restart/Peak options: bar animates from bottom to center, buttons swap (when Close is clicked)
    */
   private showCloseOptions(): void {
-    const mediaBar = document.querySelector('.media-control-bar');
-    const closeOptionsBar = document.getElementById('close-options-bar');
+    const mediaBar = document.getElementById('media-control-bar');
     const connectArea = document.getElementById('connect-area');
-    mediaBar?.classList.add('hidden');
+    mediaBar?.classList.add('close-mode');
     connectArea?.classList.add('hidden');
-    closeOptionsBar?.classList.remove('hidden');
   }
 
   /**
@@ -355,14 +353,12 @@ class VoiceScannerApp {
   }
 
   /**
-   * Hide Restart/Peak options and show media control bar + connect button
+   * Hide Restart/Peak options: bar animates back to bottom, buttons swap back
    */
   private hideCloseOptions(): void {
-    const mediaBar = document.querySelector('.media-control-bar');
-    const closeOptionsBar = document.getElementById('close-options-bar');
+    const mediaBar = document.getElementById('media-control-bar');
     const connectArea = document.getElementById('connect-area');
-    closeOptionsBar?.classList.add('hidden');
-    mediaBar?.classList.remove('hidden');
+    mediaBar?.classList.remove('close-mode');
     connectArea?.classList.remove('hidden');
   }
 
@@ -399,9 +395,9 @@ class VoiceScannerApp {
     } else {
       connectBtn?.classList.remove('connecting');
       connectBtn?.classList.remove('shrinking');
-      // Don't show connect-area when close-options bar is visible (Restart serves that purpose)
-      const closeOptionsBar = document.getElementById('close-options-bar');
-      if (closeOptionsBar?.classList.contains('hidden')) {
+      // Don't show connect-area when bar is in close-mode (Restart serves that purpose)
+      const mediaBar = document.getElementById('media-control-bar');
+      if (!mediaBar?.classList.contains('close-mode')) {
         connectArea?.classList.remove('hidden');
       }
       statusDisplay?.classList.add('hidden');
