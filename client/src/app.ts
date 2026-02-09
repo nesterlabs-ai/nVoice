@@ -107,6 +107,10 @@ class VoiceScannerApp {
   private botAudioLevel: number = 0;
   private smoothedBotAudioLevel: number = 0;
 
+  // Safari/iOS: ctx.filter blur is broken; use separate canvases + CSS blur
+  private _waveBlurFallback: boolean | null = null;
+  private _safariWaveLayers: { wrapper: HTMLDivElement; canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }[] | null = null;
+
   // Audio
   private botAudio!: HTMLAudioElement;
 
@@ -323,15 +327,13 @@ class VoiceScannerApp {
   }
 
   /**
-   * Show Restart/Peak options in center and hide media control bar + connect button (when Close is clicked)
+   * Show Restart/Peak options: bar animates from bottom to center, buttons swap (when Close is clicked)
    */
   private showCloseOptions(): void {
-    const mediaBar = document.querySelector('.media-control-bar');
-    const closeOptionsBar = document.getElementById('close-options-bar');
+    const mediaBar = document.getElementById('media-control-bar');
     const connectArea = document.getElementById('connect-area');
-    mediaBar?.classList.add('hidden');
+    mediaBar?.classList.add('close-mode');
     connectArea?.classList.add('hidden');
-    closeOptionsBar?.classList.remove('hidden');
   }
 
   /**
@@ -351,14 +353,12 @@ class VoiceScannerApp {
   }
 
   /**
-   * Hide Restart/Peak options and show media control bar + connect button
+   * Hide Restart/Peak options: bar animates back to bottom, buttons swap back
    */
   private hideCloseOptions(): void {
-    const mediaBar = document.querySelector('.media-control-bar');
-    const closeOptionsBar = document.getElementById('close-options-bar');
+    const mediaBar = document.getElementById('media-control-bar');
     const connectArea = document.getElementById('connect-area');
-    closeOptionsBar?.classList.add('hidden');
-    mediaBar?.classList.remove('hidden');
+    mediaBar?.classList.remove('close-mode');
     connectArea?.classList.remove('hidden');
   }
 
@@ -395,9 +395,9 @@ class VoiceScannerApp {
     } else {
       connectBtn?.classList.remove('connecting');
       connectBtn?.classList.remove('shrinking');
-      // Don't show connect-area when close-options bar is visible (Restart serves that purpose)
-      const closeOptionsBar = document.getElementById('close-options-bar');
-      if (closeOptionsBar?.classList.contains('hidden')) {
+      // Don't show connect-area when bar is in close-mode (Restart serves that purpose)
+      const mediaBar = document.getElementById('media-control-bar');
+      if (!mediaBar?.classList.contains('close-mode')) {
         connectArea?.classList.remove('hidden');
       }
       statusDisplay?.classList.add('hidden');
@@ -461,13 +461,25 @@ class VoiceScannerApp {
     if (this.geminiWaveCanvas) {
       const container = this.geminiWaveCanvas.parentElement;
       if (container) {
-        this.geminiWaveCanvas.width = container.offsetWidth * 2;  // 2x for retina
-        this.geminiWaveCanvas.height = container.offsetHeight * 2;
-      }
-      this.geminiWaveCtx = this.geminiWaveCanvas.getContext('2d');
+        // Safari/iOS: ctx.filter blur is broken; use separate canvases + CSS blur
+        if (this._waveBlurFallback === null && typeof navigator !== 'undefined') {
+          const ua = navigator.userAgent;
+          this._waveBlurFallback = (
+            (/Safari\//.test(ua) && !/Chrome|Chromium/.test(ua)) ||
+            /iPhone|iPad|iPod/.test(ua)
+          );
+        }
+        if (this._waveBlurFallback === true) {
+          this.ensureSafariWaveLayerDOM(container);
+        } else {
+          this.geminiWaveCanvas.width = container.offsetWidth * 2;  // 2x for retina
+          this.geminiWaveCanvas.height = container.offsetHeight * 2;
+        }
+        this.geminiWaveCtx = this.geminiWaveCanvas.getContext('2d');
 
-      // Start the Gemini wave animation
-      this.startIdleBlobAnimation();
+        // Start the Gemini wave animation
+        this.startIdleBlobAnimation();
+      }
     }
 
     // Preloader canvas
@@ -475,6 +487,52 @@ class VoiceScannerApp {
       this.preloaderCtx = this.preloaderCanvas.getContext('2d');
       this.animatePreloader();
     }
+  }
+
+  /**
+   * Safari/iOS: Create separate canvases per layer with CSS blur wrapper.
+   * ctx.filter blur is broken in Safari; this fallback uses CSS filter: blur() instead.
+   */
+  private ensureSafariWaveLayerDOM(container: HTMLElement): void {
+    if (this._safariWaveLayers) return; // Already created
+
+    const { layers } = waveConfig;
+    const w = container.offsetWidth * 2;  // Retina
+    const h = container.offsetHeight * 2;
+
+    // Hide the main canvas; we'll use layer canvases instead
+    if (this.geminiWaveCanvas) {
+      this.geminiWaveCanvas.style.display = 'none';
+    }
+
+    const safariWrapper = document.createElement('div');
+    safariWrapper.className = 'safari-wave-layers';
+    safariWrapper.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+
+    this._safariWaveLayers = [];
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const layerConfig = layers[i];
+      const layerBlur = layerConfig.blur;
+
+      const layerDiv = document.createElement('div');
+      layerDiv.style.cssText = `position:absolute;inset:0;overflow:hidden;filter:blur(${layerBlur}px);`;
+      layerDiv.className = 'safari-wave-layer';
+
+      const canvas = document.createElement('canvas');
+      canvas.className = 'wave-canvas';
+      canvas.width = w;
+      canvas.height = h;
+      canvas.style.cssText = 'width:100%;height:100%;';
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+
+      layerDiv.appendChild(canvas);
+      safariWrapper.appendChild(layerDiv);
+      this._safariWaveLayers.push({ wrapper: layerDiv, canvas, ctx });
+    }
+
+    container.appendChild(safariWrapper);
   }
 
   /**
@@ -1280,16 +1338,25 @@ class VoiceScannerApp {
    * Draw audio-driven wave visualizer at bottom of screen
    */
   private drawGeminiBlob(): void {
-    if (!this.geminiWaveCtx || !this.geminiWaveCanvas) return;
+    const useSafariFallback = this._waveBlurFallback === true && this._safariWaveLayers && this._safariWaveLayers.length > 0;
+    const ctx = useSafariFallback ? null : this.geminiWaveCtx;
+    const canvas = useSafariFallback ? this._safariWaveLayers![0].canvas : this.geminiWaveCanvas;
 
-    const ctx = this.geminiWaveCtx;
-    const width = this.geminiWaveCanvas.width;
-    const height = this.geminiWaveCanvas.height;
+    if (!canvas || (!useSafariFallback && !ctx)) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
 
     // Safety check for valid dimensions
     if (width <= 0 || height <= 0) return;
 
-    ctx.clearRect(0, 0, width, height);
+    if (useSafariFallback) {
+      for (const layer of this._safariWaveLayers!) {
+        layer.ctx.clearRect(0, 0, width, height);
+      }
+    } else {
+      ctx!.clearRect(0, 0, width, height);
+    }
 
     // Update animation time
     this.blobTime += 0.02;
@@ -1477,11 +1544,17 @@ class VoiceScannerApp {
       const layerOffset = layer * layerTimeOffset;
       const layerSpeed = 1 + layer * layerSpeedIncrement;
 
-      // Apply blur filter for this layer
-      ctx.filter = layerBlur > 0 ? `blur(${layerBlur}px)` : 'none';
+      const layerCtx = useSafariFallback
+        ? this._safariWaveLayers![numLayers - 1 - layer].ctx
+        : ctx!;
 
-      ctx.beginPath();
-      ctx.moveTo(0, baseY);
+      // Apply blur filter for this layer (Safari: skip - CSS blur on wrapper handles it)
+      if (!useSafariFallback) {
+        layerCtx.filter = layerBlur > 0 ? `blur(${layerBlur}px)` : 'none';
+      }
+
+      layerCtx.beginPath();
+      layerCtx.moveTo(0, baseY);
 
       // Draw the wave curve
       for (let i = 0; i <= numPoints; i++) {
@@ -1503,20 +1576,21 @@ class VoiceScannerApp {
         const edgeFade = Math.pow(Math.sin(normalizedX * Math.PI), edgeFadePower);
 
         const y = baseY - waveHeight * edgeFade;
-        ctx.lineTo(x, y);
+        layerCtx.lineTo(x, y);
       }
 
       // Complete the shape by going to bottom corners
-      ctx.lineTo(width, baseY);
-      ctx.lineTo(0, baseY);
-      ctx.closePath();
+      layerCtx.lineTo(width, baseY);
+      layerCtx.lineTo(0, baseY);
+      layerCtx.closePath();
 
       // Fill with solid color from config
-      ctx.fillStyle = layerConfig.color;
-      ctx.fill();
+      layerCtx.fillStyle = layerConfig.color;
+      layerCtx.fill();
 
-      // Reset filter for next layer
-      ctx.filter = 'none';
+      if (!useSafariFallback) {
+        layerCtx.filter = 'none';
+      }
     }
 
   }

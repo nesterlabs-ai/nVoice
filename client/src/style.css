@@ -451,7 +451,7 @@ body {
   min-height: 100px;
   max-height: 150px;
   position: relative;
-  overflow: hidden;
+  /* overflow: hidden; */
 }
 
 .emotion-chart-section canvas {
@@ -657,12 +657,13 @@ body {
 
 /* ===== MEDIA CONTROL BAR (above Gemini Wave Visualizer in center) ===== */
 .media-control-bar {
-  display: inline-flex;
+  --spring: cubic-bezier(0.34, 1.35, 0.64, 1);
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0;
-  width: fit-content;
-  min-height: 44px;
-  padding: 8px;
+  min-height: 64px;
+  padding: 6px;
   flex-shrink: 0;
   margin-bottom: var(--panel-gap);
   border-radius: 99px;
@@ -670,17 +671,57 @@ body {
   background: rgba(109, 109, 109, 0.40);
   box-shadow: 0 10px 84.1px 0 rgba(0, 0, 0, 0.64);
   backdrop-filter: blur(22.5px);
+  overflow: hidden;
+  position: relative;
 }
 
-/* Position above wave when inside center section; width = content only */
+/* Position above wave when inside center section; animates to center when close-mode */
 .center-section .media-control-bar {
   position: absolute;
   bottom: 40px;
-  /* just above wave-container height */
   left: 50%;
+  width: 427px;
   transform: translateX(-50%);
   margin-bottom: 0;
   z-index: 6;
+  /* Figma Spring approx: Mass 1, Stiffness 151.5, Damping 18.46 */
+  transition:
+    bottom 0.7s var(--spring),
+    transform 0.7s var(--spring),
+    width 0.7s var(--spring);
+}
+
+/* Expanded state: bar slides up from bottom to center, shrinks, buttons crossfade */
+.center-section .media-control-bar.close-mode {
+  bottom: 50%;
+  width: 275px;
+  transform: translate(-50%, -50%);
+}
+
+.media-control-group,
+.close-options-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  transition: opacity 0.7s var(--spring);
+}
+
+.close-options-group {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.media-control-bar.close-mode .media-control-group {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.media-control-bar.close-mode .close-options-group {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .control-btn {
@@ -829,27 +870,7 @@ body {
   margin: 0 16px;
 }
 
-/* ===== CLOSE OPTIONS BAR (Restart | Peak, shown when Close is clicked) ===== */
-.close-options-bar {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 6;
-  display: inline-flex;
-  padding: 8px;
-  align-items: center;
-  border-radius: 99px;
-  border: 1px solid rgba(198, 198, 198, 0.15);
-  background: rgba(109, 109, 109, 0.40);
-  box-shadow: 0 10px 84.1px 0 rgba(0, 0, 0, 0.64);
-  backdrop-filter: blur(22.5px);
-}
-
-.close-options-bar.hidden {
-  display: none;
-}
-
+/* ===== CLOSE OPTIONS (Restart | Peak, inside media-control-bar when close-mode) ===== */
 .close-option {
   display: inline-flex;
   align-items: center;
@@ -888,7 +909,7 @@ body {
 }
 
 .close-option-restart:hover {
-  background: #1a1a1a;
+  background: linear-gradient(0deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.1) 100%), rgb(0, 0, 0);
 }
 
 .close-option-restart .close-option-icon {
@@ -926,7 +947,7 @@ line-height: normal;
 }
 
 .close-option-peak:hover {
-  background: #f0f0f0;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.20) 0%, rgba(0, 0, 0, 0.20) 100%), #FFF;
 }
 
 .close-option-peak .close-option-icon {
@@ -1415,6 +1436,25 @@ line-height: normal;
   height: 100%;
 }
 
+/* Safari/iOS fallback: separate canvases per layer with CSS blur (ctx.filter is broken) */
+.safari-wave-layers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.safari-wave-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.safari-wave-layer .wave-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 /* ===== CONVERSATION PANEL ===== */
 .conversation-panel {
   flex: 1;
@@ -1662,14 +1702,12 @@ line-height: normal;
 }
 
 /* ===== A2UI PANEL ===== */
+/* Positioned 42px below back-btn; top = back-btn top (81px) + height (32px) + gap (42px) = 155px */
 .a2ui-panel {
   position: fixed;
-  bottom: 200px;
+  top: 155px;
   left: 50%;
   transform: translateX(-50%);
-  width: calc(100% - var(--panel-width) * 2 - var(--panel-gap) * 4);
-  max-width: 800px;
-  max-height: 50vh;
   background: var(--bg-panel);
   backdrop-filter: blur(18px);
   border: 1px solid var(--border-color);
@@ -1680,6 +1718,11 @@ line-height: normal;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--transition-fast);
+  width: 80%;
+  height: calc(100vh - 155px - 252px); /* Reserve space for wave + media bar */
+  border-radius: 11px;
+  border: 1px solid #323232;
+  background: #0A0A0A;
 }
 
 .a2ui-panel.visible {
@@ -1739,17 +1782,27 @@ line-height: normal;
 }
 
 @media (max-width: 1024px) {
+  .back-btn {
+    left: 38px;
+    top: 40px;
+  }
 
-  .left-panel,
-  .right-panel {
-    width: min(var(--panel-width), 260px);
+  .right-panel .conversation-panel {
+    flex: unset;
+    height: 297px;
+  }
+
+  .right-panel .topic-timeline-panel {
+    flex: unset;
+    height: 242px;
+  }
+
+  .right-panel .terminal-panel {
+    flex: unset;
+    height: 180px;
   }
 
   .left-panel {
-    flex-direction: row;
-    flex-wrap: wrap;
-    height: 180px;
-    max-height: 180px;
     bottom: auto;
   }
 
@@ -1760,7 +1813,7 @@ line-height: normal;
   }
 
   .right-panel {
-    max-height: 200px;
+    height: fit-content;
   }
 
   .center-section {
@@ -1773,7 +1826,8 @@ line-height: normal;
 
   .a2ui-panel {
     width: 90%;
-    bottom: 220px;
+    top: 114px; /* back-btn top 40px + 32px + 42px gap */
+    height: calc(100vh - 114px - 300px);
   }
 }
 
@@ -1789,6 +1843,35 @@ line-height: normal;
   .brand-divider,
   .brand-sub {
     display: none;
+  }
+
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  .right-panel .conversation-panel {
+    flex: unset;
+    min-height: unset;
+  }
+
+  .right-panel .topic-timeline-panel {
+    flex: unset;
+    min-height: unset;
+  }
+
+  .right-panel .terminal-panel {
+    flex: unset;
+  }
+
+  .back-btn {
+    left: 15px;
+    top: 21px;
+    height: 24px;
+    padding: 0 8px;
+  }
+
+  .back-btn-text {
+    font-size: 12px;
   }
 
   .left-panel,
@@ -1818,13 +1901,26 @@ line-height: normal;
     height: 160px;
   }
 
+  .center-section .media-control-bar {
+    width: 300px;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .center-section .media-control-bar.close-mode {
+    width: 140px;
+    bottom: 50%;
+    transform: translate(-50%, -50%);
+  }
+
   .center-section {
     padding-bottom: 180px;
   }
 
   .a2ui-panel {
     width: 95%;
-    bottom: 180px;
-    max-height: 40vh;
+    top: 61px; /* back-btn top 21px + 32px + 42px gap */
+    height: calc(100vh - 95px - 184px);
   }
 }
