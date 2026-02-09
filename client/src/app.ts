@@ -1982,6 +1982,7 @@ class VoiceScannerApp {
             this.setVoiceState('idle');
             this.updateConnectionUI(false);
             this.stopAudioVisualization();
+            this.startIdleBlobAnimation(); // Keep wave animating in idle state
             this.addTerminalMessage('Connection terminated.', 'regular');
           },
           onBotReady: () => {
@@ -2152,6 +2153,7 @@ class VoiceScannerApp {
       this.targetAmplitude = 0;
 
       this.stopAudioVisualization();
+      this.startIdleBlobAnimation(); // Restart wave animation (idle) so it keeps running after close/restart
 
       // Clear A2UI display
       this.clearA2UI();
