@@ -926,6 +926,35 @@ class VoiceScannerApp {
   }
 
   /**
+   * Append a single word to the live subtitle (same word-by-word behavior as transcript bubble).
+   * Used during bot typewriter so the subtitle streams one word at a time instead of re-rendering all.
+   */
+  private appendBotWordToLiveSubtitle(word: string, isFirstWord: boolean): void {
+    if (!this.liveSubtitle || !this.liveSubtitleText) return;
+
+    if (this.subtitleClearTimeout) {
+      clearTimeout(this.subtitleClearTimeout);
+    }
+
+    this.liveSubtitle.classList.remove('user', 'bot');
+    this.liveSubtitle.classList.add('bot');
+
+    if (isFirstWord) {
+      this.liveSubtitleText.innerHTML = '';
+    }
+
+    const wordSpan = document.createElement('span');
+    wordSpan.className = 'typewriter-word';
+    wordSpan.textContent = word + ' ';
+    this.liveSubtitleText.appendChild(wordSpan);
+
+    this.liveSubtitle.classList.add('visible');
+    this.subtitleClearTimeout = setTimeout(() => {
+      this.liveSubtitle?.classList.remove('visible');
+    }, 4000);
+  }
+
+  /**
    * Add bot transcript with typewriter effect (word by word)
    */
   private addBotTranscriptWithTypewriter(text: string): void {
@@ -976,14 +1005,17 @@ class VoiceScannerApp {
     if (this.currentBotBubble) {
       const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
       if (textSpan) {
-        // Add word with animation
+        // Same as live subtitle: first word = start of line
+        const isFirstWord = textSpan.childNodes.length === 0;
+
+        // Add word with animation (same as transcript bubble)
         const wordSpan = document.createElement('span');
         wordSpan.className = 'typewriter-word';
         wordSpan.textContent = word + ' ';
         textSpan.appendChild(wordSpan);
 
-        // Sync live subtitle with typewriter (voice sync)
-        this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
+        // Live subtitle: append one word at a time (same word-by-word behavior as bubble)
+        this.appendBotWordToLiveSubtitle(word, isFirstWord);
 
         // Scroll to bottom
         if (this.transcriptList) {
@@ -2037,6 +2069,7 @@ class VoiceScannerApp {
             this.addTerminalMessage('Voice AI initialized and ready.', 'success');
           },
           onUserTranscript: (data) => {
+            console.log('User transcript:', data);
             if (data.final) {
               this.log(`You: ${data.text}`);
               // Finalize previous bot bubble before adding user message
@@ -2054,6 +2087,7 @@ class VoiceScannerApp {
             }
           },
           onBotTranscript: (data) => {
+            console.log('Bot transcript:', data);
             this.log(`Bot: ${data.text}`);
             // Use typewriter effect for bot transcript
             this.addBotTranscriptWithTypewriter(data.text);
@@ -2298,10 +2332,11 @@ class VoiceScannerApp {
     wordSpan.style.animationDelay = `${(sequenceId % 10) * 30}ms`; // Stagger animation
 
     textContainer.appendChild(wordSpan);
+    const isFirstWord = this.streamingWords.length === 0;
     this.streamingWords.push(word);
 
-    // Sync live subtitle with streaming (voice sync)
-    this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
+    // Live subtitle: append one word at a time (same typewriter effect as transcript)
+    this.appendBotWordToLiveSubtitle(word, isFirstWord);
 
     // Auto-scroll
     if (this.transcriptList) {
@@ -2314,7 +2349,13 @@ class VoiceScannerApp {
    */
   private finalizeCurrentStreamingBubble(): void {
     if (this.streamingBubble) {
-      this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
+      // Subtitle already has words appended; just reset hide timer
+      if (this.liveSubtitle && this.liveSubtitle.classList.contains('visible')) {
+        if (this.subtitleClearTimeout) clearTimeout(this.subtitleClearTimeout);
+        this.subtitleClearTimeout = setTimeout(() => {
+          this.liveSubtitle?.classList.remove('visible');
+        }, 4000);
+      }
 
       this.streamingBubble.classList.remove('streaming');
       this.streamingBubble.classList.add('finalized');

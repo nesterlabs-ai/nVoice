@@ -1456,6 +1456,13 @@ body {
   animation: subtitleWordPop 0.25s ease forwards;
 }
 
+/* Same typewriter-word animation in live subtitle (word-by-word append) */
+.live-subtitle-text .typewriter-word {
+  display: inline;
+  opacity: 0;
+  animation: typewriterFadeIn 0.15s ease forwards;
+}
+
 /* ===== WAVE VISUALIZER ===== */
 .wave-container {
   position: absolute;
