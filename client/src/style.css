@@ -1770,15 +1770,6 @@ body {
   overflow-y: auto;
 }
 
-.a2ui-content:empty::before {
-  content: 'Visual response will appear here';
-  display: block;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 12px;
-  padding: 40px 20px;
-}
-
 /* ===== RESPONSIVE ===== */
 @media (max-width: 1200px) {
   :root {

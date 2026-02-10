@@ -299,6 +299,7 @@ class VoiceScannerApp {
 
     document.getElementById('control-peak')?.addEventListener('click', () => this.toggleSidePanels());
     document.getElementById('control-close')?.addEventListener('click', () => {
+      this.hideA2UIPanel();
       this.handleDisconnect();
       this.showCloseOptions();
     });
@@ -311,9 +312,6 @@ class VoiceScannerApp {
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
 
-    // A2UI panel close button
-    const a2uiClose = document.getElementById('a2ui-close');
-    a2uiClose?.addEventListener('click', () => this.hideA2UIPanel());
   }
 
   /**
