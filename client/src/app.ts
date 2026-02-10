@@ -135,7 +135,6 @@ class VoiceScannerApp {
 
   // Live subtitle above wave (single line, current speaker only)
   private liveSubtitle: HTMLElement | null = null;
-  private liveSubtitleLabel: HTMLElement | null = null;
   private liveSubtitleText: HTMLElement | null = null;
   private subtitleClearTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -212,7 +211,6 @@ class VoiceScannerApp {
     this.transcriptList = document.getElementById('transcript-list');
     this.transcriptStatus = document.getElementById('transcript-status');
     this.liveSubtitle = document.getElementById('live-subtitle');
-    this.liveSubtitleLabel = document.getElementById('live-subtitle-label');
     this.liveSubtitleText = document.getElementById('live-subtitle-text');
     this.debugPanel = document.getElementById('debug-panel');
     this.debugLog = document.getElementById('debug-log');
@@ -897,7 +895,7 @@ class VoiceScannerApp {
    * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice)
    */
   private updateLiveSubtitle(role: 'user' | 'bot', text: string): void {
-    if (!this.liveSubtitle || !this.liveSubtitleLabel || !this.liveSubtitleText) return;
+    if (!this.liveSubtitle || !this.liveSubtitleText) return;
     if (!text) return;
 
     // Reset auto-clear timer
@@ -905,12 +903,15 @@ class VoiceScannerApp {
       clearTimeout(this.subtitleClearTimeout);
     }
 
-    // Update label and role styling
-    this.liveSubtitleLabel.textContent = role === 'user' ? 'You' : 'NesterAI';
-    this.liveSubtitleLabel.className = 'live-subtitle-label ' + role;
+    // Role class on container for .user / .bot text styling
+    this.liveSubtitle.classList.remove('user', 'bot');
+    this.liveSubtitle.classList.add(role);
+
+    // User speech: prefix with "- " so we can identify user vs bot at a glance
+    const displayText = role === 'user' ? `- ${text}` : text;
 
     // Render each word as an animated span
-    const words = text.split(/\s+/).filter(w => w.length > 0);
+    const words = displayText.split(/\s+/).filter(w => w.length > 0);
     this.liveSubtitleText.innerHTML = words.map(w =>
       `<span class="sub-word">${w}</span>`
     ).join(' ');

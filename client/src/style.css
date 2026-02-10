@@ -1368,7 +1368,7 @@ body {
   }
 }
 
-/* ===== LIVE SUBTITLE (centered above wave, current speaker only) ===== */
+/* ===== LIVE SUBTITLE (centered block above controls, multi-line) ===== */
 .live-subtitle {
   position: absolute;
   bottom: calc(280px + 44px + 24px);
@@ -1377,57 +1377,50 @@ body {
   z-index: 5;
   pointer-events: none;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  max-width: 72%;
+  gap: 6px;
+  max-width: min(85%, 560px);
   opacity: 0;
   transition: opacity 0.35s ease;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: center;
 }
 
 .live-subtitle.visible {
   opacity: 1;
 }
 
-/* Glassmorphism pill background */
+/* Subtle card background */
 .live-subtitle::before {
   content: '';
   position: absolute;
-  inset: -8px -18px;
-  border-radius: 999px;
-  background: rgba(18, 18, 24, 0.52);
-  backdrop-filter: blur(18px);
-  border: 1px solid rgba(198, 198, 198, 0.1);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
-  z-index: -1;
+  inset: -12px -20px;
 }
 
-.live-subtitle-label {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-
-.live-subtitle-label.user {
-  color: rgba(14, 165, 233, 0.95);
-}
-
-.live-subtitle-label.bot {
-  color: rgba(168, 85, 247, 0.9);
-}
-
+/* Multi-line block: full utterance like Murf demo */
 .live-subtitle-text {
-  font-size: 15px;
-  line-height: 1.3;
-  color: rgba(240, 240, 245, 0.92);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 16px;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: break-word;
+  max-height: 6em;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+}
+
+/* User subtitle text */
+.live-subtitle.user .live-subtitle-text {
+  color: #FFFFFFBF;
+  font-weight: 500;
+  font-size: 24px;
+  font-style: italic;
+}
+
+/* Bot subtitle text */
+.live-subtitle.bot .live-subtitle-text {
+  font-size: 24px;
+  color: #FFFFFF;
+  font-weight: 400;
 }
 
 /* Word-pop animation for each new word */
