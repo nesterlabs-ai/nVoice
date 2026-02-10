@@ -1397,9 +1397,9 @@ body {
   inset: -12px -20px;
 }
 
-/* Multi-line block: full utterance like Murf demo */
+/* Multi-line block: full utterance */
 .live-subtitle-text {
-  font-size: 16px;
+  font-size: 24px;
   line-height: 1.45;
   white-space: normal;
   overflow-wrap: break-word;
@@ -1421,6 +1421,15 @@ body {
   font-size: 24px;
   color: #FFFFFF;
   font-weight: 400;
+}
+
+/* Live subtitle: smaller on mobile */
+@media (max-width: 640px) {
+  .live-subtitle-text,
+  .live-subtitle.user .live-subtitle-text,
+  .live-subtitle.bot .live-subtitle-text {
+    font-size: 16px;
+  }
 }
 
 /* Word-pop animation for each new word */
