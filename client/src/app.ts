@@ -32,6 +32,7 @@ import { EmotionChart } from './components/EmotionChart';
 import { TopicTimeline } from './components/TopicTimeline';
 // Wave Visualization Config
 import { waveConfig } from './config/waveVisualization';
+import { Loader } from './components/Loader';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -69,6 +70,7 @@ class VoiceScannerApp {
   private topicTimeline: TopicTimeline | null = null;
   private statusIndicator: HTMLElement | null = null;
   private loadingOverlay: HTMLElement | null = null;
+  private loader: Loader | null = null;
   private terminalContent: HTMLElement | null = null;
   private terminalStatus: HTMLElement | null = null;
   private typingLine: HTMLElement | null = null;
@@ -230,6 +232,15 @@ class VoiceScannerApp {
     this.emotionTimeline = document.getElementById('emotion-timeline');
     this.statusIndicator = document.getElementById('status-indicator');
     this.loadingOverlay = document.getElementById('loading-overlay');
+
+    // Initialize Loader (text configurable via loader.setText())
+    const loadingTextEl = document.getElementById('loading-text');
+    if (loadingTextEl) {
+      this.loader = new Loader({
+        container: loadingTextEl,
+        text: 'INITIALIZING',
+      });
+    }
 
     // Initialize Emotion Chart
     try {
@@ -639,6 +650,13 @@ class VoiceScannerApp {
       this.loadingOverlay.classList.remove('hidden');
       this.animatePreloader();
     }
+  }
+
+   /**
+   * Update loader text (e.g. "Planning next moves", "INITIALIZING")
+   */
+   setLoaderText(text: string): void {
+    this.loader?.setText(text);
   }
 
   /**
@@ -3213,6 +3231,7 @@ declare global {
 
 window.addEventListener('DOMContentLoaded', () => {
   window.VoiceScannerApp = VoiceScannerApp;
-  new VoiceScannerApp();
+  const app = new VoiceScannerApp();
+  (window as any).voiceScannerApp = app; // e.g. voiceScannerApp.setLoaderText('Planning next moves')
 });
 

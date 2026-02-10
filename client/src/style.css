@@ -115,6 +115,30 @@ body {
   color: var(--text-secondary);
 }
 
+.loading-text.loader-animated .loader-text {
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  background: linear-gradient(
+    90deg,
+    var(--text-secondary) 0%,
+    var(--text-secondary) 40%,
+    rgba(255, 255, 255, 0.9) 50%,
+    var(--text-secondary) 60%,
+    var(--text-secondary) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: loader-wave 3.15s ease-in-out infinite;
+}
+
+@keyframes loader-wave {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* ===== NOTIFICATION ===== */
 .notification {
   position: fixed;
