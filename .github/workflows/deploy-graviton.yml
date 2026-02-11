@@ -10,7 +10,7 @@
 #   GRAVITON_SSH_KEY      - Private SSH key for EC2 Graviton instance
 #   GRAVITON_HOST         - Elastic IP of Graviton instance
 
-name: Deploy to Graviton (ARM64)
+name: Deploy to AWS Graviton
 
 on:
   push:
@@ -193,7 +193,7 @@ jobs:
   verify:
     name: Health Check
     needs: [deploy]
-    if: always() && needs.deploy.result == 'success' && env.PUBLIC_URL != ''
+    if: always() && needs.deploy.result == 'success' && vars.GRAVITON_PUBLIC_URL != ''
     runs-on: ubuntu-latest
     steps:
       - name: Wait for services to stabilize
