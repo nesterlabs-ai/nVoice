@@ -100,7 +100,10 @@ class VoiceAssistant:
         google_api_key = self.config.get("conversation", {}).get("llm", {}).get("api_key")
         server_config = self.config.get("server", {})
         emotion_enabled = server_config.get("emotion_detection_enabled", True)
-        logger.info(f"Emotion detection enabled: {emotion_enabled}")
+        logger.info(
+            f"[EMOTION-DIAG] Emotion detection config: enabled={emotion_enabled}, "
+            f"groq_api_key={'SET' if google_api_key and not google_api_key.startswith('$') else 'MISSING'}"
+        )
         self.tone_processor = ToneAwareProcessor(
             cooldown_seconds=3.0,  # Cooldown between voice switches
             enabled=emotion_enabled,  # Read from config - can disable for performance
@@ -235,8 +238,16 @@ class VoiceAssistant:
         # This enables the full LightRAG + A2UI pipeline
         self.conversation_manager.set_a2ui_callback(self._emit_a2ui_update)
 
-        # Initialize SpeechBrain wav2vec2-large for emotion detection
+        # Initialize MSP-PODCAST wav2vec2 for emotion detection
+        logger.info("[EMOTION-DIAG] About to call tone_processor.initialize()...")
         await self.tone_processor.initialize()
+        logger.info(
+            f"[EMOTION-DIAG] After initialize: "
+            f"detector_connected={self.tone_processor.emotion_detector.is_connected}, "
+            f"detector_model={self.tone_processor.emotion_detector.model is not None}, "
+            f"hybrid_detector={self.tone_processor.hybrid_detector is not None}, "
+            f"enabled={self.tone_processor.enabled}"
+        )
 
         # Get smart interruption config for conditional pipeline inclusion
         server_config = self.config.get("server", {})

@@ -144,7 +144,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # Stricter VAD settings to prevent false barge-ins from background noise
         # MinWordsInterruptionStrategy (below) provides additional filtering
         vad_params = VADParams(
-            confidence=vad_config.get("confidence", 0.88),     # HIGHER - only trigger on clear speech
+            confidence=vad_config.get("confidence", 0.7),     # HIGHER - only trigger on clear speech
             start_secs=vad_config.get("start_secs", 0.5),      # SLOWER - require 500ms of speech (filters noise)
             stop_secs=vad_config.get("stop_secs", 1.0),        # Wait 1s of silence before ending utterance
             min_volume=vad_config.get("min_volume", 0.65),     # HIGHER - ignore quiet background noise
@@ -213,6 +213,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # Create dedicated VoiceAssistant instance for this session
         voice_assistant = VoiceAssistant(voice_assistant_server.config)
         logger.info(f"[Session {session_id}] VoiceAssistant instance created")
+
+        # Log emotion detection state for this session
+        emotion_enabled = server_config.get("emotion_detection_enabled", True)
+        logger.info(
+            f"[Session {session_id}] [EMOTION-DIAG] Session emotion config: "
+            f"enabled={emotion_enabled}, "
+            f"tone_processor_enabled={voice_assistant.tone_processor.enabled}, "
+            f"hybrid_mode={voice_assistant.tone_processor.use_hybrid_mode}"
+        )
 
         # Log complete audio processing pipeline
         smart_turn_desc = "SmartTurn v3 (transport)" if turn_analyzer else "Transcription-based"
