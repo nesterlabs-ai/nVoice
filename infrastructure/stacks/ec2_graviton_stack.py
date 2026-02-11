@@ -13,6 +13,7 @@ from aws_cdk import (
     Stack,
     CfnOutput,
     Tags,
+    aws_iam as iam,
 )
 
 from utils.config_loader import NesterConfig
@@ -56,18 +57,26 @@ class EC2GravitonStack(Stack):
             config=config,
         )
 
-        # 2. Reference shared Secrets Manager secret (same API keys as dev)
+        # 2. Grant the existing CI/CD IAM user push access to Graviton ECR repos
+        # The CI/CD user (nester-ai-dev-ecr-user) is shared across deployments
+        cicd_user = iam.User.from_user_name(
+            self, "CiCdUser", "nester-ai-dev-ecr-user"
+        )
+        self.ecr.backend_repo.grant_pull_push(cicd_user)
+        self.ecr.frontend_repo.grant_pull_push(cicd_user)
+
+        # 3. Reference shared Secrets Manager secret (same API keys as dev) (same API keys as dev)
         # Full ARN from config avoids the partial-ARN matching issue with from_secret_name_v2
         shared_secret_arn = config.secrets.shared_secret_arn
 
-        # 3. Create CloudWatch Log Group for container logs
+        # 4. Create CloudWatch Log Group for container logs
         self.cloudwatch_logs = NesterCloudWatchLogs(
             self,
             "CloudWatchLogs",
             config=config,
         )
 
-        # 4. Create EC2 Graviton instance
+        # 5. Create EC2 Graviton instance
         self.ec2_instance = EC2GravitonInstance(
             self,
             "EC2Graviton",
