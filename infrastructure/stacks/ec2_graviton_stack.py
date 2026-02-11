@@ -17,7 +17,7 @@ from aws_cdk import (
 )
 
 from utils.config_loader import NesterConfig
-from components import NesterECR, NesterCloudWatchLogs
+from components import NesterECR, NesterCloudWatchLogs, NesterSSMConfig
 from components.ec2_graviton import EC2GravitonInstance
 
 
@@ -76,12 +76,20 @@ class EC2GravitonStack(Stack):
             config=config,
         )
 
-        # 5. Create EC2 Graviton instance
+        # 5. Create SSM Parameter Store with server config
+        self.ssm_config = NesterSSMConfig(
+            self,
+            "SSMConfig",
+            config=config,
+        )
+
+        # 6. Create EC2 Graviton instance
         self.ec2_instance = EC2GravitonInstance(
             self,
             "EC2Graviton",
             config=config,
             api_keys_secret_arn=shared_secret_arn,
+            ssm_parameter_name=self.ssm_config.parameter_name,
             backend_image_uri=self.ecr.backend_image_uri(config.image_tag),
             frontend_image_uri=self.ecr.frontend_image_uri(config.image_tag),
             log_group_name=self.cloudwatch_logs.log_group_name,
@@ -157,4 +165,12 @@ class EC2GravitonStack(Stack):
             "CloudWatchLogsUrl",
             value=f"https://{config.aws.region}.console.aws.amazon.com/cloudwatch/home?region={config.aws.region}#logsV2:log-groups/log-group/{self.cloudwatch_logs.log_group_name.replace('/', '$252F')}",
             description="URL to view logs in CloudWatch Console",
+        )
+
+        # SSM Parameter Store output
+        CfnOutput(
+            self,
+            "SSMParameterName",
+            value=self.ssm_config.parameter_name,
+            description="SSM Parameter Store path for server config",
         )
