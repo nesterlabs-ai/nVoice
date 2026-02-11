@@ -13,10 +13,11 @@ from aws_cdk import (
     Stack,
     CfnOutput,
     Tags,
+    aws_iam as iam,
 )
 
 from utils.config_loader import NesterConfig
-from components import NesterECR, NesterCloudWatchLogs
+from components import NesterECR, NesterCloudWatchLogs, NesterSSMConfig
 from components.ec2_graviton import EC2GravitonInstance
 
 
@@ -56,23 +57,39 @@ class EC2GravitonStack(Stack):
             config=config,
         )
 
-        # 2. Reference shared Secrets Manager secret (same API keys as dev)
+        # 2. Grant the existing CI/CD IAM user push access to Graviton ECR repos
+        # The CI/CD user (nester-ai-dev-ecr-user) is shared across deployments
+        cicd_user = iam.User.from_user_name(
+            self, "CiCdUser", "nester-ai-dev-ecr-user"
+        )
+        self.ecr.backend_repo.grant_pull_push(cicd_user)
+        self.ecr.frontend_repo.grant_pull_push(cicd_user)
+
+        # 3. Reference shared Secrets Manager secret (same API keys as dev) (same API keys as dev)
         # Full ARN from config avoids the partial-ARN matching issue with from_secret_name_v2
         shared_secret_arn = config.secrets.shared_secret_arn
 
-        # 3. Create CloudWatch Log Group for container logs
+        # 4. Create CloudWatch Log Group for container logs
         self.cloudwatch_logs = NesterCloudWatchLogs(
             self,
             "CloudWatchLogs",
             config=config,
         )
 
-        # 4. Create EC2 Graviton instance
+        # 5. Create SSM Parameter Store with server config
+        self.ssm_config = NesterSSMConfig(
+            self,
+            "SSMConfig",
+            config=config,
+        )
+
+        # 6. Create EC2 Graviton instance
         self.ec2_instance = EC2GravitonInstance(
             self,
             "EC2Graviton",
             config=config,
             api_keys_secret_arn=shared_secret_arn,
+            ssm_parameter_name=self.ssm_config.parameter_name,
             backend_image_uri=self.ecr.backend_image_uri(config.image_tag),
             frontend_image_uri=self.ecr.frontend_image_uri(config.image_tag),
             log_group_name=self.cloudwatch_logs.log_group_name,
@@ -148,4 +165,12 @@ class EC2GravitonStack(Stack):
             "CloudWatchLogsUrl",
             value=f"https://{config.aws.region}.console.aws.amazon.com/cloudwatch/home?region={config.aws.region}#logsV2:log-groups/log-group/{self.cloudwatch_logs.log_group_name.replace('/', '$252F')}",
             description="URL to view logs in CloudWatch Console",
+        )
+
+        # SSM Parameter Store output
+        CfnOutput(
+            self,
+            "SSMParameterName",
+            value=self.ssm_config.parameter_name,
+            description="SSM Parameter Store path for server config",
         )

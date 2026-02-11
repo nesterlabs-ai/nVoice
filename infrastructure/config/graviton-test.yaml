@@ -63,8 +63,8 @@ application:
     image_tag: "latest"
 
   domain:
-    name: ""  # Set after DNS setup, or leave empty for IP-based testing
-    use_https: false  # Start with HTTP for testing, enable HTTPS after domain setup
+    name: "graviton-test.nesterlabs.com"
+    use_https: true
 
 # Monitoring
 monitoring:

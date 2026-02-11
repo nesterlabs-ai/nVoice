@@ -31,6 +31,7 @@ class EC2GravitonInstance(Construct):
         id: str,
         config: NesterConfig,
         api_keys_secret_arn: str,
+        ssm_parameter_name: str,
         backend_image_uri: str,
         frontend_image_uri: str,
         log_group_name: str,
@@ -40,6 +41,7 @@ class EC2GravitonInstance(Construct):
 
         self.config = config
         self.api_keys_secret_arn = api_keys_secret_arn
+        self.ssm_parameter_name = ssm_parameter_name
         self.backend_image_uri = backend_image_uri
         self.frontend_image_uri = frontend_image_uri
         self.log_group_name = log_group_name
@@ -377,6 +379,9 @@ cat > /opt/nester/deploy.sh << 'DEPLOYEOF'
 set -e
 cd /opt/nester
 
+echo "Refreshing environment from SSM + Secrets Manager..."
+./refresh-env.sh
+
 echo "Logging into ECR..."
 ./ecr-login.sh
 
@@ -394,32 +399,45 @@ chmod +x /opt/nester/deploy.sh
 chown ec2-user:ec2-user /opt/nester/deploy.sh
 
 # ============================================
-# Refresh env script
+# Refresh env script (reads from SSM Parameter Store + Secrets Manager)
 # ============================================
 cat > /opt/nester/refresh-env.sh << 'REFRESHEOF'
 #!/bin/bash
 set -e
 cd /opt/nester
 REGION="{region}"
+SSM_PARAM="{self.ssm_parameter_name}"
 API_KEYS_SECRET_ARN="{self.api_keys_secret_arn}"
 
-echo "Fetching latest secrets..."
-SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$API_KEYS_SECRET_ARN" --region "$REGION" --query SecretString --output text)
+echo "Fetching server config from SSM Parameter Store ($SSM_PARAM)..."
+SERVER_CONFIG=$(aws ssm get-parameter --name "$SSM_PARAM" --region "$REGION" --query Parameter.Value --output text 2>/dev/null)
+
+if [ -z "$SERVER_CONFIG" ] || [ "$SERVER_CONFIG" == "None" ]; then
+    echo "WARNING: Could not fetch server config from SSM, keeping existing .env"
+    exit 0
+fi
+
+echo "Fetching secrets from Secrets Manager..."
+SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$API_KEYS_SECRET_ARN" --region "$REGION" --query SecretString --output text 2>/dev/null)
 
 # Backup old .env
-cp .env .env.backup
+[ -f .env ] && cp .env .env.backup
 
-# Recreate .env with server config
-cat > .env << 'ENVEOF'
-# Auto-generated environment file
-# Server Configuration
-{env_file_content}
-ENVEOF
+# Write server config from SSM
+echo "# Auto-generated from SSM Parameter Store" > .env
+echo "# Parameter: $SSM_PARAM" >> .env
+echo "$SERVER_CONFIG" | python3 -c "
+import sys, json
+config = json.load(sys.stdin)
+for key, value in config.items():
+    print(f'{{key}}={{value}}')
+" >> .env
 
-# Append secrets
-echo "" >> .env
-echo "# API Keys from Secrets Manager" >> .env
-echo "$SECRET_JSON" | python3 -c "
+# Append secrets from Secrets Manager
+if [ -n "$SECRET_JSON" ] && [ "$SECRET_JSON" != "null" ]; then
+    echo "" >> .env
+    echo "# API Keys from Secrets Manager" >> .env
+    echo "$SECRET_JSON" | python3 -c "
 import sys, json
 try:
     secrets = json.load(sys.stdin)
@@ -429,8 +447,9 @@ try:
 except:
     pass
 " >> .env
+fi
 
-echo "Environment refreshed. Restart containers with: docker compose up -d --force-recreate"
+echo "Environment refreshed from SSM + Secrets Manager"
 REFRESHEOF
 chmod +x /opt/nester/refresh-env.sh
 chown ec2-user:ec2-user /opt/nester/refresh-env.sh
@@ -472,6 +491,7 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/nester
+ExecStartPre=/opt/nester/refresh-env.sh
 ExecStartPre=/opt/nester/ecr-login.sh
 ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down

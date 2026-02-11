@@ -10,7 +10,7 @@
 #   GRAVITON_SSH_KEY      - Private SSH key for EC2 Graviton instance
 #   GRAVITON_HOST         - Elastic IP of Graviton instance
 
-name: Deploy to Graviton (ARM64)
+name: Deploy to AWS Graviton
 
 on:
   push:
@@ -62,7 +62,7 @@ jobs:
               - 'client/**'
             deployment:
               - 'deployment/docker/docker-compose.graviton.yml'
-              - 'deployment/docker/Caddyfile.prod'
+              - 'deployment/docker/Caddyfile.graviton'
 
   # Build and push backend image (ARM64)
   build-backend:
@@ -155,7 +155,7 @@ jobs:
           host: ${{ secrets.GRAVITON_HOST }}
           username: ec2-user
           key: ${{ secrets.GRAVITON_SSH_KEY }}
-          source: "deployment/docker/docker-compose.graviton.yml,deployment/docker/Caddyfile.prod"
+          source: "deployment/docker/docker-compose.graviton.yml,deployment/docker/Caddyfile.graviton"
           target: "/tmp/deploy"
           strip_components: 2
 
@@ -176,9 +176,9 @@ jobs:
             fi
 
             # Update Caddyfile from repo (if exists)
-            if [ -f /tmp/deploy/Caddyfile.prod ]; then
+            if [ -f /tmp/deploy/Caddyfile.graviton ]; then
               echo "Updating Caddyfile..."
-              sudo cp /tmp/deploy/Caddyfile.prod /opt/nester/Caddyfile
+              sudo cp /tmp/deploy/Caddyfile.graviton /opt/nester/Caddyfile
             fi
 
             # Clean up
@@ -190,10 +190,11 @@ jobs:
             echo "=== Graviton deployment complete ==="
 
   # Verify deployment
+  # Health check is mandatory - workflow fails if this fails
   verify:
     name: Health Check
     needs: [deploy]
-    if: always() && needs.deploy.result == 'success' && env.PUBLIC_URL != ''
+    if: always() && needs.deploy.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Wait for services to stabilize
@@ -219,8 +220,8 @@ jobs:
         if: success()
         run: |
           echo "## Graviton Deployment Health Check Passed" >> $GITHUB_STEP_SUMMARY
-          echo "- Backend: ${{ env.PUBLIC_URL }}/health" >> $GITHUB_STEP_SUMMARY
-          echo "- Frontend: ${{ env.PUBLIC_URL }}/" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: ${{ env.PUBLIC_URL }}/health ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: ${{ env.PUBLIC_URL }}/ ✅" >> $GITHUB_STEP_SUMMARY
           echo "- Architecture: ARM64 (Graviton)" >> $GITHUB_STEP_SUMMARY
 
   # Notify on failure
