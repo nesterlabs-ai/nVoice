@@ -4,8 +4,8 @@
 
 # Language configuration
 language:
-  primary: "hi"  # Hindi + English (Hinglish)
-  support_hinglish: true  # ENABLED - Hindi + English bilingual support
+  primary: "en"  # English only
+  support_hinglish: false  # DISABLED - English only
   auto_detect: false
 
 stt:
@@ -14,7 +14,7 @@ stt:
     device: "cpu"  # CPU for Lightsail/EC2 deployments
     model: "nova-3"  # Nova 3 - Latest and most accurate Deepgram STT model
     api_key: "${DEEPGRAM_API_KEY}"
-    language: "multi"  # Multi-language: supports Hindi + English (Hinglish) simultaneously
+    language: "en"  # English only
 
     # Optimized for SmartTurn v3 ML-based turn detection
     smart_format: true       # Adds punctuation & paragraphs (Deepgram waits ~3s for entities in streaming)
@@ -108,11 +108,8 @@ conversation:
     - Website: nesterlabs.com
 
     LANGUAGE RULES:
-    - ALWAYS respond in the SAME language the user is speaking.
-    - If user speaks English, respond in English only.
-    - If user speaks Hindi, respond in Hindi only.
-    - If user mixes Hindi and English (Hinglish), respond in Hinglish.
-    - NEVER switch languages unless the user switches first.
+    - ALWAYS respond in English only.
+    - Do NOT respond in any other language.
 
     RESPONSE RULES:
     1. CRITICAL: Maximum 1-2 sentences per response. Be extremely concise for voice.
