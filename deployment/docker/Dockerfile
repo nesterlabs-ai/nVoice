@@ -31,6 +31,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt
 
+# Cache bust arg - ensures fresh build on every commit
+ARG CACHEBUST=1
+
 # Copy application code
 COPY app/ ./app/
 COPY data/ ./data/

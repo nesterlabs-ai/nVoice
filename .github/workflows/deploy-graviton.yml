@@ -96,6 +96,8 @@ jobs:
           tags: |
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-backend:latest
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-backend:${{ github.sha }}
+          build-args: |
+            CACHEBUST=${{ github.sha }}
           cache-from: type=gha,scope=graviton-backend
           cache-to: type=gha,scope=graviton-backend,mode=max
 
@@ -131,6 +133,8 @@ jobs:
           tags: |
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-frontend:latest
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-frontend:${{ github.sha }}
+          build-args: |
+            CACHEBUST=${{ github.sha }}
           cache-from: type=gha,scope=graviton-frontend
           cache-to: type=gha,scope=graviton-frontend,mode=max
 
