@@ -242,8 +242,6 @@ class VisualHintProcessor(FrameProcessor):
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process frames, intercepting TextFrames for streaming and content detection."""
-        await super().process_frame(frame, direction)
-
         if not self.enabled:
             await self.push_frame(frame, direction)
             return

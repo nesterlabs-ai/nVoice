@@ -45,16 +45,6 @@ class TextFilterProcessor(FrameProcessor):
     def clean_text_for_speech(self, text: str) -> str:
         """Clean text by removing markdown and unwanted symbols.
 
-        Removes:
-        - Bold markers: **text** or __text__ -> text
-        - Italic markers: *text* or _text_ -> text
-        - Bullet points: * item or - item -> item
-        - Headers: ## Header -> Header
-        - Links: [text](url) -> text
-        - Code blocks: `code` -> code
-        - Strikethrough: ~~text~~ -> text
-        - Function call syntax: <function=...>...</function>
-
         Args:
             text: Original text with markdown formatting
 
@@ -100,7 +90,6 @@ class TextFilterProcessor(FrameProcessor):
         text = re.sub(r'\*+', '', text)
 
         # Remove standalone underscores but preserve word boundaries
-        # Only remove underscores that are not between word characters
         text = re.sub(r'(?<!\w)_+(?!\w)', '', text)
 
         # Clean up multiple spaces
@@ -136,9 +125,6 @@ class TextFilterProcessor(FrameProcessor):
             frame: The frame to process
             direction: The direction of frame processing
         """
-        # Handle lifecycle frames
-        await super().process_frame(frame, direction)
-
         # Reset function call tracking state on new LLM response
         if isinstance(frame, LLMFullResponseStartFrame):
             self._in_function_call = False
