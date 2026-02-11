@@ -349,33 +349,20 @@ class VoiceAssistant:
             await asyncio.sleep(1.5)
             logger.info("🎤 Pipeline ready, sending greeting...")
 
-            # Use TTSSpeakFrame to speak a pre-written greeting
-            # This is the most reliable approach - bypasses LLM and goes straight to TTS
-            from pipecat.frames.frames import TTSSpeakFrame
-            greeting_text = (
-                "Hey! I'm the Nesterlabs voice assistant. "
-                "I can help you learn about our AI services and expertise. "
-                "What would you like to know?"
-            )
-
-            # Queue TTSSpeakFrame through the task - this goes through the pipeline correctly
-            greeting_frame = TTSSpeakFrame(text=greeting_text)
-            await self.task.queue_frame(greeting_frame)
-            logger.info("🎤 Greeting sent via TTSSpeakFrame")
+            # Queue greeting through the TASK so it flows through the full pipeline
+            # This is critical: STTMuteFilter needs to see TTS start/stop frames
+            # to know when bot speech begins/ends. Pushing directly to self.tts
+            # bypasses the pipeline and the mute filter never unmutes.
+            greeting_text = "Hi, I'm Nester AI. We're trying to reimagine intelligence here. So tell me, what are you trying to build?"
+            await self.task.queue_frame(TTSSpeakFrame(greeting_text))
+            logger.info("🎤 Greeting sent via task.queue_frame (flows through full pipeline)")
 
             # Add greeting to conversation context so LLM knows it already greeted
-            # Without this, the LLM generates a redundant greeting on the first user message
             if self.conversation_manager and self.conversation_manager.context:
                 self.conversation_manager.context.messages.append(
                     {"role": "assistant", "content": greeting_text}
                 )
                 logger.info("📝 Greeting added to conversation context")
-
-            # Disable greeting protection after 4 seconds (greeting takes ~3-4s to play)
-            if self.prefilter:
-                await asyncio.sleep(4.0)
-                self.prefilter.disable_greeting_protection()
-                logger.info("🛡️ Greeting protection disabled - user can now speak")
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):

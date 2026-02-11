@@ -191,41 +191,33 @@ server:
 
   # VAD settings - MATCHING GOONJ's working config
   vad:
-    confidence: 0.7        # Goonj uses 0.7 (balanced, not too strict)
-    start_secs: 0.4        # Goonj uses 0.4 (quick start)
-    stop_secs: 0.8         # Goonj uses 0.8 (reasonable pause detection)
-    min_volume: 0.7        # Goonj uses 0.7 (balanced)
-
-  # Noise handler processor - DISABLED to match Goonj
-  # Goonj doesn't use NoiseHandler - relies on VAD settings
-  noise_handler:
-    enabled: false
-    max_false_starts: 3
-    min_speech_duration: 0.5
-    recovery_delay: 2.0
-
-  # Minimal pre-filter - transcription-level noise filtering
-  # Drops low-confidence transcriptions and noise markers
-  prefilter:
-    enabled: true
-    confidence_threshold: 0.5  # Drop transcriptions below 50% confidence
-    min_length: 2             # Drop single-character transcriptions
-    greeting_protection: true  # Block transcriptions during initial greeting
-
-  # Interruption filter — DISABLED because allow_interruptions=False means no
-  # InterruptionFrames flow through the pipeline (InterruptionTaskFrames bypass it).
-  # The asyncio.shield in RAG call handler protects against any remaining edge cases.
-  interruption_filter:
-    enabled: false
-    grace_period: 0.5
-    min_speaking_time: 1.5
-    transcription_wait_timeout: 2.0
-    debug: false
+    confidence: 0.88      # STRICT - only trigger on clear speech (reduces noise/echo triggers)
+    start_secs: 0.5        # SLOWER - require 500ms of speech before triggering (filters short noises)
+    stop_secs: 1.0         # Wait 1s of silence before ending utterance
+    min_volume: 0.65       # HIGHER - ignore quiet background noise
 
   # Barge-in (interruption) settings
   # DISABLED: MinWordsInterruptionStrategy generates InterruptionTaskFrames on every VAD event
   # proven doesn't use this - relies on strict VAD settings instead
   # With strict VAD (conf=0.85, vol=0.75), noise won't trigger VAD in the first place
   interruption:
-    enabled: false         # DISABLED - strict VAD handles noise filtering instead
-    min_words: 3           # (unused when disabled)
+    enabled: true          # Enable barge-in support
+    min_words: 4           # Require 4+ words to interrupt (prevents 1-2 word false barge-ins)
+
+  # Smart interruption - Context-aware validation
+  # Prevents false interruptions from background conversations/TV/music
+  # Warns user when background noise is detected
+  smart_interruption:
+    enabled: false         # DISABLED - StartFrame error needs to be fixed first
+    min_confidence: 0.7    # Minimum confidence for valid interruption
+    warn_on_noise: false   # Warn user about background noise
+    warning_cooldown: 10   # Seconds between background noise warnings
+
+  # Smart Turn v3 - ML-based end-of-turn detection
+  # Uses ONNX model to detect when user has finished speaking
+  # More accurate than simple silence detection
+  # Now properly integrated via LLMContextAggregatorPair with UserTurnStrategies
+  smart_turn:
+    enabled: true          # ENABLED - migrated to universal LLMContext with TurnAnalyzerUserTurnStopStrategy
+    cpu_count: 1           # Number of CPUs for ML inference (1 is usually enough)
+    timeout: 0.5           # Delay before triggering end-of-turn (seconds)
