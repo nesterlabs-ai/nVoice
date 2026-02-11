@@ -436,10 +436,6 @@ export function KnowledgeGraphWidget({
 
   return (
     <div className={`knowledge-graph-widget ${className}`}>
-      <div className="kg-header">
-        <span className="kg-title">KNOWLEDGE GRAPH</span>
-      </div>
-
       <div className="kg-container">
         {loading && (
           <div className="kg-loading">
