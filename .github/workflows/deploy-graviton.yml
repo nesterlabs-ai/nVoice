@@ -190,10 +190,11 @@ jobs:
             echo "=== Graviton deployment complete ==="
 
   # Verify deployment
+  # Health check is mandatory - workflow fails if this fails
   verify:
     name: Health Check
     needs: [deploy]
-    if: always() && needs.deploy.result == 'success' && vars.GRAVITON_PUBLIC_URL != ''
+    if: always() && needs.deploy.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Wait for services to stabilize
@@ -219,8 +220,8 @@ jobs:
         if: success()
         run: |
           echo "## Graviton Deployment Health Check Passed" >> $GITHUB_STEP_SUMMARY
-          echo "- Backend: ${{ env.PUBLIC_URL }}/health" >> $GITHUB_STEP_SUMMARY
-          echo "- Frontend: ${{ env.PUBLIC_URL }}/" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: ${{ env.PUBLIC_URL }}/health ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: ${{ env.PUBLIC_URL }}/ ✅" >> $GITHUB_STEP_SUMMARY
           echo "- Architecture: ARM64 (Graviton)" >> $GITHUB_STEP_SUMMARY
 
   # Notify on failure
