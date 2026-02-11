@@ -232,6 +232,7 @@ class VisualHintProcessor(FrameProcessor):
         self._last_hint_times: Dict[str, float] = {}  # Track cooldowns per content type
         self._emitted_hints_this_utterance: set = set()  # Prevent duplicate hints
         self._a2ui_emitted_this_utterance: bool = False  # Prevent duplicate A2UI
+        self._in_function_call: bool = False  # Track function call syntax across chunks
 
         logger.info(
             f"VisualHintProcessor initialized: "
@@ -256,10 +257,12 @@ class VisualHintProcessor(FrameProcessor):
                 self._word_buffer = ""
                 self._emitted_hints_this_utterance = set()
                 self._a2ui_emitted_this_utterance = False
+                self._in_function_call = False
                 logger.info(f"📝 LLMFullResponseStart → new utterance: {self._current_utterance_id}")
 
             # LLM response finished — flush any partial word and finalize
             elif isinstance(frame, LLMFullResponseEndFrame):
+                self._in_function_call = False
                 if self.stream_words and self._word_buffer:
                     # Flush the leftover partial word
                     self._sequence_counter += 1
@@ -272,9 +275,20 @@ class VisualHintProcessor(FrameProcessor):
             elif isinstance(frame, TextFrame):
                 text = frame.text if hasattr(frame, 'text') else str(frame)
                 if text and text.strip():
-                    # Skip function call syntax that LLM sometimes outputs as raw text
-                    if '<function=' in text or '</function>' in text:
-                        logger.debug(f"⏭️ Skipping function call syntax in streaming: '{text[:60]}...'")
+                    # Stateful function call syntax tracking across streaming chunks
+                    if self._in_function_call:
+                        # Inside a function call - drop everything until </function>
+                        if '</function>' in text:
+                            self._in_function_call = False
+                            logger.debug(f"⏭️ Function call syntax ended")
+                        else:
+                            logger.debug(f"⏭️ Dropping function call chunk: '{text[:40]}...'")
+                    elif '<function' in text:
+                        # Function call starting - drop this and subsequent chunks
+                        self._in_function_call = True
+                        logger.debug(f"⏭️ Function call syntax detected, dropping: '{text[:60]}...'")
+                        if '</function>' in text:
+                            self._in_function_call = False
                     else:
                         if self.stream_words:
                             await self._emit_streaming_text(text)
