@@ -541,40 +541,27 @@ CONVERSATION ENDING PROTOCOL:
     def create_context_aggregator(self) -> Any:
         """Create the context aggregator for the conversation.
 
-        Uses the universal LLMContextAggregatorPair with TranscriptionUserTurnStopStrategy
-        instead of the deprecated OpenAI-specific aggregator. The new strategy triggers
-        the LLM as soon as a final transcription arrives AND the user stops speaking,
-        with a short 0.3s coalesce timer (vs the old fixed 0.7s timeout on every turn).
+        Uses LLMContextAggregatorPair (pipecat 0.0.98).
+        Note: pipecat.turns module (UserTurnStrategies, TranscriptionUserTurnStopStrategy)
+        is NOT available in 0.0.98 — use default LLMUserAggregatorParams instead.
 
         Returns:
-            The context aggregator instance (LLMContextAggregatorPair)
+            The context aggregator pair instance
         """
-        from pipecat.turns.user_turn_strategies import UserTurnStrategies
-        from pipecat.turns.user_stop.transcription_user_turn_stop_strategy import (
-            TranscriptionUserTurnStopStrategy,
-        )
-
         if not self.llm_service:
             self.initialize_llm()
 
         self.context = self.create_context()  # Store for greeting access
 
-        # TranscriptionUserTurnStopStrategy triggers the LLM when:
-        # 1. Final transcription received (text accumulated)
-        # 2. User stopped speaking (VAD silence)
-        # 3. No more interim results pending
-        # The timeout (0.3s) is a coalesce window for multiple transcriptions
-        # arriving close together — NOT a fixed wait like the old system.
-        user_params = LLMUserAggregatorParams(
-            user_turn_strategies=UserTurnStrategies(
-                stop=[TranscriptionUserTurnStopStrategy(timeout=0.3)]
-            ),
-        )
+        # Create user params (pipecat 0.0.98 - no user_turn_strategies)
+        user_params = LLMUserAggregatorParams()
 
         self.context_aggregator = LLMContextAggregatorPair(
             context=self.context,
             user_params=user_params,
         )
+
+        logger.info("📋 Context aggregator created (LLMContextAggregatorPair)")
         return self.context_aggregator
 
     def get_llm_service(self) -> LLMService:
