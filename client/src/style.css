@@ -255,9 +255,11 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 12px;
-  padding: 12px;
-  padding-bottom: 72px; /* Space for floating control bar */
+  gap: 16px;
+  padding-top: 70px;
+  padding-bottom: 188px; /* Space for floating control bar */
+  padding-left: 40px;
+  padding-right: 40px;
   overflow: hidden;
   z-index: 5;
   opacity: 0;
