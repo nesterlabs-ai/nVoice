@@ -108,17 +108,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
 
         # Log complete audio processing pipeline
-        smart_turn_desc = "SmartTurn v3 (transport)" if turn_analyzer else "Transcription-based"
         logger.info(
             f"[Session {session_id}] 📊 AUDIO PIPELINE SUMMARY (strict VAD-style):\n"
             f"  ┌─ Input: Microphone\n"
-            f"  ├─ VAD: Silero STRICT (conf={vad_params.confidence}, start={vad_params.start_secs}s, stop={vad_params.stop_secs}s, vol={vad_params.min_volume})\n"
+            f"  ├─ VAD: Silero (conf={vad_params.confidence}, start={vad_params.start_secs}s, stop={vad_params.stop_secs}s, vol={vad_params.min_volume})\n"
             f"  ├─ NoiseHandler: Pattern detection + recovery mode\n"
             f"  ├─ STT: Deepgram Nova-3\n"
             f"  ├─ PreFilter: Confidence threshold + noise markers\n"
+            f"  ├─ InterruptionFilter: Transcription-validated barge-in\n"
             f"  ├─ Emotion: MSP-PODCAST + Gemini (hybrid)\n"
             f"  ├─ LLM: Groq Llama-3.3-70b\n"
-            f"  └─ TTS: Chatterbox (24kHz, emotion-aware)"
+            f"  └─ TTS: ElevenLabs (emotion-aware)"
         )
 
         # Run the voice assistant pipeline for this connection
