@@ -57,6 +57,12 @@ class TextFilterProcessor(FrameProcessor):
 
         original_text = text
 
+        # Remove function call syntax that LLM sometimes outputs as raw text
+        # e.g. <function=call_rag_system[]{"question": "..."}></function>
+        text = re.sub(r'<function=[^>]*>.*?</function>', '', text, flags=re.DOTALL)
+        # Also catch partial/unclosed function tags
+        text = re.sub(r'<function=[^>]*>.*', '', text, flags=re.DOTALL)
+
         # Remove code blocks (```code```)
         text = re.sub(r'```[\s\S]*?```', '', text)
 

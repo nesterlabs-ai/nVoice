@@ -272,14 +272,18 @@ class VisualHintProcessor(FrameProcessor):
             elif isinstance(frame, TextFrame):
                 text = frame.text if hasattr(frame, 'text') else str(frame)
                 if text and text.strip():
-                    if self.stream_words:
-                        await self._emit_streaming_text(text)
+                    # Skip function call syntax that LLM sometimes outputs as raw text
+                    if '<function=' in text or '</function>' in text:
+                        logger.debug(f"⏭️ Skipping function call syntax in streaming: '{text[:60]}...'")
+                    else:
+                        if self.stream_words:
+                            await self._emit_streaming_text(text)
 
-                    # Buffer full text for content detection
-                    self._text_buffer += text
+                        # Buffer full text for content detection
+                        self._text_buffer += text
 
-                    if self.detect_content:
-                        await self._detect_and_emit_hints()
+                        if self.detect_content:
+                            await self._detect_and_emit_hints()
 
         # Always pass frame downstream to TTS
         await self.push_frame(frame, direction)
