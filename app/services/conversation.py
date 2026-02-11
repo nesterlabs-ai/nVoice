@@ -462,11 +462,6 @@ CONVERSATION ENDING PROTOCOL:
   * CRITICAL: Call end_conversation() for ANY farewell phrase (bye, goodbye, see you, end call, etc.)
 - NEVER just respond to farewells without calling the end_conversation function
 
-FUNCTION CALL RULES (CRITICAL - PREVENTS DUPLICATE RESPONSES):
-- When you call a function (call_rag_system or end_conversation), your response MUST contain ONLY the function call. Do NOT generate any text alongside the function call.
-- NEVER output raw function call syntax as text like <function=...>. Always use proper tool calling.
-- If you decide to call call_rag_system, do NOT also write a text answer. Let the function result provide the answer.
-
 """
         system_message = identity_enforcement + system_message
         # No initial user prompt - greeting is handled via direct TTS

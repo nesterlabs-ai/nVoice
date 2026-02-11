@@ -125,11 +125,6 @@ conversation:
     7. NEVER repeat yourself. Say things once and move on.
     8. If the user asks a question not related to the company, services, or expertise, politely decline and say you are not sure.
     9. End responses with a brief question to keep the conversation going.
-
-    CRITICAL FUNCTION CALL RULES:
-    - When you decide to call a function (call_rag_system or end_conversation), DO NOT also generate a text response. ONLY call the function with no extra text.
-    - NEVER output function call syntax as text. Use the tool calling mechanism only.
-    - If you call call_rag_system, your entire response should be ONLY the function call. Do not add any text before or after it.
 # A2UI (Agentic UI) Configuration
 # Visual response generation system for dynamic UI components
 a2ui:
