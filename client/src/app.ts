@@ -19,7 +19,8 @@ import {
   RTVIEvent,
 } from '@pipecat-ai/client-js';
 import {
-  WebSocketTransport
+  WebSocketTransport,
+  ProtobufFrameSerializer,
 } from "@pipecat-ai/websocket-transport";
 
 // A2UI imports
@@ -2024,7 +2025,27 @@ class VoiceScannerApp {
       const backendUrl = this.getBackendUrl();
       this.log(`Connecting to ${backendUrl}...`);
 
-      this.transport = new WebSocketTransport();
+      // Wrap the default protobuf serializer to handle text WebSocket messages
+      // Pipecat backend sends some frames (e.g., emotion detection) as JSON text
+      // instead of binary protobuf; the default serializer only handles binary Blobs
+      const protobuf = new ProtobufFrameSerializer();
+      const serializer = {
+        serialize: protobuf.serialize.bind(protobuf),
+        serializeAudio: protobuf.serializeAudio.bind(protobuf),
+        serializeMessage: protobuf.serializeMessage.bind(protobuf),
+        async deserialize(data: any) {
+          if (typeof data === 'string') {
+            try {
+              const msg = JSON.parse(data);
+              return { type: 'message' as const, message: msg };
+            } catch {
+              return { type: 'raw' as const, message: data };
+            }
+          }
+          return protobuf.deserialize(data);
+        },
+      };
+      this.transport = new WebSocketTransport({ serializer });
       const config: PipecatClientOptions = {
         transport: this.transport,
         enableMic: true,
