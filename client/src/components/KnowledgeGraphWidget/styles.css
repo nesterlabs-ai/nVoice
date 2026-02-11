@@ -164,13 +164,10 @@
   background: transparent !important;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
+/* Responsive: apply at 1024px, 820px, 768px and below */
+@media (max-width: 1024px) {
   .knowledge-graph-widget {
-    width: 280px;
     height: 240px;
-    bottom: 10px;
-    left: 10px;
   }
 }
 
