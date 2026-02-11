@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { TopicNode } from './topicExtraction';
+import type { EmotionTopicNode } from './types';
+import './EmotionAnalysis.css';
 
-interface EmotionAnalysisProps {
-  topics: TopicNode[];
-  scrollRef: React.RefObject<HTMLDivElement | null>;
-  onScroll: () => void;
+export interface EmotionAnalysisProps {
+  topics: EmotionTopicNode[];
+  /** Optional: hide the header when embedded in another card */
+  hideTitle?: boolean;
 }
 
 const sentimentToEmoji: { [key: string]: string } = {
@@ -16,7 +17,7 @@ const sentimentToEmoji: { [key: string]: string } = {
   'Concerned': '😟',
 };
 
-function calculateEmotionMetrics(topic: TopicNode) {
+function calculateEmotionMetrics(topic: EmotionTopicNode) {
   let valence = 0.5;
   if (topic.sentiment === 'positive') valence = 0.2 + topic.intensity * 0.6;
   if (topic.sentiment === 'negative') valence = 0.2 - topic.intensity * 0.2;
@@ -28,14 +29,14 @@ function calculateEmotionMetrics(topic: TopicNode) {
   return { valence, arousal, dominance };
 }
 
-export function EmotionAnalysis({ topics, scrollRef, onScroll }: EmotionAnalysisProps) {
+export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
 
   const handleScrollInternal = () => {
     if (scrollRef.current) setScrollLeft(scrollRef.current.scrollLeft);
-    onScroll();
   };
 
   const leftPadding = 90;
@@ -67,7 +68,7 @@ export function EmotionAnalysis({ topics, scrollRef, onScroll }: EmotionAnalysis
   };
 
   const { chartWidth, startTime, timeMarks } = getTimeBasedPositions();
-  const getTopicX = (topic: TopicNode) => {
+  const getTopicX = (topic: EmotionTopicNode) => {
     const elapsedSeconds = (topic.timestamp.getTime() - startTime) / 1000;
     return leftPadding + elapsedSeconds * pixelsPerSecond;
   };
@@ -101,19 +102,21 @@ export function EmotionAnalysis({ topics, scrollRef, onScroll }: EmotionAnalysis
   const totalWidth = leftPadding + chartWidth + rightPadding;
 
   return (
-    <div className="sync-card">
-      <div className="sync-card-header">
-        <h2 className="sync-card-title">EMOTION ANALYSIS</h2>
-      </div>
-      <div className="sync-card-body">
+    <div className="emotion-analysis-card">
+      {!hideTitle && (
+        <div className="emotion-analysis-header">
+          <h2 className="emotion-analysis-title">EMOTION ANALYSIS</h2>
+        </div>
+      )}
+      <div className="emotion-analysis-body">
         {topics.length === 0 ? (
-          <div className="sync-empty-state">
+          <div className="emotion-analysis-empty">
             <p>Emotion data will appear here as you speak</p>
           </div>
         ) : (
           <>
-            <div ref={scrollRef} className="sync-scroll-area" onScroll={handleScrollInternal}>
-              <div ref={containerRef} className="sync-chart-inner" style={{ height: `${chartHeight}px`, width: `${totalWidth}px` }}>
+            <div ref={scrollRef} className="emotion-analysis-scroll" onScroll={handleScrollInternal}>
+              <div ref={containerRef} className="emotion-analysis-chart-inner" style={{ height: `${chartHeight}px`, width: `${totalWidth}px` }}>
                 <svg ref={svgRef} width={totalWidth} height={chartHeight}>
                   <g opacity={0.3}>
                     {[0, 0.2, 0.4, 0.6, 0.8, 1.0].map((value) => {
@@ -155,7 +158,7 @@ export function EmotionAnalysis({ topics, scrollRef, onScroll }: EmotionAnalysis
                 </svg>
               </div>
             </div>
-            <div className="sync-sticky-y" style={{ width: `${leftPadding}px` }}>
+            <div className="emotion-analysis-sticky-y" style={{ width: `${leftPadding}px` }}>
               <svg width={leftPadding} height="100%">
                 <g>
                   {[1.0, 0.8, 0.6, 0.4, 0.2, 0.0].map((value) => {
@@ -168,7 +171,7 @@ export function EmotionAnalysis({ topics, scrollRef, onScroll }: EmotionAnalysis
                 </g>
               </svg>
             </div>
-            <div className="sync-sticky-x">
+            <div className="emotion-analysis-sticky-x">
               <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
                 <line x1={leftPadding} y1={0} x2={leftPadding + chartWidth} y2={0} stroke="#4b5563" strokeWidth={1} />
                 {timeMarks.map((mark, index) => (
@@ -181,20 +184,22 @@ export function EmotionAnalysis({ topics, scrollRef, onScroll }: EmotionAnalysis
           </>
         )}
       </div>
-      <div className="sync-legend">
-        <div className="sync-legend-item">
-          <div className="sync-legend-dot cyan" />
-          <span className="sync-legend-text">Valence</span>
+      <div className="emotion-analysis-legend">
+        <div className="emotion-analysis-legend-item">
+          <div className="emotion-analysis-legend-dot cyan" />
+          <span className="emotion-analysis-legend-text">Valence</span>
         </div>
-        <div className="sync-legend-item">
-          <div className="sync-legend-dot orange" />
-          <span className="sync-legend-text">Arousal</span>
+        <div className="emotion-analysis-legend-item">
+          <div className="emotion-analysis-legend-dot orange" />
+          <span className="emotion-analysis-legend-text">Arousal</span>
         </div>
-        <div className="sync-legend-item">
-          <div className="sync-legend-dot purple" />
-          <span className="sync-legend-text">Dominance</span>
+        <div className="emotion-analysis-legend-item">
+          <div className="emotion-analysis-legend-dot purple" />
+          <span className="emotion-analysis-legend-text">Dominance</span>
         </div>
       </div>
     </div>
   );
 }
+
+export default EmotionAnalysis;

@@ -1,6 +1,5 @@
 import { useRef, useEffect } from 'react';
 import { TopicFlowGraph } from './TopicFlowGraph';
-import { EmotionAnalysis } from './EmotionAnalysis';
 import { TopicNode } from './topicExtraction';
 
 interface SynchronizedAnalysisProps {
@@ -8,36 +7,18 @@ interface SynchronizedAnalysisProps {
 }
 
 export function SynchronizedAnalysis({ topics }: SynchronizedAnalysisProps) {
-  const conversationScrollRef = useRef<HTMLDivElement>(null);
-  const emotionScrollRef = useRef<HTMLDivElement>(null);
-  const isSyncingRef = useRef(false);
-
-  const handleConversationScroll = () => {
-    if (isSyncingRef.current || !conversationScrollRef.current || !emotionScrollRef.current) return;
-    isSyncingRef.current = true;
-    emotionScrollRef.current.scrollLeft = conversationScrollRef.current.scrollLeft;
-    requestAnimationFrame(() => { isSyncingRef.current = false; });
-  };
-
-  const handleEmotionScroll = () => {
-    if (isSyncingRef.current || !conversationScrollRef.current || !emotionScrollRef.current) return;
-    isSyncingRef.current = true;
-    conversationScrollRef.current.scrollLeft = emotionScrollRef.current.scrollLeft;
-    requestAnimationFrame(() => { isSyncingRef.current = false; });
-  };
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (topics.length > 0 && conversationScrollRef.current && emotionScrollRef.current) {
-      const scrollLeft = Math.max(0, conversationScrollRef.current.scrollWidth - conversationScrollRef.current.clientWidth);
-      conversationScrollRef.current.scrollTo({ left: scrollLeft, behavior: 'smooth' });
-      emotionScrollRef.current.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+    if (topics.length > 0 && scrollRef.current) {
+      const scrollLeft = Math.max(0, scrollRef.current.scrollWidth - scrollRef.current.clientWidth);
+      scrollRef.current.scrollTo({ left: scrollLeft, behavior: 'smooth' });
     }
   }, [topics.length]);
 
   return (
     <div className="sync-analysis">
-      <TopicFlowGraph topics={topics} scrollRef={conversationScrollRef} onScroll={handleConversationScroll} />
-      <EmotionAnalysis topics={topics} scrollRef={emotionScrollRef} onScroll={handleEmotionScroll} />
+      <TopicFlowGraph topics={topics} scrollRef={scrollRef} onScroll={() => {}} />
     </div>
   );
 }

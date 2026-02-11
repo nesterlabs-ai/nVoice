@@ -873,6 +873,7 @@ class VoiceScannerApp {
       const topics = extractTopicsFromMessages(this.conversationMessages);
       const topicNodes = layoutTopics(topics);
       (window as any).SynchronizedAnalysis?.updateTopics?.(topicNodes);
+      (window as any).EmotionAnalysis?.updateTopics?.(topicNodes);
     } catch (e) {
       console.warn('[SynchronizedAnalysis] Failed to refresh:', e);
     }

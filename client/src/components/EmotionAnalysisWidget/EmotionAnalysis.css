@@ -1,0 +1,107 @@
+/* EmotionAnalysisWidget - standalone styles */
+
+.emotion-analysis-card {
+  background: #000;
+  border: 1px solid #1f2937;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.emotion-analysis-header {
+  padding: 1rem;
+  border-bottom: 1px solid #1f2937;
+  flex-shrink: 0;
+}
+
+.emotion-analysis-title {
+  color: #fff;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.875rem;
+  letter-spacing: 0.05em;
+}
+
+.emotion-analysis-body {
+  flex: 1;
+  position: relative;
+}
+
+.emotion-analysis-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.emotion-analysis-chart-inner {
+  position: relative;
+}
+
+.emotion-analysis-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.emotion-analysis-legend {
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  border-top: 1px solid #1f2937;
+  flex-shrink: 0;
+}
+
+.emotion-analysis-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.emotion-analysis-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.emotion-analysis-legend-dot.cyan { background: #06b6d4; }
+.emotion-analysis-legend-dot.orange { background: #f97316; }
+.emotion-analysis-legend-dot.purple { background: #a855f7; }
+
+.emotion-analysis-legend-text {
+  color: #9ca3af;
+  font-size: 0.75rem;
+}
+
+.emotion-analysis-sticky-y {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 3.5rem;
+  background: #000;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.emotion-analysis-sticky-x {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #000;
+  pointer-events: none;
+  z-index: 10;
+  border-top: 1px solid #1f2937;
+  height: 56px;
+}
+
+/* When embedded below EMOTION ANALYSIS card */
+.emotion-analysis-topic .emotion-analysis-card {
+  height: 240px;
+  margin-top: 0.75rem;
+}
