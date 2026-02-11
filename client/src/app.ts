@@ -14,8 +14,8 @@
  */
 
 import {
-  RTVIClient,
-  RTVIClientOptions,
+  PipecatClient,
+  PipecatClientOptions,
   RTVIEvent,
 } from '@pipecat-ai/client-js';
 import {
@@ -37,7 +37,7 @@ import { Loader } from './components/Loader';
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 class VoiceScannerApp {
-  private rtviClient: RTVIClient | null = null;
+  private rtviClient: PipecatClient | null = null;
   private transport: WebSocketTransport | null = null;
   private botPlayerAnalyser: AnalyserNode | null = null;
   private botPlayerDataArray: Uint8Array | null = null;
@@ -2025,12 +2025,8 @@ class VoiceScannerApp {
       this.log(`Connecting to ${backendUrl}...`);
 
       this.transport = new WebSocketTransport();
-      const config: RTVIClientOptions = {
+      const config: PipecatClientOptions = {
         transport: this.transport,
-        params: {
-          baseUrl: backendUrl,
-          endpoints: { connect: '/connect' },
-        },
         enableMic: true,
         enableCam: false,
         callbacks: {
@@ -2189,11 +2185,13 @@ class VoiceScannerApp {
         },
       };
 
-      this.rtviClient = new RTVIClient(config);
+      this.rtviClient = new PipecatClient(config);
       this.setupTrackListeners();
 
       await this.rtviClient.initDevices();
-      await this.rtviClient.connect();
+      await this.rtviClient.startBotAndConnect({
+        endpoint: `${backendUrl}/connect`,
+      });
 
     } catch (error) {
       this.isConnecting = false;
