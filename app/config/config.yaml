@@ -214,7 +214,7 @@ server:
   # With endpointing=300ms, transcriptions arrive fast so min_words must be higher
   interruption:
     enabled: true          # Enable barge-in support
-    min_words: 2           # Require 2+ words to interrupt (allows quick "stop it", "wait wait")
+    min_words: 0           # IMMEDIATE: 0 = any speech stops TTS instantly (no word count check)
 
   # Smart interruption - Context-aware validation
   # Prevents false interruptions from background conversations/TV/music

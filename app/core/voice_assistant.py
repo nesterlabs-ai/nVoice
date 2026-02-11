@@ -88,8 +88,7 @@ class VoiceAssistant:
         # then allows all user input through (including barge-in interruptions)
         # Self-interruption prevention relies on:
         #   1. Client-side echoCancellation: true (getUserMedia constraint)
-        #   2. MinWordsInterruptionStrategy(min_words=4) - filters noise/backchannel
-        #   3. Strict VAD params (confidence=0.88, min_volume=0.65)
+        #   2. VAD params (confidence=0.7, min_volume=0.5, start_secs=0.2)
         self.stt_mute_filter = STTMuteFilter(
             config=STTMuteConfig(strategies={STTMuteStrategy.MUTE_UNTIL_FIRST_BOT_COMPLETE})
         )
@@ -317,17 +316,21 @@ class VoiceAssistant:
             allow_interruptions=True,  # Enable barge-in - user can interrupt bot speech
         )
 
-        # Add interruption strategy if available
-        # Note: This ONLY applies when interrupting bot speech
-        # Normal input (when bot is silent) accepts any speech including "hello"
-        if INTERRUPTION_STRATEGY_AVAILABLE:
-            server_config = self.config.get("server", {})
-            interruption_config = server_config.get("interruption", {})
-            min_words = interruption_config.get("min_words", 4)
+        # Interruption strategy configuration
+        # When interruption_strategies is set, pipecat DEFERS interruption to the
+        # LLM aggregator (waits for word count check). When empty, pipecat sends
+        # InterruptionFrame IMMEDIATELY on any UserStartedSpeakingFrame during bot speech.
+        # Using immediate interruption for reliable barge-in behavior.
+        server_config = self.config.get("server", {})
+        interruption_config = server_config.get("interruption", {})
+        min_words = interruption_config.get("min_words", 0)
+
+        if INTERRUPTION_STRATEGY_AVAILABLE and min_words > 0:
             pipeline_params.interruption_strategies = [MinWordsInterruptionStrategy(min_words=min_words)]
-            logger.info(f"🎤 Interruption enabled: MinWordsInterruptionStrategy (min_words={min_words})")
+            logger.info(f"🎤 Interruption: DEFERRED mode (MinWords={min_words})")
         else:
-            logger.warning("⚠️ Interruption strategy not available - using basic allow_interruptions")
+            # No strategies = immediate interruption on any speech during bot output
+            logger.info(f"🎤 Interruption: IMMEDIATE mode (any speech stops TTS)")
 
         self.task = PipelineTask(
             self.pipeline,
