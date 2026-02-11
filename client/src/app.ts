@@ -30,6 +30,9 @@ import { A2UIDocument, isA2UIUpdate } from './types/a2ui';
 import { EmotionChart } from './components/EmotionChart';
 // Topic Timeline import
 import { TopicTimeline } from './components/TopicTimeline';
+// Synchronized Analysis (Topic Flow + Emotion)
+import { extractTopicsFromMessages, layoutTopics } from './components/SynchronizedAnalysisWidget/topicExtraction';
+import type { Message } from './components/SynchronizedAnalysisWidget/topicExtraction';
 // Wave Visualization Config
 import { waveConfig } from './config/waveVisualization';
 import { Loader } from './components/Loader';
@@ -155,6 +158,10 @@ class VoiceScannerApp {
   // Emotion-reactive UI state
   private lastEmotionUpdate: number = 0;
   private emotionUpdateDebounceMs: number = 100;
+
+  // Conversation messages for SynchronizedAnalysis (Topic Flow + Emotion)
+  private conversationMessages: Message[] = [];
+  private messageIdCounter: number = 0;
 
   constructor() {
     console.log("Nester AI Voice Scanner initializing...");
@@ -859,6 +866,19 @@ class VoiceScannerApp {
   }
 
   /**
+   * Refresh SynchronizedAnalysis widget with current conversation messages
+   */
+  private refreshSynchronizedAnalysis(): void {
+    try {
+      const topics = extractTopicsFromMessages(this.conversationMessages);
+      const topicNodes = layoutTopics(topics);
+      (window as any).SynchronizedAnalysis?.updateTopics?.(topicNodes);
+    } catch (e) {
+      console.warn('[SynchronizedAnalysis] Failed to refresh:', e);
+    }
+  }
+
+  /**
    * Add transcript bubble to conversation
    */
   private addTranscript(text: string, isUser: boolean): void {
@@ -866,6 +886,27 @@ class VoiceScannerApp {
 
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
+
+    // Push to conversation messages for SynchronizedAnalysis (before accumulatingBotAnswer is cleared)
+    if (isUser) {
+      if (this.accumulatedBotAnswer.trim()) {
+        this.conversationMessages.push({
+          id: `msg-${this.messageIdCounter++}`,
+          text: this.accumulatedBotAnswer.trim(),
+          timestamp: new Date(),
+          isFinal: true,
+          speaker: 'ai',
+        });
+      }
+      this.conversationMessages.push({
+        id: `msg-${this.messageIdCounter++}`,
+        text,
+        timestamp: new Date(),
+        isFinal: true,
+        speaker: 'user',
+      });
+      this.refreshSynchronizedAnalysis();
+    }
 
     this.updateLiveSubtitle(isUser ? 'user' : 'bot', text);
 
@@ -2244,6 +2285,10 @@ class VoiceScannerApp {
         this.topicTimeline.clear();
       }
       this.previousTopics = [];
+
+      // Clear conversation messages and SynchronizedAnalysis
+      this.conversationMessages = [];
+      this.refreshSynchronizedAnalysis();
 
       this.isConnecting = false;
       this.isConnected = false;

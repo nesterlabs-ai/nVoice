@@ -32,7 +32,7 @@
 
   /* Layout */
   --header-height: 0px;
-  --panel-width: 320px;
+  --panel-width: 560px;
   --panel-gap: 24px;
   --panel-radius: 4px;
 
@@ -368,6 +368,13 @@ body {
 }
 
 /* ===== KNOWLEDGE GRAPH PANEL ===== */
+.synchronized-analysis-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+
 .knowledge-graph-panel {
   flex: 1;
   min-height: 0;
