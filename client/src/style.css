@@ -291,10 +291,12 @@ body {
 }
 
 .dashboard-card-header {
-  padding: 12px 16px;
+  padding-top: 24px;
+  padding-left: 24px;
+  padding-right: 24px;
+  padding-bottom: 12px;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
@@ -311,7 +313,9 @@ body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 12px;
+  padding-left: 24px;
+  padding-right: 24px;
+  padding-bottom: 16px;
 }
 
 .dashboard-card-inner {
@@ -341,6 +345,131 @@ body {
   font-size: 12px;
   text-align: center;
   padding: 16px;
+}
+
+/* VISITOR INTENT card - matches design spec */
+.visitor-intent-card {
+  border-color: rgba(239, 51, 57, 0.25);
+  box-shadow: 0 0 12px rgba(239, 51, 57, 0.08);
+}
+
+.visitor-intent-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-family: var(--font-mono);
+}
+
+.visitor-intent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.visitor-intent-desc {
+  color: rgba(251, 251, 251, 0.75);
+  font-family: "JetBrains Mono";
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: normal;
+}
+
+.visitor-intent-confidence {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.visitor-intent-confidence .confidence-bar {
+  height: 6px;
+  background: rgba(239, 51, 57, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.visitor-intent-confidence .confidence-fill {
+  height: 100%;
+  background: var(--accent-hero);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.visitor-intent-confidence .confidence-label {
+  color: #FBFBFB;
+  font-family: "JetBrains Mono";
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.visitor-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.visitor-info-header {
+  color: #FBFBFB;
+  font-family: "JetBrains Mono";
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.visitor-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.visitor-info-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.visitor-info-col-label {
+  color: #FBFBFB;
+  font-family: "JetBrains Mono";
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.visitor-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.visitor-info-item {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.visitor-info-item .key {
+  color: #8DAAC0;
+  font-family: "JetBrains Mono";
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+  opacity: 0.8;
+}
+
+.visitor-info-item .value {
+  color: #FBFBFB;
+  font-family: "JetBrains Mono";
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
 }
 
 /* Dashboard card 4 - Emotion: compact layout */

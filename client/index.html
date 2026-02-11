@@ -77,13 +77,40 @@
           <div id="knowledge-graph-root" class="dashboard-card-inner"></div>
         </div>
       </div>
-      <div class="dashboard-card" id="dashboard-card-3">
+      <div class="dashboard-card visitor-intent-card" id="dashboard-card-3">
         <div class="dashboard-card-header">
           <span class="dashboard-card-label">VISITOR INTENT</span>
         </div>
-        <div class="dashboard-card-body">
-          <div class="dashboard-card-placeholder">
-            <p>Visitor intent and inferred goals will appear here</p>
+        <div class="dashboard-card-body visitor-intent-body">
+          <div class="visitor-intent-section">
+            <p class="visitor-intent-desc" id="visitor-intent-desc">Visitor intent will appear here as you speak</p>
+            <div class="visitor-intent-confidence">
+              <div class="confidence-bar">
+                <div class="confidence-fill" id="visitor-intent-confidence-fill" style="width: 0%"></div>
+              </div>
+              <span class="confidence-label">CONFIDENCE</span>
+            </div>
+          </div>
+          <div class="visitor-info-section">
+            <h3 class="visitor-info-header">VISITOR INFO</h3>
+            <div class="visitor-info-grid">
+              <div class="visitor-info-col observed">
+                <span class="visitor-info-col-label">OBSERVED</span>
+                <div class="visitor-info-list" id="visitor-observed-list">
+                  <div class="visitor-info-item"><span class="key">Language:</span> <span class="value" id="visitor-language">English</span></div>
+                  <div class="visitor-info-item"><span class="key">Issue:</span> <span class="value" id="visitor-issue">Account</span></div>
+                  <div class="visitor-info-item"><span class="key">Platform:</span> <span class="value" id="visitor-platform">Desktop Web</span></div>
+                </div>
+              </div>
+              <div class="visitor-info-col inferred">
+                <span class="visitor-info-col-label">INFERRED</span>
+                <div class="visitor-info-list" id="visitor-inferred-list">
+                  <div class="visitor-info-item"><span class="key">Tech Level:</span> <span class="value" id="visitor-tech-level">Intermediate</span></div>
+                  <div class="visitor-info-item"><span class="key">Urgency:</span> <span class="value" id="visitor-urgency">High</span></div>
+                  <div class="visitor-info-item"><span class="key">Prior contact:</span> <span class="value" id="visitor-prior-contact">Yes (2 times)</span></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
