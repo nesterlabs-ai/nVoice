@@ -54,18 +54,45 @@
     </div>
   </header> -->
 
-  <!-- Main Layout (panels hidden by default; use Peak in media bar to show) -->
+  <!-- Main Layout -->
   <main class="main-layout panels-hidden">
     <img src="/dots.svg" alt="" class="main-layout-dots" aria-hidden="true" />
 
-    <!-- LEFT PANEL: Emotion Metrics -->
-    <aside class="left-panel">
-      <div class="panel emotion-panel" id="emotion-panel">
-        <div class="panel-header">
-          <span class="panel-label">EMOTION METRICS</span>
+    <!-- 6-Card Dashboard Grid (visible when Peak/dashboard mode) -->
+    <div class="dashboard-grid" id="dashboard-grid" aria-hidden="true">
+      <!-- Row 1 -->
+      <div class="dashboard-card" id="dashboard-card-1">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">CONVERSATION ANALYSIS</span>
         </div>
-        <div class="panel-body">
-          <!-- Current Emotion Display -->
+        <div class="dashboard-card-body">
+          <div id="synchronized-analysis-root" class="dashboard-card-inner"></div>
+        </div>
+      </div>
+      <div class="dashboard-card" id="dashboard-card-2">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">KNOWLEDGE GRAPH</span>
+        </div>
+        <div class="dashboard-card-body">
+          <div id="knowledge-graph-root" class="dashboard-card-inner"></div>
+        </div>
+      </div>
+      <div class="dashboard-card" id="dashboard-card-3">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">VISITOR INTENT</span>
+        </div>
+        <div class="dashboard-card-body">
+          <div class="dashboard-card-placeholder">
+            <p>Visitor intent and inferred goals will appear here</p>
+          </div>
+        </div>
+      </div>
+      <!-- Row 2 -->
+      <div class="dashboard-card" id="dashboard-card-4">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">EMOTION ANALYSIS</span>
+        </div>
+        <div class="dashboard-card-body">
           <div class="emotion-display">
             <span class="emotion-emoji" id="emotion-emoji">😊</span>
             <div class="emotion-info">
@@ -73,8 +100,6 @@
               <span class="emotion-confidence">Confidence: <span id="emotion-confidence">0%</span></span>
             </div>
           </div>
-
-          <!-- Emotion Line Chart -->
           <div class="emotion-chart-section">
             <canvas id="emotion-chart-canvas"></canvas>
             <div class="chart-legend">
@@ -85,13 +110,40 @@
           </div>
         </div>
       </div>
+      <div class="dashboard-card" id="dashboard-card-5">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">TONE MODULATOR</span>
+        </div>
+        <div class="dashboard-card-body">
+          <div class="dashboard-card-placeholder">
+            <p>Tone and voice control metrics will appear here</p>
+          </div>
+        </div>
+      </div>
+      <div class="dashboard-card" id="dashboard-card-6">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">TRANSCRIPT</span>
+          <span class="status-dot active" id="transcript-status-dot" aria-hidden="true"></span>
+          <span id="transcript-status" class="hidden">READY</span>
+        </div>
+        <div class="dashboard-card-body conversation-body" id="transcript-list">
+          <div class="welcome-message" id="welcome-message">
+            <div class="welcome-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+            </div>
+            <div class="welcome-text">CONVERSATION LOG</div>
+            <div class="welcome-sub">Messages will appear here</div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-      <!-- Synchronized Analysis (Topic Flow + Emotion) -->
-      <div id="synchronized-analysis-root" class="panel synchronized-analysis-panel"></div>
-
-      <!-- Knowledge Graph Widget -->
-      <div id="knowledge-graph-root" class="panel knowledge-graph-panel"></div>
-
+    <!-- Legacy left panel (hidden when dashboard shown) -->
+    <aside class="left-panel legacy-panel">
+      <div class="panel emotion-panel hidden" id="emotion-panel-legacy"></div>
+      <div class="panel knowledge-graph-panel hidden" id="knowledge-graph-legacy"></div>
     </aside>
 
     <!-- CENTER: Connect Button & Wave Visualizer -->
@@ -180,26 +232,8 @@
       </div>
     </section>
 
-    <!-- RIGHT PANEL: Conversation Log + Terminal -->
+    <!-- RIGHT PANEL (hidden when dashboard shown) -->
     <aside class="right-panel">
-      <!-- Conversation Panel (takes more space) -->
-      <div class="panel conversation-panel">
-        <div class="panel-header">
-          <span class="panel-label">CONVERSATION</span>
-        </div>
-        <div class="conversation-body" id="transcript-list">
-          <div class="welcome-message" id="welcome-message">
-            <div class="welcome-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              </svg>
-            </div>
-            <div class="welcome-text">CONVERSATION LOG</div>
-            <div class="welcome-sub">Messages will appear here</div>
-          </div>
-        </div>
-      </div>
-
       <!-- Topic Timeline Panel -->
       <div class="panel topic-timeline-panel">
         <div class="panel-header">

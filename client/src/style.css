@@ -238,7 +238,6 @@ body {
 }
 
 /* ===== MAIN LAYOUT ===== */
-/* Center (L78) fills full width; left/right panels overlay on top */
 .main-layout {
   position: fixed;
   top: var(--header-height);
@@ -247,6 +246,157 @@ body {
   bottom: 0;
   padding: 0;
   overflow: hidden;
+}
+
+/* ===== 6-CARD DASHBOARD GRID ===== */
+.dashboard-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 12px;
+  padding: 12px;
+  padding-bottom: 72px; /* Space for floating control bar */
+  overflow: hidden;
+  z-index: 5;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--transition-medium), visibility var(--transition-medium), pointer-events 0s var(--transition-medium);
+}
+
+.main-layout:not(.panels-hidden) .dashboard-grid {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.dashboard-card {
+  background: var(--bg-panel);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--panel-radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.dashboard-card-header {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.dashboard-card-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--text-secondary);
+}
+
+.dashboard-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.dashboard-card-inner {
+  height: 100%;
+  min-height: 120px;
+}
+
+/* SynchronizedAnalysis in card 1: compact to fit dashboard card */
+#dashboard-card-1 .sync-analysis {
+  gap: 8px;
+  height: 100%;
+  overflow: auto;
+}
+
+#dashboard-card-1 .sync-card {
+  height: 180px;
+  flex-shrink: 0;
+}
+
+.dashboard-card-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 16px;
+}
+
+/* Dashboard card 4 - Emotion: compact layout */
+#dashboard-card-4 .dashboard-card-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#dashboard-card-4 .emotion-display {
+  margin-bottom: 0;
+}
+
+#dashboard-card-4 .emotion-chart-section {
+  flex: 1;
+  min-height: 0;
+}
+
+#dashboard-card-4 .emotion-chart-section canvas {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 80px;
+}
+
+/* Dashboard card 6 - Transcript */
+#dashboard-card-6 .dashboard-card-body {
+  padding: 0;
+}
+
+#dashboard-card-6 .dashboard-card-body.conversation-body {
+  padding: 12px;
+}
+
+/* Responsive: tablet - 2 columns */
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+  }
+}
+
+/* Responsive: mobile - 1 column */
+@media (max-width: 640px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(6, minmax(140px, 1fr));
+    gap: 8px;
+    padding: 8px;
+    padding-bottom: 64px;
+  }
+
+  .dashboard-card-header {
+    padding: 10px 12px;
+  }
+
+  .dashboard-card-label {
+    font-size: 9px;
+  }
+
+  .dashboard-card-body {
+    padding: 8px;
+  }
 }
 
 /* dots.svg layer on top of main layout */
@@ -286,7 +436,7 @@ body {
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
 }
 
-/* When panels hidden: slide off-screen so center gets full width */
+/* When panels hidden: slide off-screen; when visible, show dashboard (hide legacy panels) */
 .main-layout.panels-hidden .left-panel {
   transform: translateX(calc(-100% - var(--panel-gap)));
   visibility: hidden;
@@ -299,6 +449,18 @@ body {
   visibility: hidden;
   pointer-events: none;
   transition: transform var(--transition-medium), visibility var(--transition-medium), pointer-events 0s var(--transition-medium);
+}
+
+/* When dashboard visible (Peak): hide legacy left/right, keep center for wave/control bar */
+.main-layout:not(.panels-hidden) .left-panel.legacy-panel,
+.main-layout:not(.panels-hidden) .right-panel {
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(calc(-100% - var(--panel-gap)));
+}
+
+.main-layout:not(.panels-hidden) .right-panel {
+  transform: translateX(calc(100% + var(--panel-gap)));
 }
 
 .panel {
@@ -713,6 +875,7 @@ body {
   left: 50%;
   width: 427px;
   transform: translateX(-50%);
+  z-index: 100; /* Float above dashboard grid */
   margin-bottom: 0;
   z-index: 6;
   /* Figma Spring approx: Mass 1, Stiffness 151.5, Damping 18.46 */
