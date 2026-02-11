@@ -1,0 +1,123 @@
+.tone-modulator-widget {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.tone-modulator-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tone-modulator-title {
+  display: none;
+}
+
+.tone-modulator-pills {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.tone-pill {
+  color: var(--text-secondary, #B0B0B0);
+  font-feature-settings: 'liga' off, 'clig' off;
+  font-family: "JetBrains Mono";
+  font-size: 6px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 8.083px;
+  /* 134.717% */
+  letter-spacing: -0.202px;
+}
+
+.tone-pill-detected {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tone-pill-response {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.tone-pill-emoji,
+.tone-pill-icon {
+  font-size: 14px;
+}
+
+.tone-pill-connector {
+  flex: 1;
+  min-width: 16px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(236, 72, 153, 0.5), rgba(236, 72, 153, 0.2));
+  margin: 0 4px;
+}
+
+.tone-voice-title {
+  color: rgba(251, 251, 251, 0.75);
+  font-family: "JetBrains Mono";
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: normal;
+}
+
+.tone-chart-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tone-chart-label {
+  color: rgba(255, 255, 255, 0.75);
+  font-family: "JetBrains Mono";
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.tone-mini-chart {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tone-chart-y-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 56px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 9px;
+  color: #ef4444;
+}
+
+.tone-chart-y-top {
+  line-height: 1;
+}
+
+.tone-chart-y-bottom {
+  line-height: 1;
+}
+
+.tone-chart-svg {
+  flex-shrink: 0;
+}
+
+.tone-chart-svg .tone-chart-x-label,
+.tone-chart-svg .tone-chart-y-value {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+
+.tone-chart-svg .tone-chart-y-value {
+  fill: rgba(255, 255, 255, 0.5);
+}

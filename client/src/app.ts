@@ -1268,6 +1268,16 @@ class VoiceScannerApp {
     this.addTerminalMessage(`emotion.detect({type: '${data.emotion}', conf: ${(data.confidence * 100).toFixed(0)}%});`, 'command');
 
     this.log(`Emotion detected: ${emotionName} (${Math.round(data.confidence * 100)}%)`);
+
+    // Tone Modulator: detected emotion + Nester response + clarity/intensity from valence/arousal
+    if (typeof window !== 'undefined' && (window as unknown as { ToneModulator?: { update: (u: unknown) => void } }).ToneModulator?.update) {
+      (window as unknown as { ToneModulator: { update: (u: { detectedEmotion?: string; nesterResponse?: string; clarity?: number; intensity?: number }) => void } }).ToneModulator.update({
+        detectedEmotion: data.emotion,
+        nesterResponse: data.tone ?? undefined,
+        clarity: (data.valence + 1) / 2,
+        intensity: (data.arousal + 1) / 2,
+      });
+    }
   }
 
   /**
@@ -1330,6 +1340,15 @@ class VoiceScannerApp {
     this.addTerminalMessage(terminalMsg, 'command');
 
     this.log(`🔄 Hybrid Emotion: ${emotionName} (${Math.round(data.confidence * 100)}%) | Audio: ${data.audio_emotion} ${audioPercent}% | Text: ${data.text_emotion} ${textPercent}%`);
+
+    // Tone Modulator: detected emotion + clarity/intensity from valence/arousal
+    if (typeof window !== 'undefined' && (window as unknown as { ToneModulator?: { update: (u: unknown) => void } }).ToneModulator?.update) {
+      (window as unknown as { ToneModulator: { update: (u: { detectedEmotion?: string; clarity?: number; intensity?: number }) => void } }).ToneModulator.update({
+        detectedEmotion: data.primary_emotion,
+        clarity: (data.valence + 1) / 2,
+        intensity: (data.arousal + 1) / 2,
+      });
+    }
   }
 
   /**
@@ -1351,6 +1370,11 @@ class VoiceScannerApp {
 
     if (this.toneLabel) {
       this.toneLabel.textContent = displayName;
+    }
+
+    // Tone Modulator: Nester response tone
+    if (typeof window !== 'undefined' && (window as unknown as { ToneModulator?: { update: (u: unknown) => void } }).ToneModulator?.update) {
+      (window as unknown as { ToneModulator: { update: (u: { nesterResponse?: string }) => void } }).ToneModulator.update({ nesterResponse: tone });
     }
 
     this.addTerminalMessage(`voice.tone.switch('${tone}');`, 'command');
