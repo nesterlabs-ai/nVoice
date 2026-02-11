@@ -1227,12 +1227,12 @@ body {
   /* Space for larger wave */
 }
 
-/* Back button (pill, white, dark border) */
+/* Back button (pill, white, dark border) - below dashboard cards layer */
 .back-btn {
   position: absolute;
   top: 81px;
   left: 155px;
-  z-index: 9;
+  z-index: 2;
   cursor: pointer;
   display: inline-flex;
   height: 32px;
