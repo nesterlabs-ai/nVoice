@@ -1,23 +1,25 @@
-# Deploy to AWS Lightsail
-# Triggers on push to main branch or manual dispatch
+# Deploy to EC2 Graviton (ARM64)
+# Parallel test deployment for benchmarking emotion detection on ARM architecture
+#
+# Triggers on push to graviton-test branch or manual dispatch
 #
 # Required GitHub Secrets:
 #   AWS_ACCESS_KEY_ID     - AWS credentials with ECR push permissions
 #   AWS_SECRET_ACCESS_KEY - AWS credentials
 #   AWS_ACCOUNT_ID        - Your AWS account ID (e.g., 196061557238)
-#   LIGHTSAIL_SSH_KEY     - Private SSH key for Lightsail instance
-#   LIGHTSAIL_HOST        - Static IP of Lightsail instance
+#   GRAVITON_SSH_KEY      - Private SSH key for EC2 Graviton instance
+#   GRAVITON_HOST         - Elastic IP of Graviton instance
 
-name: Deploy to AWS
+name: Deploy to Graviton (ARM64)
 
 on:
   push:
-    branches: [main]
+    branches: [graviton-test]
     paths:
       - 'app/**'
       - 'client/**'
       - 'deployment/docker/**'
-      - '.github/workflows/deploy-aws.yml'
+      - '.github/workflows/deploy-graviton.yml'
   workflow_dispatch:
     inputs:
       force_build:
@@ -33,8 +35,8 @@ on:
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
-  ENVIRONMENT: ${{ vars.ENVIRONMENT || 'dev' }}
-  PUBLIC_URL: ${{ vars.PUBLIC_URL || 'https://ai.nesterlabs.com' }}
+  ENVIRONMENT: graviton-test
+  PUBLIC_URL: ${{ vars.GRAVITON_PUBLIC_URL || '' }}
 
 jobs:
   # Detect what changed to only build necessary images
@@ -59,16 +61,15 @@ jobs:
             frontend:
               - 'client/**'
             deployment:
-              - 'deployment/docker/docker-compose.prod.yml'
+              - 'deployment/docker/docker-compose.graviton.yml'
               - 'deployment/docker/Caddyfile.prod'
-              - 'deployment/docker/configure-docker-cloudwatch.sh'
 
-  # Build and push backend image
+  # Build and push backend image (ARM64)
   build-backend:
-    name: Build Backend
+    name: Build Backend (ARM64)
     needs: changes
     if: needs.changes.outputs.backend == 'true' || github.event.inputs.force_build == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm  # Native ARM64 runner - no QEMU emulation needed
     steps:
       - uses: actions/checkout@v4
 
@@ -85,25 +86,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push backend
+      - name: Build and push backend (ARM64)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: deployment/docker/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/arm64
           push: true
           tags: |
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-backend:latest
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-backend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-backend:latest
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-backend:${{ github.sha }}
+          cache-from: type=gha,scope=graviton-backend
+          cache-to: type=gha,scope=graviton-backend,mode=max
 
-  # Build and push frontend image
+  # Build and push frontend image (ARM64)
   build-frontend:
-    name: Build Frontend
+    name: Build Frontend (ARM64)
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || github.event.inputs.force_build == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm  # Native ARM64 runner
     steps:
       - uses: actions/checkout@v4
 
@@ -120,44 +121,29 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push frontend
+      - name: Build and push frontend (ARM64)
         uses: docker/build-push-action@v5
         with:
           context: ./client
           file: ./client/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/arm64
           push: true
           tags: |
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-frontend:latest
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-frontend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-frontend:latest
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-frontend:${{ github.sha }}
+          cache-from: type=gha,scope=graviton-frontend
+          cache-to: type=gha,scope=graviton-frontend,mode=max
 
-  # Config sync indicator (for visibility in Actions UI)
-  sync-config:
-    name: Sync Config
-    needs: changes
-    if: needs.changes.outputs.deployment == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Config changes detected
-        run: |
-          echo "::notice::Deployment config files changed - will sync to server"
-          echo "Files that trigger this job:"
-          echo "  - deployment/docker/docker-compose.prod.yml"
-          echo "  - deployment/docker/Caddyfile.prod"
-
-  # Deploy to Lightsail
+  # Deploy to Graviton EC2 instance
   deploy:
-    name: Deploy to Lightsail
-    needs: [changes, build-backend, build-frontend, sync-config]
+    name: Deploy to Graviton EC2
+    needs: [changes, build-backend, build-frontend]
     if: |
       always() &&
       github.event.inputs.skip_deploy != 'true' &&
       (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
       (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') &&
-      (needs.sync-config.result == 'success' || needs.sync-config.result == 'skipped') &&
-      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success' || needs.sync-config.result == 'success')
+      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success' || needs.changes.outputs.deployment == 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -166,27 +152,27 @@ jobs:
       - name: Copy deployment files to server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.LIGHTSAIL_HOST }}
+          host: ${{ secrets.GRAVITON_HOST }}
           username: ec2-user
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          source: "deployment/docker/docker-compose.prod.yml,deployment/docker/Caddyfile.prod,deployment/docker/configure-docker-cloudwatch.sh"
+          key: ${{ secrets.GRAVITON_SSH_KEY }}
+          source: "deployment/docker/docker-compose.graviton.yml,deployment/docker/Caddyfile.prod"
           target: "/tmp/deploy"
           strip_components: 2
 
-      - name: Deploy to Lightsail instance
+      - name: Deploy to Graviton instance
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.LIGHTSAIL_HOST }}
+          host: ${{ secrets.GRAVITON_HOST }}
           username: ec2-user
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          key: ${{ secrets.GRAVITON_SSH_KEY }}
           script: |
-            echo "=== Starting deployment ==="
+            echo "=== Starting Graviton deployment ==="
             cd /opt/nester
 
             # Update docker-compose.yml from repo
-            if [ -f /tmp/deploy/docker-compose.prod.yml ]; then
+            if [ -f /tmp/deploy/docker-compose.graviton.yml ]; then
               echo "Updating docker-compose.yml..."
-              sudo cp /tmp/deploy/docker-compose.prod.yml /opt/nester/docker-compose.yml
+              sudo cp /tmp/deploy/docker-compose.graviton.yml /opt/nester/docker-compose.yml
             fi
 
             # Update Caddyfile from repo (if exists)
@@ -195,28 +181,19 @@ jobs:
               sudo cp /tmp/deploy/Caddyfile.prod /opt/nester/Caddyfile
             fi
 
-            # Update CloudWatch config script (if exists)
-            if [ -f /tmp/deploy/configure-docker-cloudwatch.sh ]; then
-              echo "Updating configure-docker-cloudwatch.sh..."
-              sudo cp /tmp/deploy/configure-docker-cloudwatch.sh /opt/nester/configure-docker-cloudwatch.sh
-              sudo chmod +x /opt/nester/configure-docker-cloudwatch.sh
-              sudo chown ec2-user:ec2-user /opt/nester/configure-docker-cloudwatch.sh
-            fi
-
             # Clean up
             rm -rf /tmp/deploy
 
             # Run the deploy script (handles ECR login, pull, restart)
             ./deploy.sh
 
-            echo "=== Deployment complete ==="
+            echo "=== Graviton deployment complete ==="
 
   # Verify deployment
-  # Health check is mandatory - workflow fails if this fails
   verify:
     name: Health Check
     needs: [deploy]
-    if: always() && needs.deploy.result == 'success'
+    if: always() && needs.deploy.result == 'success' && env.PUBLIC_URL != ''
     runs-on: ubuntu-latest
     steps:
       - name: Wait for services to stabilize
@@ -241,21 +218,18 @@ jobs:
       - name: Summary
         if: success()
         run: |
-          echo "## Deployment Health Check Passed" >> $GITHUB_STEP_SUMMARY
-          echo "- Backend: ${{ env.PUBLIC_URL }}/health ✅" >> $GITHUB_STEP_SUMMARY
-          echo "- Frontend: ${{ env.PUBLIC_URL }}/ ✅" >> $GITHUB_STEP_SUMMARY
+          echo "## Graviton Deployment Health Check Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: ${{ env.PUBLIC_URL }}/health" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: ${{ env.PUBLIC_URL }}/" >> $GITHUB_STEP_SUMMARY
+          echo "- Architecture: ARM64 (Graviton)" >> $GITHUB_STEP_SUMMARY
 
   # Notify on failure
   notify:
     name: Notify on Failure
-    needs: [build-backend, build-frontend, sync-config, deploy, verify]
+    needs: [build-backend, build-frontend, deploy, verify]
     if: failure()
     runs-on: ubuntu-latest
     steps:
       - name: Send failure notification
         run: |
-          echo "::error::Deployment failed! Check the workflow logs for details."
-          # Add Slack/Discord notification here:
-          # curl -X POST -H 'Content-type: application/json' \
-          #   --data '{"text":"Deployment failed!"}' \
-          #   ${{ secrets.SLACK_WEBHOOK_URL }}
+          echo "::error::Graviton deployment failed! Check the workflow logs for details."

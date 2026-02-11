@@ -154,12 +154,12 @@ class SpeechToTextService:
 
             if detect_language:
                 live_options_config["detect_language"] = True
-            elif language == "multi" or language == "hi" or self.config.get("support_hinglish", False):
-                # Multi-language mode: Hindi + English (Hinglish) support via Deepgram Nova-3
-                live_options_config["language"] = "multi"
             else:
-                language_mapping = {"en": Language.EN, "hi": Language.HI}
-                live_options_config["language"] = language_mapping.get(language, Language.EN)
+                if language == "hi" or self.config.get("support_hinglish", False):
+                    live_options_config["language"] = "multi"
+                else:
+                    language_mapping = {"en": Language.EN, "hi": Language.HI}
+                    live_options_config["language"] = language_mapping.get(language, Language.EN)
 
             live_options = LiveOptions(**live_options_config)
             logger.info(
@@ -168,7 +168,7 @@ class SpeechToTextService:
             )
 
             self.stt_service = TextNormalizedDeepgramSTTService(
-                api_key=api_key, live_options=live_options
+                api_key=api_key, live_options=live_options, should_interrupt=False
             )
         else:
             raise ValueError(f"Unsupported STT provider: {self.stt_provider}")
