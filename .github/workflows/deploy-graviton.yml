@@ -166,6 +166,7 @@ jobs:
           username: ec2-user
           key: ${{ secrets.GRAVITON_SSH_KEY }}
           script: |
+            set -e
             echo "=== Starting Graviton deployment ==="
             cd /opt/nester
 
@@ -184,8 +185,22 @@ jobs:
             # Clean up
             rm -rf /tmp/deploy
 
-            # Run the deploy script (handles ECR login, pull, restart)
-            ./deploy.sh
+            # Refresh environment (best-effort, don't fail deploy if this errors)
+            ./deploy.sh || echo "WARNING: deploy.sh had errors, continuing with explicit pull/restart"
+
+            # Explicit ECR login, pull, and restart (ensures new images are always used)
+            echo "=== ECR login ==="
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+            echo "=== Pulling latest images ==="
+            docker compose pull
+
+            echo "=== Restarting services ==="
+            docker compose up -d --force-recreate
+
+            echo "=== Waiting for services to start ==="
+            sleep 10
+            docker compose ps
 
             echo "=== Graviton deployment complete ==="
 
