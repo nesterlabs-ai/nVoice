@@ -121,20 +121,14 @@
         </div>
       </div>
       <div class="dashboard-card" id="dashboard-card-6">
-        <div class="dashboard-card-header">
-          <span class="dashboard-card-label">TRANSCRIPT</span>
-          <span class="status-dot active" id="transcript-status-dot" aria-hidden="true"></span>
+        <div class="dashboard-card-header transcript-header">
+          <span class="status-dot active" id="transcript-status-dot"></span>
+          <span class="dashboard-card-label">Transcript in progress</span>
           <span id="transcript-status" class="hidden">READY</span>
         </div>
-        <div class="dashboard-card-body conversation-body" id="transcript-list">
-          <div class="welcome-message" id="welcome-message">
-            <div class="welcome-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              </svg>
-            </div>
-            <div class="welcome-text">CONVERSATION LOG</div>
-            <div class="welcome-sub">Messages will appear here</div>
+        <div class="dashboard-card-body transcript-log-body" id="transcript-list">
+          <div class="welcome-message transcript-welcome" id="welcome-message">
+            <span class="transcript-welcome-text">Messages will appear here</span>
           </div>
         </div>
       </div>

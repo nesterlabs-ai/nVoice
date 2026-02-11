@@ -119,14 +119,12 @@ body {
   font-family: inherit;
   font-size: inherit;
   letter-spacing: inherit;
-  background: linear-gradient(
-    90deg,
-    var(--text-secondary) 0%,
-    var(--text-secondary) 40%,
-    rgba(255, 255, 255, 0.9) 50%,
-    var(--text-secondary) 60%,
-    var(--text-secondary) 100%
-  );
+  background: linear-gradient(90deg,
+      var(--text-secondary) 0%,
+      var(--text-secondary) 40%,
+      rgba(255, 255, 255, 0.9) 50%,
+      var(--text-secondary) 60%,
+      var(--text-secondary) 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -135,8 +133,13 @@ body {
 }
 
 @keyframes loader-wave {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ===== NOTIFICATION ===== */
@@ -258,7 +261,8 @@ body {
   row-gap: 16px;
   column-gap: 16px;
   padding-top: 70px;
-  padding-bottom: 188px; /* Space for floating control bar */
+  padding-bottom: 188px;
+  /* Space for floating control bar */
   padding-left: 40px;
   padding-right: 40px;
   overflow: hidden;
@@ -289,18 +293,18 @@ body {
 .dashboard-card-header {
   padding: 12px 16px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .dashboard-card-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
+  color: #F5F5F5;
+  font-family: "JetBrains Mono";
+  font-size: 14px;
+  font-style: normal;
   font-weight: 500;
-  letter-spacing: 0.12em;
-  color: var(--text-secondary);
+  line-height: normal;
 }
 
 .dashboard-card-body {
@@ -367,8 +371,72 @@ body {
   padding: 0;
 }
 
-#dashboard-card-6 .dashboard-card-body.conversation-body {
-  padding: 12px;
+/* Transcript card - log style (timestamp + speaker + message) */
+.transcript-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.transcript-header .status-dot {
+  flex-shrink: 0;
+}
+
+.transcript-log-body {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 12px 16px !important;
+  overflow-y: auto;
+}
+
+.transcript-welcome {
+  flex: none !important;
+  padding: 24px 0 !important;
+  justify-content: flex-start !important;
+}
+
+.transcript-welcome-text {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.transcript-line {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.transcript-time {
+  color: #8DAAC0;
+  margin-right: 4px;
+}
+
+.transcript-speaker {
+  color: var(--text-primary);
+  margin-right: 4px;
+}
+
+.transcript-message {
+  display: inline;
+}
+
+.transcript-line-user .transcript-message {
+  color: #7DC8FF;
+  /* light blue for Visitor */
+}
+
+.transcript-line-bot .transcript-message {
+  color: #B5252B;
+  /* reddish-orange for Nester AI */
+}
+
+.transcript-line.typewriter .typewriter-text,
+.transcript-line .typewriter-text {
+  display: inline;
+}
+
+#dashboard-card-6 .dashboard-card-body.conversation-body,
+#dashboard-card-6 .dashboard-card-body.transcript-log-body {
+  padding: 12px 16px;
 }
 
 /* Responsive: tablet - 2 columns */
@@ -509,8 +577,8 @@ body {
 
 /* Status Dot */
 .status-dot {
-  width: 6px;
-  height: 6px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   background: var(--text-muted);
 }
@@ -878,7 +946,8 @@ body {
   left: 50%;
   width: 427px;
   transform: translateX(-50%);
-  z-index: 100; /* Float above dashboard grid */
+  z-index: 100;
+  /* Float above dashboard grid */
   margin-bottom: 0;
   z-index: 6;
   /* Figma Spring approx: Mass 1, Stiffness 151.5, Damping 18.46 */
@@ -1598,6 +1667,7 @@ body {
 
 /* Live subtitle: smaller on mobile */
 @media (max-width: 640px) {
+
   .live-subtitle-text,
   .live-subtitle.user .live-subtitle-text,
   .live-subtitle.bot .live-subtitle-text {

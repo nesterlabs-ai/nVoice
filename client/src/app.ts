@@ -879,7 +879,14 @@ class VoiceScannerApp {
   }
 
   /**
-   * Add transcript bubble to conversation
+   * Format timestamp for transcript log (HH:mm:ss)
+   */
+  private formatTranscriptTime(date: Date = new Date()): string {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  }
+
+  /**
+   * Add transcript line to conversation (log style: timestamp + speaker + message)
    */
   private addTranscript(text: string, isUser: boolean): void {
     if (!this.transcriptList) return;
@@ -910,23 +917,21 @@ class VoiceScannerApp {
 
     this.updateLiveSubtitle(isUser ? 'user' : 'bot', text);
 
-    const bubble = document.createElement('div');
-    bubble.className = `transcript-bubble ${isUser ? 'user' : 'bot'}`;
+    const line = document.createElement('div');
+    line.className = `transcript-line ${isUser ? 'transcript-line-user' : 'transcript-line-bot'}`;
 
-    // Add label
-    const label = document.createElement('span');
-    label.className = 'transcript-label';
-    label.textContent = isUser ? 'You: ' : 'NesterAI: ';
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'transcript-time';
+    timeSpan.textContent = this.formatTranscriptTime() + ' ';
 
-    // Add text
-    const textSpan = document.createElement('span');
-    textSpan.className = 'transcript-text';
-    textSpan.textContent = text;
+    const messageSpan = document.createElement('span');
+    messageSpan.className = 'transcript-message';
+    messageSpan.textContent = text;
 
-    bubble.appendChild(label);
-    bubble.appendChild(textSpan);
+    line.appendChild(timeSpan);
+    line.appendChild(messageSpan);
 
-    this.transcriptList.appendChild(bubble);
+    this.transcriptList.appendChild(line);
 
     // Scroll to bottom
     this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
@@ -996,7 +1001,7 @@ class VoiceScannerApp {
   }
 
   /**
-   * Add bot transcript with typewriter effect (word by word)
+   * Add bot transcript with typewriter effect (word by word) - log style
    */
   private addBotTranscriptWithTypewriter(text: string): void {
     if (!this.transcriptList) return;
@@ -1004,19 +1009,19 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
-    // Create new bubble if none exists
+    // Create new line if none exists (log style: timestamp + Nester AI + message)
     if (!this.currentBotBubble) {
       this.currentBotBubble = document.createElement('div');
-      this.currentBotBubble.className = 'transcript-bubble bot typewriter';
+      this.currentBotBubble.className = 'transcript-line transcript-line-bot typewriter';
 
-      const label = document.createElement('span');
-      label.className = 'transcript-label';
-      label.textContent = 'NesterAI: ';
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'transcript-time';
+      timeSpan.textContent = this.formatTranscriptTime() + ' ';
 
       const textSpan = document.createElement('span');
-      textSpan.className = 'transcript-text typewriter-text';
+      textSpan.className = 'transcript-message typewriter-text';
 
-      this.currentBotBubble.appendChild(label);
+      this.currentBotBubble.appendChild(timeSpan);
       this.currentBotBubble.appendChild(textSpan);
       this.transcriptList.appendChild(this.currentBotBubble);
     }
@@ -1044,7 +1049,7 @@ class VoiceScannerApp {
     const word = this.typewriterQueue.shift()!;
 
     if (this.currentBotBubble) {
-      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
+      const textSpan = this.currentBotBubble.querySelector('.transcript-message.typewriter-text');
       if (textSpan) {
         // Same as live subtitle: first word = start of line
         const isFirstWord = textSpan.childNodes.length === 0;
@@ -1074,7 +1079,7 @@ class VoiceScannerApp {
    */
   private finalizeBotBubble(): void {
     if (this.currentBotBubble) {
-      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
+      const textSpan = this.currentBotBubble.querySelector('.transcript-message.typewriter-text');
       if (textSpan) {
         this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
       }
@@ -2346,16 +2351,16 @@ class VoiceScannerApp {
     this.welcomeMessage?.classList.add('hidden');
 
     this.streamingBubble = document.createElement('div');
-    this.streamingBubble.className = 'transcript-bubble bot streaming';
+    this.streamingBubble.className = 'transcript-line transcript-line-bot streaming';
 
-    const label = document.createElement('span');
-    label.className = 'transcript-label';
-    label.textContent = 'NesterAI: ';
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'transcript-time';
+    timeSpan.textContent = this.formatTranscriptTime() + ' ';
 
     const textContainer = document.createElement('span');
-    textContainer.className = 'transcript-text streaming-text';
+    textContainer.className = 'transcript-message streaming-text';
 
-    this.streamingBubble.appendChild(label);
+    this.streamingBubble.appendChild(timeSpan);
     this.streamingBubble.appendChild(textContainer);
     this.transcriptList.appendChild(this.streamingBubble);
     this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
@@ -2367,7 +2372,7 @@ class VoiceScannerApp {
   private addStreamingWord(word: string, sequenceId: number): void {
     if (!this.streamingBubble) return;
 
-    const textContainer = this.streamingBubble.querySelector('.streaming-text');
+    const textContainer = this.streamingBubble.querySelector('.transcript-message.streaming-text');
     if (!textContainer) return;
 
     // Create word span with animation
@@ -2406,7 +2411,7 @@ class VoiceScannerApp {
       this.streamingBubble.classList.add('finalized');
 
       // Convert streaming words to static text for better performance
-      const textContainer = this.streamingBubble.querySelector('.streaming-text');
+      const textContainer = this.streamingBubble.querySelector('.transcript-message.streaming-text');
       if (textContainer && this.streamingWords.length > 0) {
         textContainer.innerHTML = '';
         textContainer.textContent = this.streamingWords.join(' ');
