@@ -62,7 +62,7 @@ jobs:
               - 'client/**'
             deployment:
               - 'deployment/docker/docker-compose.graviton.yml'
-              - 'deployment/docker/Caddyfile.prod'
+              - 'deployment/docker/Caddyfile.graviton'
 
   # Build and push backend image (ARM64)
   build-backend:
@@ -155,7 +155,7 @@ jobs:
           host: ${{ secrets.GRAVITON_HOST }}
           username: ec2-user
           key: ${{ secrets.GRAVITON_SSH_KEY }}
-          source: "deployment/docker/docker-compose.graviton.yml,deployment/docker/Caddyfile.prod"
+          source: "deployment/docker/docker-compose.graviton.yml,deployment/docker/Caddyfile.graviton"
           target: "/tmp/deploy"
           strip_components: 2
 
@@ -176,9 +176,9 @@ jobs:
             fi
 
             # Update Caddyfile from repo (if exists)
-            if [ -f /tmp/deploy/Caddyfile.prod ]; then
+            if [ -f /tmp/deploy/Caddyfile.graviton ]; then
               echo "Updating Caddyfile..."
-              sudo cp /tmp/deploy/Caddyfile.prod /opt/nester/Caddyfile
+              sudo cp /tmp/deploy/Caddyfile.graviton /opt/nester/Caddyfile
             fi
 
             # Clean up
