@@ -149,7 +149,7 @@ def get_msp_model():
         # Benefits: 2-3x faster inference, 75% smaller memory footprint
         # NOTE: Not supported on Apple Silicon (M1/M2/M3) - skip gracefully
         import platform
-        is_arm = platform.machine() in ('arm64', 'aarch64')
+        is_arm = True
 
         if is_arm:
             logger.info("⚠️ Skipping INT8 quantization (not supported on Apple Silicon)")
@@ -163,7 +163,7 @@ def get_msp_model():
                     {torch.nn.Linear},  # Quantize Linear layers (main compute)
                     dtype=torch.qint8
                 )
-                _model_quantized = True
+                _model_quantized = False
                 quantized_size = original_size * 0.3  # ~70% reduction for Linear layers
                 logger.info(f"✅ MSP-PODCAST model loaded and optimized:")
                 logger.info(f"   Original size: ~{original_size:.0f}MB")

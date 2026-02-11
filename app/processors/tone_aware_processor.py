@@ -331,23 +331,32 @@ class ToneAwareProcessor(FrameProcessor):
         if isinstance(frame, transcription_types):
             text = getattr(frame, "text", "")
             frame_name = type(frame).__name__
-            logger.info(f"📥 {frame_name}: '{text}'")
+            is_final = isinstance(frame, TranscriptionFrame)
+
+            # Only log final transcriptions to reduce noise
+            if is_final:
+                logger.info(f"📥 {frame_name} (FINAL): '{text}'")
 
             # Store transcript for hybrid mode
             if text and text.strip():
                 self._latest_transcript = text
-                logger.info(f"💾 Stored transcript for hybrid: '{text[:50]}'...")
 
-                # Forward to VisualHintProcessor for A2UI query capture
-                if self._visual_hint_processor is not None:
+                # Forward to VisualHintProcessor for A2UI query capture (only on final)
+                if is_final and self._visual_hint_processor is not None:
                     self._visual_hint_processor.set_current_query(text)
                     logger.debug(f"🎨 Forwarded query to VisualHintProcessor: '{text[:50]}...'")
 
-            # If MSP-PODCAST not connected, use text-based detection
-            if not self.emotion_detector.is_connected and text and text.strip():
-                await self._process_text_fallback(text)
+            # ONLY detect emotion on FINAL TranscriptionFrame (not interim)
+            # This prevents duplicate LLM calls for the same text during interim updates
+            # NOTE: Run tone detection in BACKGROUND to not block frame propagation
+            # This prevents InterruptionTaskFrames from cancelling the LLM call
+            if is_final and not self.emotion_detector.is_connected and text and text.strip():
+                # Launch tone detection in background (non-blocking)
+                task = asyncio.create_task(self._process_text_fallback(text))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
 
-        # Always pass frame downstream
+        # Always pass frame downstream IMMEDIATELY (don't wait for tone detection)
         await self.push_frame(frame, direction)
 
     async def _process_audio_frame(self, frame: AudioRawFrame) -> None:

@@ -1,0 +1,80 @@
+# Graviton test environment configuration
+# Parallel EC2 ARM64 deployment for performance benchmarking
+# Overrides base.yaml values
+
+# Environment identifier
+environment: "graviton-test"
+
+# AWS Configuration
+aws:
+  region: "us-west-2"
+
+# EC2 Graviton Instance Configuration
+ec2:
+  instance:
+    instance_type: "t4g.small"  # Free trial: 750 hrs/mo until Dec 2026
+    ami_type: "amazon_linux_2023_arm64"
+    key_pair_name: "nester-graviton-test"
+    volume_size_gb: 20  # gp3 EBS
+    availability_zone_suffix: "a"
+
+  elastic_ip:
+    enabled: true
+
+  networking:
+    ports:
+      - port: 22
+        protocol: "tcp"
+        cidrs: []  # Restrict SSH - add your IPs here
+      - port: 80
+        protocol: "tcp"
+        cidrs: ["0.0.0.0/0"]
+      - port: 443
+        protocol: "tcp"
+        cidrs: ["0.0.0.0/0"]
+      - port: 7860
+        protocol: "tcp"
+        cidrs: ["0.0.0.0/0"]  # FastAPI backend
+      - port: 8765
+        protocol: "tcp"
+        cidrs: ["0.0.0.0/0"]  # WebSocket server
+
+# Graviton PyTorch optimizations (passed to container environment)
+graviton:
+  optimizations:
+    DNNL_DEFAULT_FPMATH_MODE: "BF16"  # bfloat16 fast math (Graviton3 only, harmless on Graviton2)
+    LRU_CACHE_CAPACITY: "1024"  # Cache oneDNN primitives
+    THP_MEM_ALLOC_ENABLE: "1"  # Transparent Huge Pages for large tensors
+    OMP_NUM_THREADS: "2"  # Match vCPU count
+    OMP_PROC_BIND: "false"
+    OMP_PLACES: "cores"
+
+# Secrets - share existing dev secret (same API keys)
+secrets:
+  name_prefix: "nester"
+  shared_secret_arn: "arn:aws:secretsmanager:us-west-2:196061557238:secret:nester/dev/api-keys-Ju87G6"
+
+# Application
+application:
+  server:
+    log_level: "DEBUG"
+
+  docker:
+    image_tag: "latest"
+
+  domain:
+    name: "graviton-test.nesterlabs.com"
+    use_https: true
+
+# Monitoring
+monitoring:
+  log_retention_days: 7
+  alarms:
+    cpu_threshold: 90
+    memory_threshold: 90
+
+# Tags
+tags:
+  Environment: "graviton-test"
+  Architecture: "arm64"
+  Purpose: "performance-testing"

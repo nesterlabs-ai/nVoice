@@ -38,7 +38,7 @@ A production-ready real-time voice conversational assistant built with [Pipecat]
 └──────────┴──────────┴───────────┴───────────────┘
 ```
 
-## Project Structure
+## Project Structure/
 
 ```
 nester-ai-voice-assistant/

@@ -39,6 +39,33 @@ class LightsailConfig(BaseModel):
     )
 
 
+class EC2InstanceConfig(BaseModel):
+    instance_type: str = "t4g.small"
+    ami_type: str = "amazon_linux_2023_arm64"
+    key_pair_name: str = ""
+    volume_size_gb: int = 20
+    availability_zone_suffix: str = "a"
+
+
+class EC2ElasticIpConfig(BaseModel):
+    enabled: bool = True
+
+
+class EC2NetworkingConfig(BaseModel):
+    ports: list[PortConfig] = Field(default_factory=list)
+
+
+class EC2Config(BaseModel):
+    instance: EC2InstanceConfig = Field(default_factory=EC2InstanceConfig)
+    elastic_ip: EC2ElasticIpConfig = Field(default_factory=EC2ElasticIpConfig)
+    networking: EC2NetworkingConfig = Field(default_factory=EC2NetworkingConfig)
+
+
+class GravitonConfig(BaseModel):
+    """Graviton-specific PyTorch optimization environment variables."""
+    optimizations: dict[str, str] = Field(default_factory=dict)
+
+
 class AwsConfig(BaseModel):
     region: str = "us-west-2"
     account_id: str | None = None
@@ -57,6 +84,7 @@ class ApiKeyConfig(BaseModel):
 
 class SecretsConfig(BaseModel):
     name_prefix: str = "nester"
+    shared_secret_arn: str = ""  # Full ARN of existing secret to share (for cross-stack use)
     api_keys: list[ApiKeyConfig] = Field(default_factory=list)
 
 
@@ -103,6 +131,8 @@ class NesterConfig(BaseModel):
     project: ProjectConfig = Field(default_factory=ProjectConfig)
     aws: AwsConfig = Field(default_factory=AwsConfig)
     lightsail: LightsailConfig = Field(default_factory=LightsailConfig)
+    ec2: EC2Config = Field(default_factory=EC2Config)
+    graviton: GravitonConfig = Field(default_factory=GravitonConfig)
     secrets: SecretsConfig = Field(default_factory=SecretsConfig)
     application: ApplicationConfig = Field(default_factory=ApplicationConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
@@ -115,8 +145,13 @@ class NesterConfig(BaseModel):
 
     @property
     def availability_zone(self) -> str:
-        """Full availability zone."""
+        """Full availability zone (Lightsail)."""
         return f"{self.aws.region}{self.lightsail.instance.availability_zone_suffix}"
+
+    @property
+    def ec2_availability_zone(self) -> str:
+        """Full availability zone (EC2)."""
+        return f"{self.aws.region}{self.ec2.instance.availability_zone_suffix}"
 
     @property
     def image_tag(self) -> str:
