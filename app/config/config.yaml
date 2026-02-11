@@ -59,8 +59,8 @@ rag:
     api_url: "${LIGHTRAG_BASE_URL}"  # LightRAG server
     api_key: "${LIGHTRAG_API_KEY}"  # API key for authentication
     mode: "mix"  # OPTIMIZED: "local" for 2-3x faster retrieval (entity-focused, was "mix")
-    top_k: 10  # Number of top results to retrieve
-    chunk_top_k: 10  # Number of top chunks to retrieve
+    top_k: 5  # Number of top results to retrieve
+    chunk_top_k: 5  # Number of top chunks to retrieve
     max_entity_tokens: 600  # Maximum tokens for entity extraction
     max_relation_tokens: 600  # Maximum tokens for relation extraction
     max_total_tokens: 1000  # Maximum total tokens for response
@@ -191,10 +191,10 @@ server:
 
   # VAD settings - MATCHING GOONJ's working config
   vad:
-    confidence: 0.88      # STRICT - only trigger on clear speech (reduces noise/echo triggers)
-    start_secs: 0.5        # SLOWER - require 500ms of speech before triggering (filters short noises)
-    stop_secs: 1.0         # Wait 1s of silence before ending utterance
-    min_volume: 0.65       # HIGHER - ignore quiet background noise
+    confidence: 0.7        # BALANCED - trigger on clear speech but allow interruptions
+    start_secs: 0.2        # FASTER - 200ms to detect interruptions quickly
+    stop_secs: 0.8         # Wait 0.8s of silence before ending utterance
+    min_volume: 0.5        # BALANCED - catch normal speech volume
 
   # Barge-in (interruption) settings
   # DISABLED: MinWordsInterruptionStrategy generates InterruptionTaskFrames on every VAD event
@@ -202,7 +202,7 @@ server:
   # With strict VAD (conf=0.85, vol=0.75), noise won't trigger VAD in the first place
   interruption:
     enabled: true          # Enable barge-in support
-    min_words: 4           # Require 4+ words to interrupt (prevents 1-2 word false barge-ins)
+    min_words: 0           # IMMEDIATE: 0 = any speech stops TTS instantly (no word count check)
 
   # Smart interruption - Context-aware validation
   # Prevents false interruptions from background conversations/TV/music
