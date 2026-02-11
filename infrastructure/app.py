@@ -19,6 +19,7 @@ import os
 import aws_cdk as cdk
 
 from stacks.lightsail_stack import LightsailStack
+from stacks.ec2_graviton_stack import EC2GravitonStack
 from utils.config_loader import ConfigLoader
 
 
@@ -40,17 +41,26 @@ def main():
         print("Warning: AWS account not specified. Set CDK_DEFAULT_ACCOUNT or configure in YAML.")
         print("You can also run: aws sts get-caller-identity --query Account --output text")
 
-    # Create the Lightsail infrastructure stack
-    LightsailStack(
-        app,
-        f"NesterAI-Lightsail-{environment.capitalize()}",
-        config=config,
-        env=cdk.Environment(
-            account=account,
-            region=region,
-        ),
-        description=f"NesterAI Voice Assistant - Lightsail Infrastructure ({environment})",
-    )
+    cdk_env = cdk.Environment(account=account, region=region)
+
+    if environment == "graviton-test":
+        # EC2 Graviton stack (ARM64 parallel test deployment)
+        EC2GravitonStack(
+            app,
+            "NesterAI-Graviton-Test",
+            config=config,
+            env=cdk_env,
+            description=f"NesterAI Voice Assistant - EC2 Graviton Infrastructure ({environment})",
+        )
+    else:
+        # Default: Lightsail stack
+        LightsailStack(
+            app,
+            f"NesterAI-Lightsail-{environment.capitalize()}",
+            config=config,
+            env=cdk_env,
+            description=f"NesterAI Voice Assistant - Lightsail Infrastructure ({environment})",
+        )
 
     # Synthesize the app
     app.synth()
