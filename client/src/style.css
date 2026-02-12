@@ -1087,9 +1087,9 @@ body {
 
 /* Expanded state: bar slides up from bottom to center, shrinks, buttons crossfade */
 .center-section .media-control-bar.close-mode {
-  bottom: 50%;
+  /* bottom: 50%; */
   width: 275px;
-  transform: translate(-50%, -50%);
+  /* transform: translate(-50%, -50%); */
 }
 
 .media-control-group,
@@ -2315,9 +2315,9 @@ body {
   }
 
   .center-section .media-control-bar.close-mode {
-    width: 140px;
+    /* width: 140px; */
     bottom: 50%;
-    transform: translate(-50%, -50%);
+    /* transform: translate(-50%, -50%); */
   }
 
   .center-section {
