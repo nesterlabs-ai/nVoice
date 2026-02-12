@@ -295,6 +295,7 @@ body {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  border: 1px solid #4E1416;
 }
 
 .dashboard-card-header {
@@ -2322,7 +2323,7 @@ body {
   }
 
   .center-section .media-control-bar.close-mode {
-    /* width: 140px; */
+    width: 140px;
     bottom: 50%;
     /* transform: translate(-50%, -50%); */
   }
