@@ -359,6 +359,18 @@ body {
   min-height: 0;
 }
 
+/* Tone Modulator in card 5: fill container */
+#dashboard-card-5 .dashboard-card-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#dashboard-card-5 .tone-modulator-widget {
+  height: 100%;
+  min-height: 0;
+}
+
 .dashboard-card-placeholder {
   display: flex;
   align-items: center;

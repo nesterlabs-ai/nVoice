@@ -1,5 +1,6 @@
 .tone-modulator-widget {
   height: 100%;
+  min-height: 180px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -7,6 +8,7 @@
 }
 
 .tone-modulator-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -114,6 +116,7 @@
 }
 
 .tone-voice-title {
+  flex-shrink: 0;
   color: rgba(251, 251, 251, 0.75);
   font-family: "JetBrains Mono";
   font-size: 12px;
@@ -122,7 +125,17 @@
   line-height: normal;
 }
 
+.tone-chart-blocks {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .tone-chart-block {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -139,6 +152,8 @@
 
 .tone-mini-chart {
   position: relative;
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: flex-start;
   gap: 8px;

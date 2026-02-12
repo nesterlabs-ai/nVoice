@@ -29,6 +29,8 @@ export interface ToneModulatorProps {
 
 const MAX_POINTS = 24;
 const DEFAULT_X_AXIS_INTERVAL_SEC = 5;
+const MIN_CHART_HEIGHT = 60;
+const CHART_BLOCKS_GAP = 12;
 
 function MiniLineChart({
   data,
@@ -173,6 +175,21 @@ export function ToneModulator({
   intensityData = [],
   xAxisIntervalSec = DEFAULT_X_AXIS_INTERVAL_SEC,
 }: ToneModulatorProps) {
+  const chartsContainerRef = useRef<HTMLDivElement>(null);
+  const [chartHeight, setChartHeight] = useState(MIN_CHART_HEIGHT);
+
+  useEffect(() => {
+    const el = chartsContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const h = entry.contentRect.height;
+      const perChart = (h - CHART_BLOCKS_GAP) / 2;
+      setChartHeight(Math.max(MIN_CHART_HEIGHT, Math.floor(perChart)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const emotionEmoji = EMOTION_EMOJIS[detectedEmotion.toLowerCase()] || '😐';
   const emotionLabel = (detectedEmotion && detectedEmotion.charAt(0).toUpperCase() + detectedEmotion.slice(1)) || 'Neutral';
   const responseLabel = TONE_LABELS[nesterResponse.toLowerCase()] || nesterResponse || 'Calm';
@@ -200,26 +217,30 @@ export function ToneModulator({
 
       <h3 className="tone-voice-title">Humanizing Voice control</h3>
 
-      <div className="tone-chart-block">
-        <span className="tone-chart-label">Clarity</span>
-        <MiniLineChart
-          data={clarity}
-          color="#ffffff"
-          yTopLabel="Assertive"
-          yBottomLabel="Relaxed"
-          xAxisIntervalSec={xAxisIntervalSec}
-        />
-      </div>
+      <div ref={chartsContainerRef} className="tone-chart-blocks">
+        <div className="tone-chart-block">
+          <span className="tone-chart-label">Clarity</span>
+          <MiniLineChart
+            data={clarity}
+            color="#ffffff"
+            height={chartHeight}
+            yTopLabel="Assertive"
+            yBottomLabel="Relaxed"
+            xAxisIntervalSec={xAxisIntervalSec}
+          />
+        </div>
 
-      <div className="tone-chart-block">
-        <span className="tone-chart-label">Intensity</span>
-        <MiniLineChart
-          data={intensity}
-          color="#F46C72"
-          yTopLabel="Expressive"
-          yBottomLabel="Subdued"
-          xAxisIntervalSec={xAxisIntervalSec}
-        />
+        <div className="tone-chart-block">
+          <span className="tone-chart-label">Intensity</span>
+          <MiniLineChart
+            data={intensity}
+            color="#F46C72"
+            height={chartHeight}
+            yTopLabel="Expressive"
+            yBottomLabel="Subdued"
+            xAxisIntervalSec={xAxisIntervalSec}
+          />
+        </div>
       </div>
     </div>
   );
