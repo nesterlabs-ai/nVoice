@@ -67,13 +67,13 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
 
   const { rowCategories } = getRowInfo();
   const rows = Object.keys(rowCategories).map(Number).sort((a, b) => a - b);
-  const rowHeight = 80;
+  const rowHeight = 36;
   const baseY = 60;
   const timelineMargin = 60;
   const totalHeight = rows.length * rowHeight + baseY + timelineMargin;
   const leftPadding = 90;
   const rightPadding = 80;
-  const pixelsPerSecond = 30;
+  const pixelsPerSecond = 17;
 
   const getTimeBasedPositions = () => {
     if (topics.length === 0) return { chartWidth: 0, startTime: 0, timeMarks: [] };
@@ -129,10 +129,11 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                         y={y - 40}
                         width={chartWidth}
                         height={rowHeight}
-                        fill="rgba(31, 41, 55, 0.3)"
-                        stroke="rgba(75, 85, 99, 0.3)"
+                        fill="transparent"
+                        stroke="var(--sync-grid-line-color)"
+                        strokeOpacity={1}
                         strokeWidth={1}
-                        rx={4}
+                        // rx={4}
                       />
                     );
                   })}
@@ -143,10 +144,10 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                       y1={baseY - 40}
                       x2={mark.x}
                       y2={rows.length * rowHeight + baseY + 20}
-                      stroke="#4b5563"
+                      stroke="var(--sync-grid-line-color-vertical, var(--sync-grid-line-color))"
                       strokeWidth={1}
                       strokeDasharray="2,3"
-                      opacity={0.3}
+                      opacity={1}
                     />
                   ))}
                   {topics.map((topic, index) => {
@@ -235,9 +236,9 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
             </div>
             <div className="sync-sticky-x">
               <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
-                <line x1={leftPadding} y1={0} x2={leftPadding + chartWidth} y2={0} stroke="#4b5563" strokeWidth={1} />
+                <line x1={leftPadding} y1={0} x2={leftPadding + chartWidth} y2={0} stroke="var(--sync-grid-line-color-vertical, var(--sync-grid-line-color))" strokeWidth={1} />
                 {timeMarks.map((mark, index) => (
-                  <text key={`time-${index}`} x={mark.x} y={20} fontSize="11" fill="#7D7D7D" textAnchor="middle" style={{ fontFamily: 'monospace' }}>
+                  <text key={`time-${index}`} x={mark.x} y={20} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--sync-x-axis-label-font-size)' }} fill="var(--sync-x-axis-label-color)">
                     {mark.label}
                   </text>
                 ))}

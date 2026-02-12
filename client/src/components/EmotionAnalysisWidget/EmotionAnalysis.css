@@ -1,7 +1,10 @@
 /* EmotionAnalysisWidget - standalone styles */
 
 .emotion-analysis-card {
-  --emotion-grid-line-color: #44444E; /* Grid line color; override to change */
+  --emotion-grid-line-color: #44444E; /* Horizontal grid line color; override to change */
+  --emotion-grid-line-color-vertical: #44444E; /* Vertical grid line color; override for different vertical color */
+  --emotion-x-axis-label-font-size: 10px; /* Horizontal x-axis time label font size */
+  --emotion-x-axis-label-color: #7D7D7D; /* Horizontal x-axis time label color */
   background: #000;
   border-radius: 0.5rem;
   overflow: hidden;

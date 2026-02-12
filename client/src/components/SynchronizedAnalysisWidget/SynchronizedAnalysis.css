@@ -6,6 +6,10 @@
 }
 
 .sync-card {
+  --sync-grid-line-color: #44444E; /* Horizontal/row grid line color; override to customize */
+  --sync-grid-line-color-vertical: #44444E; /* Vertical grid line color; override for different vertical color */
+  --sync-x-axis-label-font-size: 10px; /* Horizontal x-axis time label font size */
+  --sync-x-axis-label-color: #7D7D7D; /* Horizontal x-axis time label color */
   background: #000;
   border-radius: 0.5rem;
   overflow: hidden;
@@ -51,14 +55,14 @@
   padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 16px;
   flex-shrink: 0;
 }
 
 .sync-legend-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 4px;
 }
 
 .sync-legend-dot {

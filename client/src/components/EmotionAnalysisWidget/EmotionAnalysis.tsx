@@ -8,7 +8,6 @@ const MIN_CHART_HEIGHT = 160;
 
 /** Axis label font sizes (px). Change these to adjust readability. */
 const Y_AXIS_LABEL_FONT_SIZE = 10;
-const X_AXIS_LABEL_FONT_SIZE = 10;
 const SENTIMENT_LABEL_FONT_SIZE = 10;
 const SENTIMENT_EMOJI_FONT_SIZE = 14;
 
@@ -166,7 +165,7 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
                   </g>
                   {timeMarks.map((mark, index) => (
                     <line key={`grid-v-${index}`} x1={mark.x} y1={topPadding} x2={mark.x} y2={chartHeight - bottomPadding}
-                      stroke="var(--emotion-grid-line-color)" strokeWidth={1} strokeDasharray="2,3" opacity={1} />
+                      stroke="var(--emotion-grid-line-color-vertical, var(--emotion-grid-line-color))" strokeWidth={1} strokeDasharray="2,3" opacity={1} />
                   ))}
                   <motion.path d={createPath(dataPoints.arousal)} stroke="#f97316" strokeWidth={2} fill="none"
                     initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }}
@@ -211,9 +210,9 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
             </div>
             <div className="emotion-analysis-sticky-x">
               <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
-                <line x1={leftPadding} y1={0} x2={leftPadding + chartWidth} y2={0} stroke="var(--emotion-grid-line-color)" strokeWidth={1} />
+                <line x1={leftPadding} y1={0} x2={leftPadding + chartWidth} y2={0} stroke="var(--emotion-grid-line-color-vertical, var(--emotion-grid-line-color))" strokeWidth={1} />
                 {timeMarks.map((mark, index) => (
-                  <text key={`time-${index}`} x={mark.x} y={20} fontSize={X_AXIS_LABEL_FONT_SIZE} fill="#7D7D7D" textAnchor="middle" style={{ fontFamily: 'monospace' }}>
+                  <text key={`time-${index}`} x={mark.x} y={20} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
                     {mark.label}
                   </text>
                 ))}
