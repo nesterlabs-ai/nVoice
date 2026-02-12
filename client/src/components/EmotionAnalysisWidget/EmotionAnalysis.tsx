@@ -44,13 +44,15 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [chartHeight, setChartHeight] = useState(DEFAULT_CHART_HEIGHT);
+  const [containerWidth, setContainerWidth] = useState(0);
 
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      const h = entry.contentRect.height;
-      setChartHeight(Math.max(MIN_CHART_HEIGHT, Math.round(h)));
+      const { width, height } = entry.contentRect;
+      setContainerWidth(Math.round(width));
+      setChartHeight(Math.max(MIN_CHART_HEIGHT, Math.round(height)));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -66,32 +68,37 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
   /** Matches sticky-x axis line (20px from top of 56px strip) so 0.00 grid line sits on x-axis. */
   const bottomPadding = 36;
   const pixelsPerSecond = 17;
+  /** Total time range in seconds (from data or default). */
+  const totalSeconds =
+    topics.length >= 2
+      ? Math.max(Math.ceil((topics[topics.length - 1].timestamp.getTime() - topics[0].timestamp.getTime()) / 1000) + 10, 30)
+      : 30;
+  /** Plot width: at least fill container (responsive), or wider for horizontal scroll when timeline is long. */
+  const containerPlotWidth = containerWidth > 0 ? containerWidth - leftPadding - rightPadding : 400;
+  const timeBasedChartWidth = totalSeconds * pixelsPerSecond;
+  const chartWidth = Math.max(containerPlotWidth, timeBasedChartWidth);
+  const totalWidth = leftPadding + chartWidth + rightPadding;
 
   const getTimeBasedPositions = () => {
-    if (topics.length === 0) return { chartWidth: 0, startTime: 0, timeMarks: [] };
+    if (topics.length === 0) return { startTime: 0, totalSeconds: 30, timeMarks: [] as { time: Date; x: number; label: string }[] };
     const startTime = topics[0].timestamp.getTime();
-    const endTime = topics[topics.length - 1].timestamp.getTime();
-    const durationMs = endTime - startTime;
-    const durationSeconds = Math.ceil(durationMs / 1000);
-    const totalSeconds = Math.max(durationSeconds + 10, 30);
-    const chartWidth = totalSeconds * pixelsPerSecond;
     const timeMarks: { time: Date; x: number; label: string }[] = [];
     for (let sec = 0; sec <= totalSeconds; sec += 5) {
       const markTime = new Date(startTime + sec * 1000);
-      const x = leftPadding + sec * pixelsPerSecond;
+      const x = leftPadding + (sec / totalSeconds) * chartWidth;
       timeMarks.push({
         time: markTime,
         x,
         label: markTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       });
     }
-    return { chartWidth, startTime, timeMarks };
+    return { startTime, totalSeconds, timeMarks };
   };
 
-  const { chartWidth, startTime, timeMarks } = getTimeBasedPositions();
+  const { startTime, timeMarks } = getTimeBasedPositions();
   const getTopicX = (topic: EmotionTopicNode) => {
     const elapsedSeconds = (topic.timestamp.getTime() - startTime) / 1000;
-    return leftPadding + elapsedSeconds * pixelsPerSecond;
+    return leftPadding + (elapsedSeconds / totalSeconds) * chartWidth;
   };
 
   /** Snap x to nearest vertical grid line so emotion labels align with grid. */
@@ -136,7 +143,6 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
   };
 
   const dataPoints = getDataPoints();
-  const totalWidth = leftPadding + chartWidth + rightPadding;
 
   return (
     <div className="emotion-analysis-card">
