@@ -102,8 +102,9 @@ class TextFilterProcessor(FrameProcessor):
         # Clean up multiple spaces (again, after bracket removal may have added extra spaces)
         text = re.sub(r'\s+', ' ', text)
 
-        # Strip leading/trailing whitespace
-        text = text.strip()
+        # Strip trailing whitespace only — preserve leading spaces for word separation
+        # in streaming mode (LLM tokens arrive as " word" with leading space)
+        text = text.rstrip()
 
         if text != original_text:
             logger.debug(f"Filtered text: '{original_text[:50]}...' → '{text[:50]}...'")

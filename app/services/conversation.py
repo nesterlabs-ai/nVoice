@@ -385,11 +385,11 @@ class ConversationManager:
         """
         rag_function = FunctionSchema(
             name="call_rag_system",
-            description="MANDATORY: Use this function for ANY question about specific projects, case studies, detailed work examples, or when the user asks to 'know more' or 'learn more' about something. ALWAYS use this function when the user asks about: 'specific projects', 'project details', 'case studies', 'examples of work', 'what projects you work on', 'tell me more about your projects', or any variation asking for detailed project information. This function searches the knowledge base for comprehensive information. DO NOT skip this function for project-related questions.",
+            description="Search the knowledge base for detailed information. Use this function when: (1) User asks about specific project details, case studies, results, or architecture (e.g., 'tell me more about Sarah', 'what were the results?', 'explain the healthcare project'). (2) User asks to go deeper: 'tell me more', 'explain in detail', 'go deeper'. (3) User asks questions where showing a visual UI template would enhance the experience — project listings, team profiles, service details, contact information. (4) User asks about blog posts, technical deep-dives, or specific metrics. Do NOT use for basic company info, founder names, contact details, service overview, greetings, or farewells — answer those directly from your knowledge.",
             properties={
                 "question": {
                     "type": "string",
-                    "description": "The user's specific or detailed question that requires searching the knowledge base for information beyond basic facts",
+                    "description": "The user's question to search the knowledge base for detailed information or visual content",
                 },
             },
             required=["question"],
@@ -445,25 +445,15 @@ CRITICAL RAG RULES (SPEED IS IMPORTANT):
 - NEVER delay speaking by over-processing the RAG response
 """
 
-        # CRITICAL: Add explicit identity enforcement at the start
-        # This ensures the bot NEVER identifies as a generic LLM
-        identity_enforcement = """
-CRITICAL IDENTITY RULES - YOU MUST FOLLOW THESE:
-- You are the Nesterlabs voice assistant, NOT a generic AI or language model
-- When asked "who are you" or "what are you", you MUST respond: "I'm the Nesterlabs voice assistant. I help visitors learn about Nesterlabs, our services, and connect with our team."
-- NEVER say you are "a large language model" or "trained by Google" or "trained by OpenAI"
-- NEVER identify as a generic AI - you are specifically the Nesterlabs voice assistant
-- If asked about your identity, always say you are the Nesterlabs voice assistant
-
-CONVERSATION ENDING PROTOCOL:
-- When the user says goodbye, bye, end call, or wants to end the conversation:
-  * YOU MUST call the end_conversation function - DO NOT just respond with text
-  * The end_conversation function will handle the farewell and disconnect automatically
-  * CRITICAL: Call end_conversation() for ANY farewell phrase (bye, goodbye, see you, end call, etc.)
-- NEVER just respond to farewells without calling the end_conversation function
+        # Prepend critical function-calling reminders
+        # Identity rules are now in config.yaml system_prompt to avoid duplication
+        function_reminder = """CRITICAL FUNCTION CALLING RULES:
+- For farewells (bye, goodbye, see you, end call, etc.): ALWAYS call end_conversation(). NEVER just respond with text.
+- For detailed questions or visual content: call call_rag_system(). The system prompt has specific guidance on when to use it.
+- When you receive RAG results, speak them naturally. Do not add "According to my knowledge base" or similar phrasing.
 
 """
-        system_message = identity_enforcement + system_message
+        system_message = function_reminder + system_message
         # No initial user prompt - greeting is handled via direct TTS
         # This prevents the LLM from generating a multi-sentence greeting
         messages = [
