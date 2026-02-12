@@ -2338,7 +2338,9 @@ class VoiceScannerApp {
   // ===== STREAMING TRANSCRIPT METHODS =====
 
   /**
-   * Handle streaming text events for word-by-word display
+   * Handle streaming text events for word-by-word display.
+   * NOTE: Bot transcript is rendered by onBotTranscript (addBotTranscriptWithTypewriter).
+   * We skip streaming_text transcript rendering to avoid duplicate bot lines.
    */
   private handleStreamingText(data: {
     text: string;
@@ -2347,23 +2349,8 @@ class VoiceScannerApp {
     utterance_id: string;
     timestamp: number;
   }): void {
-    // Start new utterance if needed
-    if (data.utterance_id !== this.currentUtteranceId) {
-      this.finalizeCurrentStreamingBubble();
-      this.currentUtteranceId = data.utterance_id;
-      this.streamingWords = [];
-      this.createStreamingBubble();
-    }
-
-    // Add word with animation (skip empty final markers)
-    if (data.text && data.text.trim()) {
-      this.addStreamingWord(data.text, data.sequence_id);
-    }
-
-    // Finalize on is_final
-    if (data.is_final) {
-      this.finalizeCurrentStreamingBubble();
-    }
+    // Disabled: onBotTranscript already renders bot text. Streaming_text would create duplicates.
+    void data;
   }
 
   /**

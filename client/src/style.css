@@ -349,7 +349,6 @@ body {
 
 /* VISITOR INTENT card - matches design spec */
 .visitor-intent-card {
-  border-color: rgba(239, 51, 57, 0.25);
   box-shadow: 0 0 12px rgba(239, 51, 57, 0.08);
 }
 
