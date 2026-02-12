@@ -105,9 +105,6 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
 
   return (
     <div className="sync-card">
-      <div className="sync-card-header">
-        <h2 className="sync-card-title">CONVERSATION ANALYSIS</h2>
-      </div>
       <div className="sync-card-body">
         {topics.length === 0 ? (
           <div className="sync-empty-state">

@@ -331,7 +331,7 @@ body {
 }
 
 #dashboard-card-1 .sync-card {
-  height: 180px;
+  height: 100%;
   flex-shrink: 0;
 }
 

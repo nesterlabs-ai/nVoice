@@ -15,19 +15,6 @@
   flex-direction: column;
 }
 
-.sync-card-header {
-  padding: 1rem;
-  border-bottom: 1px solid #1f2937;
-  flex-shrink: 0;
-}
-
-.sync-card-title {
-  color: #fff;
-  font-family: var(--font-mono), monospace;
-  font-size: 0.875rem;
-  letter-spacing: 0.05em;
-}
-
 .sync-card-body {
   flex: 1;
   position: relative;
