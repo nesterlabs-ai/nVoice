@@ -1,6 +1,7 @@
 /* EmotionAnalysisWidget - standalone styles */
 
 .emotion-analysis-card {
+  --emotion-grid-line-color: #44444E; /* Grid line color; override to change */
   background: #000;
   border-radius: 0.5rem;
   overflow: hidden;
@@ -52,14 +53,14 @@
   padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 16px;
   flex-shrink: 0;
 }
 
 .emotion-analysis-legend-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 4px;
 }
 
 .emotion-analysis-legend-dot {
@@ -68,13 +69,25 @@
   border-radius: 50%;
 }
 
-.emotion-analysis-legend-dot.cyan { background: #06b6d4; }
-.emotion-analysis-legend-dot.orange { background: #f97316; }
-.emotion-analysis-legend-dot.purple { background: #a855f7; }
+.emotion-analysis-legend-dot.cyan {
+  background: #06b6d4;
+}
+
+.emotion-analysis-legend-dot.orange {
+  background: #f97316;
+}
+
+.emotion-analysis-legend-dot.purple {
+  background: #a855f7;
+}
 
 .emotion-analysis-legend-text {
-  color: #9ca3af;
-  font-size: 0.75rem;
+  color: rgba(245, 245, 245, 0.75);
+  font-family: "JetBrains Mono";
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
 }
 
 .emotion-analysis-sticky-y {
