@@ -183,7 +183,7 @@ export function ToneModulator({
           <div className="tone-pill-connector" />
           <div className="tone-pill tone-pill-response">
             <span className="tone-pill-label">Nester Response</span>
-            <span className="tone-pill-icon">▶</span>
+            <img src="/calm.svg" alt="" className="tone-pill-icon" />
             <span className="tone-pill-value">{responseLabel}</span>
           </div>
         </div>

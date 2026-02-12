@@ -256,7 +256,7 @@ body {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-columns: 42.2% 28.9% 28.9%;
+  grid-template-columns: 42.2% 28% 28%;
   grid-template-rows: repeat(2, 1fr);
   row-gap: 16px;
   column-gap: 16px;
@@ -380,6 +380,7 @@ body {
   font-style: normal;
   font-weight: 700;
   line-height: normal;
+  margin-bottom: 12px;
 }
 
 .visitor-intent-confidence {
@@ -390,14 +391,14 @@ body {
 
 .visitor-intent-confidence .confidence-bar {
   height: 6px;
-  background: rgba(239, 51, 57, 0.15);
+  background: #4E1416;
   border-radius: 3px;
   overflow: hidden;
 }
 
 .visitor-intent-confidence .confidence-fill {
   height: 100%;
-  background: var(--accent-hero);
+  background: #F46C72;
   border-radius: 3px;
   transition: width 0.3s ease;
 }
@@ -409,14 +410,15 @@ body {
   font-style: normal;
   font-weight: 500;
   line-height: normal;
+  margin-top: 12px;
 }
 
 .visitor-info-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-subtle);
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #281516;
 }
 
 .visitor-info-header {
@@ -438,6 +440,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border-right: 1px solid #281516;
 }
 
 .visitor-info-col-label {
@@ -452,7 +455,6 @@ body {
 .visitor-info-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .visitor-info-item {

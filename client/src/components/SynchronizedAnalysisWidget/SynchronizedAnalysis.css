@@ -7,7 +7,6 @@
 
 .sync-card {
   background: #000;
-  border: 1px solid #1f2937;
   border-radius: 0.5rem;
   overflow: hidden;
   height: 400px;
@@ -51,7 +50,6 @@
   display: flex;
   align-items: center;
   gap: 1.5rem;
-  border-top: 1px solid #1f2937;
   flex-shrink: 0;
 }
 

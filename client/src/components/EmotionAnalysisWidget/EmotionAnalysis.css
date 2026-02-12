@@ -2,7 +2,6 @@
 
 .emotion-analysis-card {
   background: #000;
-  border: 1px solid #1f2937;
   border-radius: 0.5rem;
   overflow: hidden;
   height: 400px;
@@ -12,7 +11,6 @@
 
 .emotion-analysis-header {
   padding: 1rem;
-  border-bottom: 1px solid #1f2937;
   flex-shrink: 0;
 }
 
@@ -53,7 +51,6 @@
   display: flex;
   align-items: center;
   gap: 1.5rem;
-  border-top: 1px solid #1f2937;
   flex-shrink: 0;
 }
 
