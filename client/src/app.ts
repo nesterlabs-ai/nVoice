@@ -325,6 +325,8 @@ class VoiceScannerApp {
     document.getElementById('close-option-restart')?.addEventListener('click', () => this.onRestartOption());
     document.getElementById('close-option-peak')?.addEventListener('click', () => this.onPeakOption());
 
+    this.updatePeakButtonState();
+
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
 
@@ -1173,6 +1175,31 @@ class VoiceScannerApp {
    */
   private toggleSidePanels(): void {
     this.mainLayout?.classList.toggle('panels-hidden');
+    this.updatePeakButtonState();
+  }
+
+  /**
+   * Update Peak button icon and text based on cards visibility (like speaker/mic)
+   * Cards hidden → Eye + "Peak"; Cards showing → EyeClosed + "Hide"
+   */
+  private updatePeakButtonState(): void {
+    const cardsShowing = this.mainLayout && !this.mainLayout.classList.contains('panels-hidden');
+    const iconPath = cardsShowing ? '/EyeClosed.svg' : '/Eye (1).svg';
+    const label = cardsShowing ? 'Hide' : 'Peak';
+
+    const controlPeak = document.getElementById('control-peak');
+    const controlPeakImg = controlPeak?.querySelector<HTMLImageElement>('.control-btn-icon');
+    const controlPeakLabel = controlPeak?.querySelector('.control-btn-label');
+    if (controlPeakImg) controlPeakImg.src = iconPath;
+    if (controlPeakLabel) controlPeakLabel.textContent = label;
+    controlPeak?.setAttribute('aria-label', cardsShowing ? 'Hide dashboard' : 'Peak view');
+
+    const closeOptionPeak = document.getElementById('close-option-peak');
+    const closeOptionPeakImg = closeOptionPeak?.querySelector<HTMLImageElement>('.close-option-icon');
+    const closeOptionPeakLabel = closeOptionPeak?.querySelector('.close-option-label');
+    if (closeOptionPeakImg) closeOptionPeakImg.src = iconPath;
+    if (closeOptionPeakLabel) closeOptionPeakLabel.textContent = label;
+    closeOptionPeak?.setAttribute('aria-label', cardsShowing ? 'Hide' : 'Peak');
   }
 
   /**
