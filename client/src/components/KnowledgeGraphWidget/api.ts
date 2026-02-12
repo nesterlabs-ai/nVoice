@@ -10,6 +10,11 @@ const LIGHTRAG_URL = (window as any).__LIGHTRAG_URL__ ||
                      (window as any).LIGHTRAG_URL ||
                      'http://localhost:9621';
 
+// LightRAG API key for authentication
+const LIGHTRAG_API_KEY = (window as any).__LIGHTRAG_API_KEY__ ||
+                         (window as any).LIGHTRAG_API_KEY ||
+                         '';
+
 /**
  * Fetch the knowledge graph from LightRAG
  * @param label - Node label to filter by (use '*' for all nodes)
@@ -22,12 +27,15 @@ export async function fetchGraph(
   try {
     const url = `${LIGHTRAG_URL}/graphs?label=${encodeURIComponent(label)}&max_depth=${maxDepth}`;
     console.log('[KnowledgeGraph] Fetching from:', url);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (LIGHTRAG_API_KEY) {
+      headers['X-API-Key'] = LIGHTRAG_API_KEY;
+    }
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',  // Skip ngrok interstitial page
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -48,12 +56,15 @@ export async function fetchGraph(
  */
 export async function fetchGraphLabels(): Promise<string[]> {
   try {
+    const labelHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (LIGHTRAG_API_KEY) {
+      labelHeaders['X-API-Key'] = LIGHTRAG_API_KEY;
+    }
     const response = await fetch(`${LIGHTRAG_URL}/graph/label/list`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
+      headers: labelHeaders,
     });
 
     if (!response.ok) {
@@ -72,11 +83,13 @@ export async function fetchGraphLabels(): Promise<string[]> {
  */
 export async function checkHealth(): Promise<boolean> {
   try {
+    const healthHeaders: Record<string, string> = {};
+    if (LIGHTRAG_API_KEY) {
+      healthHeaders['X-API-Key'] = LIGHTRAG_API_KEY;
+    }
     const response = await fetch(`${LIGHTRAG_URL}/health`, {
       method: 'GET',
-      headers: {
-        'ngrok-skip-browser-warning': 'true',
-      },
+      headers: healthHeaders,
     });
     return response.ok;
   } catch {

@@ -54,7 +54,7 @@ TIER1_TEMPLATE_KEYWORDS = {
 # Priority: Higher number = higher priority (checked first / preferred over lower priority)
 TEMPLATE_PATTERNS = {
     "contact": {
-        "keywords": ["contact", "reach", "email", "phone", "address", "location", "office", "call us"],
+        "keywords": ["contact", "reach", "email", "phone", "address", "location", "office", "call us", "located", "where are you", "get in touch", "talk to someone"],
         "template_type": "contact-card",
         "description": "Contact information card",
         "priority": 90
@@ -66,7 +66,9 @@ TEMPLATE_PATTERNS = {
         "priority": 80
     },
     "projects": {
-        "keywords": ["project", "projects", "completed", "portfolio", "case study", "built"],
+        "keywords": ["project", "projects", "completed", "portfolio", "case study", "built", "work", "worked on",
+                     "kahuna", "basepair", "squarex", "astha", "banky", "revops", "sarah", "intake coordinator",
+                     "mentorship platform", "genomic", "conversations with data"],
         "template_type": "template-grid",
         "description": "Grid layout for project listings",
         "priority": 85
@@ -78,13 +80,14 @@ TEMPLATE_PATTERNS = {
         "priority": 85
     },
     "services": {
-        "keywords": ["service", "services", "provide", "offer", "what do you do", "capabilities"],
+        "keywords": ["service", "services", "provide", "offer", "what do you do", "capabilities", "expertise", "specialize", "specialization", "pillar"],
         "template_type": "service-hover-reveal",
         "description": "Service hover-reveal list",
         "priority": 85
     },
     "team": {
-        "keywords": ["team", "member", "staff", "employee", "people", "who work", "founders"],
+        "keywords": ["team", "member", "staff", "employee", "people", "who work", "founders", "who is",
+                     "who are", "co-founder", "leadership", "ankur", "kunal", "shrey", "gaurav"],
         "template_type": "team-flip-cards",
         "description": "Team flip cards",
         "priority": 80
@@ -120,7 +123,7 @@ TEMPLATE_PATTERNS = {
         "priority": 80
     },
     "about": {
-        "keywords": ["what is", "describe", "explain", "who is", "overview"],
+        "keywords": ["what is nesterlabs", "what is nester", "describe", "explain", "overview", "about the company", "about nesterlabs", "about nester"],
         "template_type": "magazine-hero",
         "description": "Magazine-style content",
         "priority": 50  # Low priority - only use when no specific content type matches
