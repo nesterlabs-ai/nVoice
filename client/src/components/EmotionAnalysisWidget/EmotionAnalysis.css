@@ -4,7 +4,8 @@
   background: #000;
   border-radius: 0.5rem;
   overflow: hidden;
-  height: 400px;
+  height: 100%;
+  min-height: 180px;
   display: flex;
   flex-direction: column;
 }
@@ -23,6 +24,7 @@
 
 .emotion-analysis-body {
   flex: 1;
+  min-height: 0;
   position: relative;
 }
 
@@ -42,7 +44,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #6b7280;
+  color: #7D7D7D;
   font-size: 0.875rem;
 }
 
@@ -99,6 +101,6 @@
 
 /* When embedded below EMOTION ANALYSIS card */
 .emotion-analysis-topic .emotion-analysis-card {
-  height: 240px;
-  margin-top: 0.75rem;
+  height: 100%;
+  min-height: 160px;
 }

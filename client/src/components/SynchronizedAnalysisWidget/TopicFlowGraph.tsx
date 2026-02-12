@@ -163,7 +163,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                           y1={y1}
                           x2={x2}
                           y2={y2}
-                          stroke="#6b7280"
+                          stroke="#7D7D7D"
                           strokeWidth={1.5}
                           strokeDasharray="4,4"
                           initial={{ pathLength: 0, opacity: 0 }}
@@ -225,7 +225,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                 {rows.map((rowNum) => {
                   const y = baseY + rowNum * rowHeight;
                   return (
-                    <text key={`y-label-${rowNum}`} x={leftPadding - 10} y={y} fontSize="9" fill="#6b7280"
+                    <text key={`y-label-${rowNum}`} x={leftPadding - 10} y={y} fontSize="9" fill="#7D7D7D"
                       textAnchor="end" dominantBaseline="middle" style={{ fontFamily: 'monospace' }}>
                       {rowCategories[rowNum]}
                     </text>
@@ -237,7 +237,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
               <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
                 <line x1={leftPadding} y1={0} x2={leftPadding + chartWidth} y2={0} stroke="#4b5563" strokeWidth={1} />
                 {timeMarks.map((mark, index) => (
-                  <text key={`time-${index}`} x={mark.x} y={20} fontSize="11" fill="#6b7280" textAnchor="middle" style={{ fontFamily: 'monospace' }}>
+                  <text key={`time-${index}`} x={mark.x} y={20} fontSize="11" fill="#7D7D7D" textAnchor="middle" style={{ fontFamily: 'monospace' }}>
                     {mark.label}
                   </text>
                 ))}

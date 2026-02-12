@@ -10,8 +10,22 @@ import { createRoot, Root } from 'react-dom/client';
 import { EmotionAnalysis } from './EmotionAnalysis';
 import type { EmotionTopicNode } from './types';
 
+/** Default emotion topics for testing the EMOTION ANALYSIS UI */
+function getDefaultEmotionTopics(): EmotionTopicNode[] {
+  const base = Date.now() - 35000;
+  const ts = (sec: number) => new Date(base + sec * 1000);
+  return [
+    { id: 'e-0', timestamp: ts(0), sentiment: 'positive', sentimentLabel: 'Positive', intensity: 0.6 },
+    { id: 'e-1', timestamp: ts(6), sentiment: 'neutral', sentimentLabel: 'Calm', intensity: 0.35 },
+    { id: 'e-2', timestamp: ts(12), sentiment: 'positive', sentimentLabel: 'Excited', intensity: 0.85 },
+    { id: 'e-3', timestamp: ts(18), sentiment: 'neutral', sentimentLabel: 'Neutral', intensity: 0.5 },
+    { id: 'e-4', timestamp: ts(24), sentiment: 'negative', sentimentLabel: 'Concerned', intensity: 0.55 },
+    { id: 'e-5', timestamp: ts(30), sentiment: 'positive', sentimentLabel: 'Positive', intensity: 0.7 },
+  ];
+}
+
 let root: Root | null = null;
-let currentTopics: EmotionTopicNode[] = [];
+let currentTopics: EmotionTopicNode[] = getDefaultEmotionTopics();
 
 function renderWidget(): void {
   if (!root) return;

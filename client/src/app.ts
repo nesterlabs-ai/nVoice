@@ -1420,7 +1420,7 @@ class VoiceScannerApp {
     }
 
     const emotionColors: Record<string, string> = {
-      'neutral': '#6b7280',
+      'neutral': '#7D7D7D',
       'happy': '#10b981',
       'excited': '#8b5cf6',
       'sad': '#3b82f6',
@@ -1434,7 +1434,7 @@ class VoiceScannerApp {
 
     const dot = document.createElement('div');
     dot.className = 'timeline-dot';
-    dot.style.backgroundColor = emotionColors[emotion] || '#6b7280';
+    dot.style.backgroundColor = emotionColors[emotion] || '#7D7D7D';
     dot.title = `${emotion.charAt(0).toUpperCase() + emotion.slice(1)}`;
 
     // Keep only last 15 emotions

@@ -1,7 +1,16 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import type { EmotionTopicNode } from './types';
 import './EmotionAnalysis.css';
+
+const DEFAULT_CHART_HEIGHT = 300;
+const MIN_CHART_HEIGHT = 160;
+
+/** Axis label font sizes (px). Change these to adjust readability. */
+const Y_AXIS_LABEL_FONT_SIZE = 10;
+const X_AXIS_LABEL_FONT_SIZE = 10;
+const SENTIMENT_LABEL_FONT_SIZE = 10;
+const SENTIMENT_EMOJI_FONT_SIZE = 14;
 
 export interface EmotionAnalysisProps {
   topics: EmotionTopicNode[];
@@ -32,8 +41,21 @@ function calculateEmotionMetrics(topic: EmotionTopicNode) {
 export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
+  const [chartHeight, setChartHeight] = useState(DEFAULT_CHART_HEIGHT);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const h = entry.contentRect.height;
+      setChartHeight(Math.max(MIN_CHART_HEIGHT, Math.round(h)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const handleScrollInternal = () => {
     if (scrollRef.current) setScrollLeft(scrollRef.current.scrollLeft);
@@ -43,7 +65,6 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
   const rightPadding = 80;
   const topPadding = 60;
   const bottomPadding = 60;
-  const chartHeight = 300;
   const pixelsPerSecond = 30;
 
   const getTimeBasedPositions = () => {
@@ -108,7 +129,7 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
           <h2 className="emotion-analysis-title">EMOTION ANALYSIS</h2>
         </div>
       )}
-      <div className="emotion-analysis-body">
+      <div ref={bodyRef} className="emotion-analysis-body">
         {topics.length === 0 ? (
           <div className="emotion-analysis-empty">
             <p>Emotion data will appear here as you speak</p>
@@ -144,11 +165,11 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
                     const emoji = sentimentToEmoji[topic.sentimentLabel] || '😐';
                     return (
                       <g key={`emoji-group-${topic.id}`}>
-                        <motion.text x={dataPoints.xPositions[index]} y={topPadding - 35} textAnchor="middle" fontSize="10" fill="#9ca3af"
+                        <motion.text x={dataPoints.xPositions[index]} y={topPadding - 35} textAnchor="middle" fontSize={SENTIMENT_LABEL_FONT_SIZE} fill="#7D7D7D"
                           initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.1 + 0.5, duration: 0.4 }}>
                           {topic.sentimentLabel}
                         </motion.text>
-                        <motion.text x={dataPoints.xPositions[index]} y={topPadding - 15} textAnchor="middle" fontSize="20"
+                        <motion.text x={dataPoints.xPositions[index]} y={topPadding - 15} textAnchor="middle" fontSize={SENTIMENT_EMOJI_FONT_SIZE} fill="#7D7D7D"
                           initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 + 0.6, duration: 0.4 }}>
                           {emoji}
                         </motion.text>
@@ -165,7 +186,7 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
                     const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
                     return (
                       <text key={`y-label-${value}`} x={leftPadding - 15} y={y} textAnchor="end" dominantBaseline="middle"
-                        fontSize="11" fill="#6b7280" style={{ fontFamily: 'monospace' }}>{value.toFixed(2)}</text>
+                        fontSize={Y_AXIS_LABEL_FONT_SIZE} fill="#7D7D7D" style={{ fontFamily: 'monospace' }}>{value.toFixed(2)}</text>
                     );
                   })}
                 </g>
@@ -175,7 +196,7 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
               <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
                 <line x1={leftPadding} y1={0} x2={leftPadding + chartWidth} y2={0} stroke="#4b5563" strokeWidth={1} />
                 {timeMarks.map((mark, index) => (
-                  <text key={`time-${index}`} x={mark.x} y={20} fontSize="11" fill="#6b7280" textAnchor="middle" style={{ fontFamily: 'monospace' }}>
+                  <text key={`time-${index}`} x={mark.x} y={20} fontSize={X_AXIS_LABEL_FONT_SIZE} fill="#7D7D7D" textAnchor="middle" style={{ fontFamily: 'monospace' }}>
                     {mark.label}
                   </text>
                 ))}
