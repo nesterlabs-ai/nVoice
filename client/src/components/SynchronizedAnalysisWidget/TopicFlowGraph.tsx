@@ -8,10 +8,16 @@ interface TopicFlowGraphProps {
   onScroll: () => void;
 }
 
+const STICKY_X_HEIGHT = 24;
+const MIN_CHART_HEIGHT = 160;
+const DEFAULT_CHART_HEIGHT = 240;
+
 export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
+  const [chartHeight, setChartHeight] = useState(DEFAULT_CHART_HEIGHT);
   const [isManuallyControlled, setIsManuallyControlled] = useState(false);
   const autoScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -33,9 +39,9 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   useEffect(() => {
     if (!isManuallyControlled && scrollRef.current && topics.length > 0) {
       const lastTopic = topics[topics.length - 1];
-      const rowHeight = 80;
-      const baseY = 60;
-      const lastTopicY = baseY + lastTopic.row * rowHeight;
+      const plotH = chartHeight - 20 - STICKY_X_HEIGHT;
+      const rowCnt = Math.max(new Set(topics.map((t) => t.row)).size, 1);
+      const lastTopicY = 20 + (lastTopic.row + 0.5) * (plotH / rowCnt);
       const viewportHeight = scrollRef.current.clientHeight;
       const currentScrollTop = scrollRef.current.scrollTop;
       const visibleTop = currentScrollTop;
@@ -51,10 +57,21 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
         behavior: 'smooth'
       });
     }
-  }, [topics, scrollRef, isManuallyControlled]);
+  }, [topics, scrollRef, isManuallyControlled, chartHeight]);
 
   useEffect(() => () => {
     if (autoScrollTimeoutRef.current) clearTimeout(autoScrollTimeoutRef.current);
+  }, []);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const h = entry.contentRect.height;
+      setChartHeight(Math.max(MIN_CHART_HEIGHT, Math.round(h)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   const getRowInfo = () => {
@@ -67,10 +84,17 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
 
   const { rowCategories } = getRowInfo();
   const rows = Object.keys(rowCategories).map(Number).sort((a, b) => a - b);
-  const rowHeight = 36;
-  const baseY = 60;
-  const timelineMargin = 60;
-  const totalHeight = rows.length * rowHeight + baseY + timelineMargin;
+  /** Top of plot area (align with Emotion Analysis: grid starts here). */
+  const topPadding = 20;
+  /** Plot area height so last row meets x-axis strip (responsive like Emotion Analysis). */
+  const plotHeight = chartHeight - topPadding - STICKY_X_HEIGHT;
+  const rowCount = Math.max(rows.length, 1);
+  const rowHeight = plotHeight / rowCount;
+  /** Row center Y for row index i (responsive). */
+  const getRowCenterY = (rowNum: number) => topPadding + (rowNum + 0.5) * rowHeight;
+  /** Row top Y for drawing rects (responsive). */
+  const getRowTopY = (rowNum: number) => topPadding + rowNum * rowHeight;
+  const totalHeight = chartHeight;
   const leftPadding = 90;
   const rightPadding = 80;
   const pixelsPerSecond = 17;
@@ -105,7 +129,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
 
   return (
     <div className="sync-card">
-      <div className="sync-card-body">
+      <div ref={bodyRef} className="sync-card-body">
         {topics.length === 0 ? (
           <div className="sync-empty-state">
             <p>Topics will appear here as you speak</p>
@@ -120,30 +144,26 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
             >
               <div ref={containerRef} className="sync-chart-inner" style={{ height: `${totalHeight}px`, width: `${totalWidth}px` }}>
                 <svg width={totalWidth} height={totalHeight}>
-                  {rows.map((rowNum) => {
-                    const y = baseY + rowNum * rowHeight;
-                    return (
-                      <rect
-                        key={`row-${rowNum}`}
-                        x={leftPadding}
-                        y={y - 40}
-                        width={chartWidth}
-                        height={rowHeight}
-                        fill="transparent"
-                        stroke="var(--sync-grid-line-color)"
-                        strokeOpacity={1}
-                        strokeWidth={1}
-                        // rx={4}
-                      />
-                    );
-                  })}
+                  {rows.map((rowNum) => (
+                    <rect
+                      key={`row-${rowNum}`}
+                      x={leftPadding}
+                      y={getRowTopY(rowNum)}
+                      width={chartWidth}
+                      height={rowHeight}
+                      fill="transparent"
+                      stroke="var(--sync-grid-line-color)"
+                      strokeOpacity={1}
+                      strokeWidth={1}
+                    />
+                  ))}
                   {timeMarks.map((mark, index) => (
                     <line
                       key={`grid-v-${index}`}
                       x1={mark.x}
-                      y1={baseY - 40}
+                      y1={topPadding}
                       x2={mark.x}
-                      y2={rows.length * rowHeight + baseY + 20}
+                      y2={chartHeight - STICKY_X_HEIGHT}
                       stroke="var(--sync-grid-line-color-vertical, var(--sync-grid-line-color))"
                       strokeWidth={1}
                       strokeDasharray="2,3"
@@ -155,8 +175,8 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                     const prevTopic = topics[index - 1];
                     const x1 = getTopicX(prevTopic);
                     const x2 = getTopicX(topic);
-                    const y1 = baseY + prevTopic.row * rowHeight;
-                    const y2 = baseY + topic.row * rowHeight;
+                    const y1 = getRowCenterY(prevTopic.row);
+                    const y2 = getRowCenterY(topic.row);
                     return (
                       <g key={`connection-${topic.id}`}>
                         <motion.line
@@ -188,7 +208,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                   })}
                   {topics.map((topic, index) => {
                     const x = getTopicX(topic);
-                    const y = baseY + topic.row * rowHeight;
+                    const y = getRowCenterY(topic.row);
                     return (
                       <g key={topic.id}>
                         <motion.circle
@@ -222,16 +242,13 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
               </div>
             </div>
             <div className="sync-sticky-y" style={{ width: `${leftPadding}px` }}>
-              <svg width={leftPadding} height="100%" viewBox={`0 ${scrollTop} ${leftPadding} ${scrollRef.current?.clientHeight || 300}`} preserveAspectRatio="xMinYMin slice">
-                {rows.map((rowNum) => {
-                  const y = baseY + rowNum * rowHeight;
-                  return (
-                    <text key={`y-label-${rowNum}`} x={leftPadding - 10} y={y} fontSize="9" fill="#7D7D7D"
-                      textAnchor="end" dominantBaseline="middle" style={{ fontFamily: 'monospace' }}>
-                      {rowCategories[rowNum]}
-                    </text>
-                  );
-                })}
+              <svg width={leftPadding} height="100%" viewBox={`0 0 ${leftPadding} ${chartHeight}`} preserveAspectRatio="xMinYMin slice">
+                {rows.map((rowNum) => (
+                  <text key={`y-label-${rowNum}`} x={leftPadding - 10} y={getRowCenterY(rowNum)} fontSize="9" fill="#7D7D7D"
+                    textAnchor="end" dominantBaseline="middle" style={{ fontFamily: 'monospace' }}>
+                    {rowCategories[rowNum]}
+                  </text>
+                ))}
               </svg>
             </div>
             <div className="sync-sticky-x">

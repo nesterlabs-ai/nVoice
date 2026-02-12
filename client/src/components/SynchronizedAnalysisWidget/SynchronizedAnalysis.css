@@ -104,6 +104,7 @@
   background: #000;
   pointer-events: none;
   z-index: 10;
+  height: 100%;
 }
 
 .sync-sticky-x {
@@ -114,6 +115,5 @@
   background: #000;
   pointer-events: none;
   z-index: 10;
-  border-top: 1px solid #1f2937;
-  height: 56px;
+  height: 24px;
 }
