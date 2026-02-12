@@ -3,7 +3,7 @@
   min-height: 180px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   box-sizing: border-box;
 }
 
@@ -170,6 +170,7 @@
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
+  padding-top: 12px;
 }
 
 .tone-chart-y-top {
