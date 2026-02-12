@@ -63,7 +63,8 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
   const leftPadding = 90;
   const rightPadding = 80;
   const topPadding = 60;
-  const bottomPadding = 60;
+  /** Matches sticky-x axis line (20px from top of 56px strip) so 0.00 grid line sits on x-axis. */
+  const bottomPadding = 36;
   const pixelsPerSecond = 17;
 
   const getTimeBasedPositions = () => {
@@ -210,9 +211,8 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
             </div>
             <div className="emotion-analysis-sticky-x">
               <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
-                <line x1={leftPadding} y1={0} x2={leftPadding + chartWidth} y2={0} stroke="var(--emotion-grid-line-color-vertical, var(--emotion-grid-line-color))" strokeWidth={1} />
                 {timeMarks.map((mark, index) => (
-                  <text key={`time-${index}`} x={mark.x} y={20} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
+                  <text key={`time-${index}`} x={mark.x} y={10} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
                     {mark.label}
                   </text>
                 ))}

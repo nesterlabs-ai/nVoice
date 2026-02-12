@@ -97,10 +97,11 @@
   position: absolute;
   left: 0;
   top: 0;
-  bottom: 3.5rem;
+  /* bottom: 3.5rem; */
   background: #000;
   pointer-events: none;
   z-index: 10;
+  height: 100%;
 }
 
 .emotion-analysis-sticky-x {
@@ -111,8 +112,8 @@
   background: #000;
   pointer-events: none;
   z-index: 10;
-  border-top: 1px solid #1f2937;
-  height: 56px;
+  height: 24px;
+  /* border: 1px solid white; */
 }
 
 /* When embedded below EMOTION ANALYSIS card */
