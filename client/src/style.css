@@ -286,6 +286,13 @@ body {
   pointer-events: none;
 }
 
+/* When cards showing: hide Start Conversation button */
+.main-layout:not(.panels-hidden) .connect-area {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .dashboard-card {
   background: var(--bg-panel);
   backdrop-filter: blur(18px);
