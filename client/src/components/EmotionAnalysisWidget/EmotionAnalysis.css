@@ -34,7 +34,10 @@
 
 .emotion-analysis-scroll {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 24px; /* Start after y-axis strip to reduce gap */
   overflow-x: auto;
   overflow-y: hidden;
 }

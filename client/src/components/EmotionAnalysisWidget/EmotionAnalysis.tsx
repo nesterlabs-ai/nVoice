@@ -62,7 +62,8 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
     if (scrollRef.current) setScrollLeft(scrollRef.current.scrollLeft);
   };
 
-  const leftPadding = 90;
+  /** Align with narrow y-axis strip (24px); small gap between axis and first grid line. */
+  const leftPadding = 28;
   const rightPadding = 80;
   const topPadding = 60;
   /** Matches sticky-x axis line (20px from top of 56px strip) so 0.00 grid line sits on x-axis. */
@@ -202,13 +203,13 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
                 </svg>
               </div>
             </div>
-            <div className="emotion-analysis-sticky-y" style={{ width: `${leftPadding}px` }}>
-              <svg width={leftPadding} height="100%">
+            <div className="emotion-analysis-sticky-y" style={{ width: `${24}px` }}>
+              <svg width={24} height="100%">
                 <g>
                   {[1.0, 0.8, 0.6, 0.4, 0.2, 0.0].map((value) => {
                     const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
                     return (
-                      <text key={`y-label-${value}`} x={leftPadding - 15} y={y} textAnchor="end" dominantBaseline="middle"
+                      <text key={`y-label-${value}`} x={24} y={y} textAnchor="end" dominantBaseline="middle"
                         fontSize={Y_AXIS_LABEL_FONT_SIZE} fill="#7D7D7D" style={{ fontFamily: 'monospace' }}>{value.toFixed(2)}</text>
                     );
                   })}
