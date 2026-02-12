@@ -119,8 +119,14 @@
   line-height: 1;
 }
 
+.tone-chart-svg-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
 .tone-chart-svg {
-  flex-shrink: 0;
+  display: block;
+  width: 100%;
 }
 
 .tone-chart-svg .tone-chart-x-label,
@@ -129,5 +135,6 @@
 }
 
 .tone-chart-svg .tone-chart-y-value {
-  fill: rgba(255, 255, 255, 0.5);
+  font-size: 4px;
+  fill: #7D7D7D;
 }

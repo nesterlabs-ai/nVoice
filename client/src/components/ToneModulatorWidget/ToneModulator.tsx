@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import './ToneModulator.css';
 
 const EMOTION_EMOJIS: Record<string, string> = {
@@ -33,7 +33,7 @@ const DEFAULT_X_AXIS_INTERVAL_SEC = 5;
 function MiniLineChart({
   data,
   color,
-  height = 56,
+  height = 65,
   yTopLabel,
   yBottomLabel,
   xAxisIntervalSec = DEFAULT_X_AXIS_INTERVAL_SEC,
@@ -45,8 +45,15 @@ function MiniLineChart({
   yBottomLabel: string;
   xAxisIntervalSec?: number;
 }) {
-  const width = 200;
-  const padding = { top: 14, right: 8, bottom: 22, left: 44 };
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(250);
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, []);
+  const padding = { top: 14, right: 8, bottom: 22, left: 14 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
@@ -84,7 +91,8 @@ function MiniLineChart({
         <span className="tone-chart-y-top">{yTopLabel}</span>
         <span className="tone-chart-y-bottom">{yBottomLabel}</span>
       </div>
-      <svg width={width} height={height} className="tone-chart-svg">
+      <div ref={wrapRef} className="tone-chart-svg-wrap">
+        <svg width={width} height={height} className="tone-chart-svg">
         <defs>
           <linearGradient id={`grid-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="rgba(255,255,255,0.03)" />
@@ -109,8 +117,8 @@ function MiniLineChart({
               y={padding.top + (1 - v) * chartHeight + 3}
               textAnchor="end"
               className="tone-chart-y-value"
-              fontSize={9}
-              fill="rgba(255,255,255,0.5)"
+              fontSize={4}
+              fill="#7D7D7D"
             >
               {v === 0 || v === 1 ? v.toFixed(1) : v}
             </text>
@@ -145,14 +153,15 @@ function MiniLineChart({
               y={height - 4}
               textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}
               className="tone-chart-x-label"
-              fontSize={9}
-              fill="rgba(255,255,255,0.4)"
+              fontSize={4}
+              fill="rgba(255,255,255,0.4) "
             >
               {sec}s
             </text>
           );
         })}
-      </svg>
+        </svg>
+      </div>
     </div>
   );
 }
