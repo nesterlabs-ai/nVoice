@@ -279,6 +279,13 @@ body {
   pointer-events: auto;
 }
 
+/* When cards showing: hide live-subtitle */
+.main-layout:not(.panels-hidden) .live-subtitle {
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .dashboard-card {
   background: var(--bg-panel);
   backdrop-filter: blur(18px);
