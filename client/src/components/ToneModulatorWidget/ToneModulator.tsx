@@ -33,7 +33,7 @@ const DEFAULT_X_AXIS_INTERVAL_SEC = 5;
 function MiniLineChart({
   data,
   color,
-  height = 65,
+  height = 60,
   yTopLabel,
   yBottomLabel,
   xAxisIntervalSec = DEFAULT_X_AXIS_INTERVAL_SEC,
@@ -142,7 +142,7 @@ function MiniLineChart({
           );
         })}
         <path d={path} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx={lastX} cy={lastY} r={4} fill="#ec4899" />
+        <circle cx={lastX} cy={lastY} r={4} fill="#F46C72" />
         {/* X-axis labels */}
         {xLabels.map((sec, i) => {
           const x = padding.left + (chartWidth / Math.max(points.length - 1, 1)) * i;
@@ -150,7 +150,7 @@ function MiniLineChart({
             <text
               key={i}
               x={x}
-              y={height - 4}
+              y={height - 12}
               textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}
               className="tone-chart-x-label"
               fontSize={4}
@@ -215,7 +215,7 @@ export function ToneModulator({
         <span className="tone-chart-label">Intensity</span>
         <MiniLineChart
           data={intensity}
-          color="#ec4899"
+          color="#F46C72"
           yTopLabel="Expressive"
           yBottomLabel="Subdued"
           xAxisIntervalSec={xAxisIntervalSec}

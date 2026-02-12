@@ -66,8 +66,51 @@
   flex: 1;
   min-width: 16px;
   height: 1px;
-  background: linear-gradient(90deg, rgba(236, 72, 153, 0.5), rgba(236, 72, 153, 0.2));
-  margin: 0 4px;
+  margin: 0;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+  90deg,
+  rgba(244, 108, 114, 0.5),
+  rgba(244, 108, 114, 0.2)
+);
+
+}
+
+.tone-pill-connector::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 42px;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #F46C72 30%,
+    #F46C72 70%,
+    transparent
+  );
+  animation: tone-connector-flow 2s ease-in-out infinite;
+}
+
+@keyframes tone-connector-flow {
+  0% {
+    left: 0;
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  95% {
+    opacity: 1;
+  }
+  100% {
+    left: 100%;
+    transform: translateX(-100%);
+    opacity: 0;
+  }
 }
 
 .tone-voice-title {
@@ -102,13 +145,17 @@
 }
 
 .tone-chart-y-labels {
+  color: #EF3139;
+  font-family: "JetBrains Mono";
+  font-size: 6px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+  letter-spacing: -0.131px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  height: 56px;
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
-  font-size: 9px;
-  color: #ef4444;
+  height: 100%;
 }
 
 .tone-chart-y-top {
