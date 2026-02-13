@@ -171,7 +171,7 @@ class VoiceScannerApp {
   private emotionTopicNodes: { id: string; timestamp: Date; sentiment: 'positive' | 'neutral' | 'negative'; sentimentLabel: string; intensity: number }[] = [];
   private emotionNodeCounter: number = 0;
 
-  constructor() {
+  constructor() {  
     console.log("Nester AI Voice Scanner initializing...");
 
     this.botAudio = document.createElement('audio');
@@ -188,6 +188,9 @@ class VoiceScannerApp {
 
     // Hide loading after initialization
     setTimeout(() => this.hideLoadingOverlay(), 2500);
+
+    // Auto-connect on load (Start Conversation flow without user click)
+    setTimeout(() => this.handleConnect(), 600);
 
     // Expose test methods for debugging (no log spam on load)
     (window as any).testVisualCard = () => this.handleVisualHint({

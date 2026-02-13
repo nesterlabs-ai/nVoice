@@ -165,16 +165,9 @@
       <div class="panel knowledge-graph-panel hidden" id="knowledge-graph-legacy"></div>
     </aside>
 
-    <!-- CENTER: Connect Button & Wave Visualizer -->
+    <!-- CENTER: Wave Visualizer (connect-area removed; connection starts automatically on load) -->
     <section class="center-section">
-      <!-- Connect/Disconnect Button -->
-      <div class="connect-area" id="connect-area">
-        <button class="connect-btn" id="connect-btn">
-          <span class="btn-text">START CONVERSATION</span>
-          <span class="btn-icon">→</span>
-        </button>
-        <p class="connect-hint">Click to begin voice interaction</p>
-      </div>
+      <div class="connect-area hidden" id="connect-area" aria-hidden="true"></div>
 
       <!-- Status Display (shown when connected) -->
       <div class="status-display hidden" id="status-display">
