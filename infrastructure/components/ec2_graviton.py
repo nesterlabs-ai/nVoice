@@ -490,6 +490,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+User=ec2-user
+Group=docker
 WorkingDirectory=/opt/nester
 ExecStartPre=/opt/nester/refresh-env.sh
 ExecStartPre=/opt/nester/ecr-login.sh
