@@ -1802,6 +1802,15 @@ body {
   opacity: 1;
 }
 
+/* When A2UI panel is open: move subtitle below the panel so it stays visible */
+body.a2ui-panel-visible .live-subtitle {
+  top: auto;
+  bottom: 116px;
+  left: 50%;
+  transform: translateX(-50%);
+  transition: top 0.25s ease, bottom 0.25s ease, left 0.25s ease, transform 0.25s ease, opacity 0.35s ease;
+}
+
 /* Subtle card background */
 .live-subtitle::before {
   content: '';
