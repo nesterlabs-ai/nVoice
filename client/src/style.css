@@ -2147,25 +2147,16 @@ body {
 /* ===== A2UI PANEL ===== */
 .a2ui-panel {
   position: fixed;
-  top: 155px;
+  top: 71px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--bg-panel);
-  backdrop-filter: blur(18px);
-  border: 1px solid var(--border-color);
-  border-radius: var(--panel-radius);
   display: flex;
   flex-direction: column;
   z-index: 80;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--transition-fast);
   width: 80%;
-  height: calc(100vh - 155px - 252px);
-  /* Reserve space for wave + media bar */
-  border-radius: 11px;
-  border: 1px solid #323232;
-  background: #0A0A0A;
+  height: calc(100vh - 71px - 212px);
 }
 
 .a2ui-panel.visible {
