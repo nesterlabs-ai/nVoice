@@ -1768,19 +1768,20 @@ body {
   }
 }
 
-/* ===== LIVE SUBTITLE (centered block above controls, multi-line) ===== */
+/* ===== LIVE SUBTITLE (vertically and horizontally centered) ===== */
 .live-subtitle {
   position: absolute;
-  bottom: calc(280px + 44px + 24px);
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   z-index: 5;
   pointer-events: none;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  max-width: min(85%, 560px);
+  max-width: min(85%, 672px);
   opacity: 0;
   transition: opacity 0.35s ease;
   text-align: center;
@@ -1803,7 +1804,6 @@ body {
   line-height: 1.45;
   white-space: normal;
   overflow-wrap: break-word;
-  max-height: 6em;
   overflow-y: auto;
   font-family: var(--font-mono);
 }
@@ -1823,13 +1823,43 @@ body {
   font-weight: 400;
 }
 
-/* Live subtitle: smaller on mobile */
+/* Live subtitle: tablet */
+@media (max-width: 1024px) {
+  .live-subtitle {
+    width: 90%;
+  }
+
+  .live-subtitle-text,
+  .live-subtitle.user .live-subtitle-text,
+  .live-subtitle.bot .live-subtitle-text {
+    font-size: 20px;
+  }
+}
+
+/* Live subtitle: mobile */
 @media (max-width: 640px) {
+  .live-subtitle {
+    width: 90%;
+  }
 
   .live-subtitle-text,
   .live-subtitle.user .live-subtitle-text,
   .live-subtitle.bot .live-subtitle-text {
     font-size: 16px;
+    line-height: 1.4;
+  }
+}
+
+/* Live subtitle: small mobile */
+@media (max-width: 380px) {
+  .live-subtitle {
+    width: 90%;
+  }
+
+  .live-subtitle-text,
+  .live-subtitle.user .live-subtitle-text,
+  .live-subtitle.bot .live-subtitle-text {
+    font-size: 14px;
   }
 }
 
