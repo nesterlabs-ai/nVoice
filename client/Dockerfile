@@ -12,6 +12,9 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
+# Cache bust arg - ensures fresh build on every commit
+ARG CACHEBUST=1
+
 # Copy source code
 COPY . .
 

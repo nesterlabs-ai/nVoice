@@ -5,6 +5,10 @@ set -e
 # When behind Caddy, this should be the public domain (e.g., https://ai.nesterlabs.com)
 BACKEND_URL=${BACKEND_URL:-}
 
+# LightRAG configuration (knowledge graph API)
+LIGHTRAG_URL=${LIGHTRAG_URL:-https://lightrag.nesterlabs.com}
+LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY:-FsJr02HwFayUuApjK3YOjdVwE1UWhyuC}
+
 # If BACKEND_URL is empty, use relative URLs (Caddy will proxy)
 if [ -z "$BACKEND_URL" ]; then
     BACKEND_URL=""
@@ -13,9 +17,13 @@ else
     echo "Backend URL configured: ${BACKEND_URL}"
 fi
 
-# Create runtime config.js that sets window.__BACKEND_URL__
+echo "LightRAG URL configured: ${LIGHTRAG_URL}"
+
+# Create runtime config.js with all window globals
 cat > /usr/share/nginx/html/config.js << EOF
 window.__BACKEND_URL__ = "${BACKEND_URL}";
+window.LIGHTRAG_URL = "${LIGHTRAG_URL}";
+window.LIGHTRAG_API_KEY = "${LIGHTRAG_API_KEY}";
 EOF
 
 # Replace hardcoded URLs in built JS files
