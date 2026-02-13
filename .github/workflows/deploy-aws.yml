@@ -94,8 +94,9 @@ jobs:
           tags: |
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-backend:latest
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-backend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            CACHEBUST=${{ github.sha }}
+          no-cache: true
 
   # Build and push frontend image
   build-frontend:
@@ -129,8 +130,9 @@ jobs:
           tags: |
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-frontend:latest
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-frontend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            CACHEBUST=${{ github.sha }}
+          no-cache: true
 
   # Deploy to Lightsail
   deploy:
