@@ -28,7 +28,6 @@
 /* ==================== Base Wrapper ==================== */
 .a2ui-wrapper {
   width: 100%;
-  padding: 16px;
   box-sizing: border-box;
 }
 
@@ -830,7 +829,7 @@
 /* ==================== Responsive ==================== */
 @media (max-width: 768px) {
   .a2ui-wrapper {
-    padding: 12px;
+    /* padding: 12px; */
   }
 
   .a2ui-grid-items {
