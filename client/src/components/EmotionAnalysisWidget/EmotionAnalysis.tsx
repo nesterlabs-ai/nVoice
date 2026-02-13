@@ -80,22 +80,28 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
     }
   };
 
-  // Auto-scroll to rightmost position when new topics arrive
+  // Depend on length + last topic id so we run when new items are pushed to the same array
+  // (widget is updated via root.render() with same array reference from app)
+  const lastTopicId = topics.length > 0 ? topics[topics.length - 1].id : null;
+
+  // Auto-scroll to rightmost position when new topics arrive (instant scroll so
+  // we don't get intermediate scroll events that would set isManuallyControlled)
   useEffect(() => {
     if (!isManuallyControlled && scrollRef.current && topics.length > 0) {
-      // Wait for DOM to update with new SVG dimensions before scrolling
-      requestAnimationFrame(() => {
+      // Wait for DOM/layout so scrollWidth reflects new content
+      const id = setTimeout(() => {
         requestAnimationFrame(() => {
           if (!scrollRef.current) return;
           const scrollLeftTarget = Math.max(0, scrollRef.current.scrollWidth - scrollRef.current.clientWidth);
           if (scrollLeftTarget > 0) {
             programmaticScrollRef.current = true;
-            scrollRef.current.scrollTo({ left: scrollLeftTarget, behavior: 'smooth' });
+            scrollRef.current.scrollTo({ left: scrollLeftTarget, behavior: 'auto' });
           }
         });
-      });
+      }, 0);
+      return () => clearTimeout(id);
     }
-  }, [topics, isManuallyControlled]);
+  }, [topics.length, lastTopicId, isManuallyControlled]);
 
   const scrollToLatest = () => {
     if (!scrollRef.current) return;
@@ -107,7 +113,7 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
 
   /** Align with narrow y-axis strip (24px); small gap between axis and first grid line. */
   const leftPadding = 28;
-  const rightPadding = 80;
+  const rightPadding = 10;
   const topPadding = 60;
   /** Matches sticky-x axis line (20px from top of 56px strip) so 0.00 grid line sits on x-axis. */
   const bottomPadding = 36;
