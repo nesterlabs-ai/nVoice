@@ -42,7 +42,16 @@ class HybridEmotionDetector:
             mismatch_threshold: Threshold for detecting emotion mismatch
         """
         self.audio_detector = audio_detector
-        self.llm_detector = get_llm_detector(api_key=llm_api_key) if llm_api_key else None
+        logger.info(
+            f"[EMOTION-DIAG] HybridEmotionDetector init: "
+            f"llm_api_key={'SET' if llm_api_key else 'NONE'}, "
+            f"audio_detector={audio_detector is not None}"
+        )
+        try:
+            self.llm_detector = get_llm_detector(api_key=llm_api_key) if llm_api_key else None
+        except Exception as e:
+            logger.error(f"[EMOTION-DIAG] Failed to init LLM detector: {e}")
+            self.llm_detector = None
 
         # Configurable weights
         self.default_audio_weight = default_audio_weight
@@ -51,9 +60,10 @@ class HybridEmotionDetector:
         self.mismatch_threshold = mismatch_threshold
 
         logger.info(
-            f"Hybrid Emotion Detector initialized (LLM-based): "
+            f"[EMOTION-DIAG] Hybrid Emotion Detector initialized: "
             f"audio_weight={default_audio_weight}, text_weight={default_text_weight}, "
-            f"mismatch_threshold={mismatch_threshold}"
+            f"mismatch_threshold={mismatch_threshold}, "
+            f"llm_detector={'READY' if self.llm_detector else 'NONE (text sentiment disabled)'}"
         )
 
     async def detect_hybrid_emotion(

@@ -76,13 +76,9 @@ class GraphKeywordExtractor:
 
         try:
             url = f"{self.lightrag_url}/graphs?label=*&max_depth=10"
-            headers = {
-                "ngrok-skip-browser-warning": "true",  # Skip ngrok interstitial
-            }
-            # Add LightRAG API key if available
+            headers = {}
             if self.lightrag_api_key:
                 headers["X-API-Key"] = self.lightrag_api_key
-
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()
@@ -480,14 +476,12 @@ _extractor: Optional[GraphKeywordExtractor] = None
 def get_graph_keyword_extractor(
     api_key: str = None,
     lightrag_url: str = None,
-    lightrag_api_key: str = None,
 ) -> GraphKeywordExtractor:
     """Get or create global GraphKeywordExtractor instance.
 
     Args:
         api_key: Google AI API key (required on first call, or from env)
         lightrag_url: LightRAG API URL (optional, defaults to env or localhost)
-        lightrag_api_key: LightRAG API key for authentication
     """
     global _extractor
 
@@ -498,15 +492,9 @@ def get_graph_keyword_extractor(
             raise ValueError("Google API key required to initialize keyword extractor")
 
         if lightrag_url is None:
-            lightrag_url = os.getenv("LIGHTRAG_BASE_URL", "https://lightrag.nesterlabs.com")
+            lightrag_url = os.getenv("LIGHTRAG_URL", os.getenv("LIGHTRAG_BASE_URL", "https://lightrag.nesterlabs.com"))
 
-        if lightrag_api_key is None:
-            lightrag_api_key = os.getenv("LIGHTRAG_API_KEY", "")
-
-        _extractor = GraphKeywordExtractor(
-            api_key=api_key,
-            lightrag_url=lightrag_url,
-            lightrag_api_key=lightrag_api_key,
-        )
+        lightrag_api_key = os.getenv("LIGHTRAG_API_KEY", "")
+        _extractor = GraphKeywordExtractor(api_key=api_key, lightrag_url=lightrag_url, lightrag_api_key=lightrag_api_key)
 
     return _extractor

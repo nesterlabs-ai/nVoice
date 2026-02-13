@@ -10,8 +10,6 @@ Features:
 - Voice Activity Detection (VAD)
 - Low latency (processes 10ms chunks)
 - No API key required (open source)
-
-Install: pip install webrtc-noise-gain
 """
 
 from loguru import logger
@@ -19,17 +17,14 @@ from loguru import logger
 from pipecat.audio.filters.base_audio_filter import BaseAudioFilter
 from pipecat.frames.frames import FilterControlFrame, FilterEnableFrame
 
-# Lazy import - only fail when actually used
-AudioProcessor = None
-_import_error = None
-
 try:
     from webrtc_noise_gain import AudioProcessor
 except ModuleNotFoundError as e:
-    _import_error = e
-    logger.warning(
-        "WebRTC noise suppression not available. Install with: pip install webrtc-noise-gain"
+    logger.error(f"Exception: {e}")
+    logger.error(
+        "In order to use the WebRTC NS filter, you need to `pip install webrtc-noise-gain`."
     )
+    raise Exception(f"Missing module: {e}")
 
 
 class WebRTCNoiseSuppressionFilter(BaseAudioFilter):
@@ -53,16 +48,7 @@ class WebRTCNoiseSuppressionFilter(BaseAudioFilter):
         Args:
             noise_suppression_level: 0 (disabled) to 4 (maximum suppression)
             auto_gain_dbfs: 0 (disabled) to 31 (maximum gain)
-
-        Raises:
-            ImportError: If webrtc-noise-gain package is not installed
         """
-        if AudioProcessor is None:
-            raise ImportError(
-                "WebRTC noise suppression requires webrtc-noise-gain package. "
-                "Install with: pip install webrtc-noise-gain"
-            )
-
         self._filtering = True
         self._sample_rate = 0
         self._noise_level = min(4, max(0, noise_suppression_level))

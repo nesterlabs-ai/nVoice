@@ -6,8 +6,9 @@ including Whisper and Deepgram, with support for text normalization and
 noise filtering.
 """
 
+import re
 import unicodedata
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 from deepgram import LiveOptions
 from loguru import logger
@@ -19,21 +20,36 @@ from pipecat.transcriptions.language import Language
 
 
 class TextNormalizedDeepgramSTTService(DeepgramSTTService):
-    """Deepgram STT service with Unicode text normalization.
+    """Deepgram STT service with Unicode normalization and config-driven STT corrections.
 
-    Extends the base Deepgram STT service to normalize Unicode text,
-    preventing JSON encoding issues and ensuring consistent text output.
+    Extends the base Deepgram STT service to:
+    - Normalize Unicode text, preventing JSON encoding issues
+    - Apply configurable post-processing corrections for STT misrecognitions
+
+    Corrections are loaded from config.yaml `stt.config.corrections` as a list of
+    {"pattern": "regex", "replacement": "text"} entries, compiled once at init time.
     """
 
-    def __init__(self, api_key: str, live_options: LiveOptions = None, **kwargs):
+    def __init__(self, api_key: str, live_options: LiveOptions = None,
+                 corrections: List[Dict] = None, **kwargs):
         """Initialize the normalized Deepgram STT service.
 
         Args:
             api_key: Deepgram API key
             live_options: Deepgram live options configuration
+            corrections: List of {"pattern": "regex", "replacement": "text"} dicts
             **kwargs: Additional arguments for the base service
         """
         super().__init__(api_key=api_key, live_options=live_options, **kwargs)
+        self._corrections: List[Tuple[re.Pattern, str]] = []
+        if corrections:
+            for entry in corrections:
+                try:
+                    compiled = re.compile(entry["pattern"], re.IGNORECASE)
+                    self._corrections.append((compiled, entry["replacement"]))
+                except (re.error, KeyError) as e:
+                    logger.warning(f"Invalid STT correction entry {entry}: {e}")
+            logger.info(f"STT post-processing: {len(self._corrections)} corrections loaded")
 
     def _normalize_text(self, text: str) -> str:
         """Normalize Unicode text to prevent encoding issues.
@@ -55,8 +71,23 @@ class TextNormalizedDeepgramSTTService(DeepgramSTTService):
             logger.warning(f"Text normalization failed for '{text}': {e}")
             return text
 
+    def _apply_corrections(self, text: str) -> str:
+        """Apply config-driven STT corrections to transcribed text.
+
+        Args:
+            text: Transcribed text that may contain misrecognitions
+
+        Returns:
+            Text with corrections applied
+        """
+        if not text or not self._corrections:
+            return text
+        for pattern, replacement in self._corrections:
+            text = pattern.sub(replacement, text)
+        return text
+
     async def push_frame(self, frame: Frame, direction: FrameDirection = FrameDirection.DOWNSTREAM) -> None:
-        """Override push_frame to normalize text and log transcription frames.
+        """Override push_frame to normalize text and fix proper nouns.
 
         Args:
             frame: Frame to push
@@ -66,11 +97,11 @@ class TextNormalizedDeepgramSTTService(DeepgramSTTService):
         if isinstance(frame, TranscriptionFrame):
             logger.info(f"🎤 STT push_frame: TranscriptionFrame text='{frame.text}'")
             if frame.text:
-                normalized_text = self._normalize_text(frame.text)
-                if normalized_text != frame.text:
-                    logger.debug(f"Normalized text: '{frame.text}' -> '{normalized_text}'")
+                corrected = self._apply_corrections(self._normalize_text(frame.text))
+                if corrected != frame.text:
+                    logger.debug(f"STT corrected: '{frame.text}' -> '{corrected}'")
                     frame = TranscriptionFrame(
-                        text=normalized_text,
+                        text=corrected,
                         user_id=frame.user_id,
                         timestamp=frame.timestamp,
                         language=getattr(frame, "language", None),
@@ -152,14 +183,19 @@ class SpeechToTextService:
                 "vad_events": self.config.get("vad_events", False),
             }
 
+            # NOTE: Deepgram's `keywords` param breaks Nova-3 WebSocket connections.
+            # Proper noun correction is handled via config-driven post-processing
+            # in TextNormalizedDeepgramSTTService._apply_corrections() instead.
+            corrections = self.config.get("corrections", [])
+
             if detect_language:
                 live_options_config["detect_language"] = True
+            elif language == "multi" or language == "hi" or self.config.get("support_hinglish", False):
+                # Multi-language mode: Hindi + English (Hinglish) support via Deepgram Nova-3
+                live_options_config["language"] = "multi"
             else:
-                if language == "hi" or self.config.get("support_hinglish", False):
-                    live_options_config["language"] = "multi"
-                else:
-                    language_mapping = {"en": Language.EN, "hi": Language.HI}
-                    live_options_config["language"] = language_mapping.get(language, Language.EN)
+                language_mapping = {"en": Language.EN, "hi": Language.HI}
+                live_options_config["language"] = language_mapping.get(language, Language.EN)
 
             live_options = LiveOptions(**live_options_config)
             logger.info(
@@ -168,7 +204,7 @@ class SpeechToTextService:
             )
 
             self.stt_service = TextNormalizedDeepgramSTTService(
-                api_key=api_key, live_options=live_options, should_interrupt=False
+                api_key=api_key, live_options=live_options, corrections=corrections
             )
         else:
             raise ValueError(f"Unsupported STT provider: {self.stt_provider}")

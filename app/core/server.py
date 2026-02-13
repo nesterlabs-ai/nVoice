@@ -28,7 +28,7 @@ class VoiceAssistantServer:
 
     Attributes:
         config: Server configuration dictionary
-        server_config: Server-specific configuration (property that reads from config)
+        server_config: Server-specific configuration
         voice_assistant: Current voice assistant instance
         websocket_server_transport: WebSocket transport instance
     """
@@ -39,41 +39,17 @@ class VoiceAssistantServer:
         Args:
             config: Configuration dictionary for the voice assistant and server
         """
-        self._config = config or {}
-        self._server_config_cache = None  # Cache invalidated when config changes
+        self.config = config or {}
+        self.server_config = self.config.get("server", {})
+        self._apply_server_defaults()
         self.voice_assistant = None
         self.websocket_server_transport = None
         self._running = True
 
         logger.info("Initialized Voice Assistant Server")
 
-    @property
-    def config(self) -> Dict[str, Any]:
-        """Get the configuration dictionary."""
-        return self._config
-
-    @config.setter
-    def config(self, value: Dict[str, Any]) -> None:
-        """Set the configuration dictionary and invalidate cache."""
-        self._config = value or {}
-        self._server_config_cache = None  # Invalidate cache to recompute server_config
-
-    @property
-    def server_config(self) -> Dict[str, Any]:
-        """Get server-specific configuration with defaults applied.
-
-        This property ensures config changes are reflected in server_config.
-        """
-        if self._server_config_cache is None:
-            self._server_config_cache = self._config.get("server", {}).copy()
-            self._apply_server_defaults()
-        return self._server_config_cache
-
     def _apply_server_defaults(self) -> None:
-        """Apply default server configuration values from environment.
-
-        Note: This modifies _server_config_cache directly, called from server_config property.
-        """
+        """Apply default server configuration values from environment."""
         defaults = {
             "fastapi_host": os.getenv("FASTAPI_HOST", "0.0.0.0"),
             "fastapi_port": int(os.getenv("FASTAPI_PORT", "7860")),
@@ -83,13 +59,12 @@ class VoiceAssistantServer:
             "audio_in_enabled": os.getenv("AUDIO_IN_ENABLED", "true").lower() == "true",
             "audio_out_enabled": os.getenv("AUDIO_OUT_ENABLED", "true").lower() == "true",
             "add_wav_header": os.getenv("ADD_WAV_HEADER", "false").lower() == "true",
+            "vad": {},
         }
 
-        # Only apply defaults for keys that don't exist in config
-        # Note: Don't add empty vad: {} - let config.yaml values be used
         for key, value in defaults.items():
-            if key not in self._server_config_cache:
-                self._server_config_cache[key] = value
+            if key not in self.server_config:
+                self.server_config[key] = value
 
     def create_websocket_transport(self) -> WebsocketServerTransport:
         """Create and configure the standalone WebSocket transport.

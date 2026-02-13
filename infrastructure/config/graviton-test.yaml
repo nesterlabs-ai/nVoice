@@ -12,7 +12,7 @@ aws:
 # EC2 Graviton Instance Configuration
 ec2:
   instance:
-    instance_type: "t4g.small"  # Free trial: 750 hrs/mo until Dec 2026
+    instance_type: "t4g.medium"  # 4GB RAM needed for wav2vec2 emotion detection
     ami_type: "amazon_linux_2023_arm64"
     key_pair_name: "nester-graviton-test"
     volume_size_gb: 20  # gp3 EBS

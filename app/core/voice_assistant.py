@@ -11,16 +11,14 @@ and manages the overall voice assistant functionality including:
 """
 
 import asyncio
-import time
 from typing import Any, Dict, List
 
 from loguru import logger
-from pipecat.frames.frames import TTSSpeakFrame, TranscriptionFrame
+from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-# NOTE: STTMuteFilter removed - was blocking greeting trigger, creating deadlock
-# from pipecat.processors.filters.stt_mute_filter import STTMuteFilter, STTMuteConfig, STTMuteStrategy
+from pipecat.processors.filters.stt_mute_filter import STTMuteFilter, STTMuteConfig, STTMuteStrategy
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.transports.base_transport import BaseTransport
 
@@ -41,9 +39,7 @@ from app.services.tts import TextToSpeechService
 from app.processors.tone_aware_processor import ToneAwareProcessor
 from app.processors.text_filter_processor import TextFilterProcessor
 from app.processors.visual_hint_processor import VisualHintProcessor
-from app.processors.noise_handler import NoiseHandlerProcessor
-from app.processors.minimal_prefilter import MinimalPreFilter
-from app.processors.interruption_filter import InterruptionFilterProcessor
+from app.processors.smart_interruption_processor import SmartInterruptionProcessor
 
 
 class VoiceAssistant:
@@ -87,8 +83,15 @@ class VoiceAssistant:
         self.rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
         self.latency_analyzer = LatencyAnalyzer()
 
-        # NOTE: STTMuteFilter removed - it was blocking the greeting trigger, creating a deadlock
-        # Goonj doesn't use STTMuteFilter and works fine without it
+        # STT mute filter - mutes STT only during the first bot greeting
+        # MUTE_UNTIL_FIRST_BOT_COMPLETE: blocks user audio only during initial greeting TTS,
+        # then allows all user input through (including barge-in interruptions)
+        # Self-interruption prevention relies on:
+        #   1. Client-side echoCancellation: true (getUserMedia constraint)
+        #   2. VAD params (confidence=0.7, min_volume=0.5, start_secs=0.2)
+        self.stt_mute_filter = STTMuteFilter(
+            config=STTMuteConfig(strategies={STTMuteStrategy.MUTE_UNTIL_FIRST_BOT_COMPLETE})
+        )
 
         # Tone-aware processor for dynamic voice selection using MSP-PODCAST + LLM text sentiment
         # Uses Google API key for Gemini-based text sentiment detection
@@ -96,7 +99,10 @@ class VoiceAssistant:
         google_api_key = self.config.get("conversation", {}).get("llm", {}).get("api_key")
         server_config = self.config.get("server", {})
         emotion_enabled = server_config.get("emotion_detection_enabled", True)
-        logger.info(f"Emotion detection enabled: {emotion_enabled}")
+        logger.info(
+            f"[EMOTION-DIAG] Emotion detection config: enabled={emotion_enabled}, "
+            f"groq_api_key={'SET' if google_api_key and not google_api_key.startswith('$') else 'MISSING'}"
+        )
         self.tone_processor = ToneAwareProcessor(
             cooldown_seconds=3.0,  # Cooldown between voice switches
             enabled=emotion_enabled,  # Read from config - can disable for performance
@@ -119,40 +125,14 @@ class VoiceAssistant:
             use_a2ui=False,  # A2UI now handled via RAG calls in ConversationManager
         )
 
-        # Noise handler processor - pattern-based noise detection and recovery
-        # Pattern-based noise detection for robust noise handling
-        noise_handler_config = server_config.get("noise_handler", {})
-        noise_handler_enabled = noise_handler_config.get("enabled", True)
-        logger.info(f"🔇 Noise handler enabled: {noise_handler_enabled}")
-        self.noise_handler = NoiseHandlerProcessor(
-            max_false_starts=noise_handler_config.get("max_false_starts", 3),
-            min_speech_duration=noise_handler_config.get("min_speech_duration", 0.5),
-            recovery_delay=noise_handler_config.get("recovery_delay", 2.0),
-        ) if noise_handler_enabled else None
-
-        # Minimal pre-filter - transcription-level noise filtering
-        # Drops low-confidence transcriptions and noise markers
-        prefilter_config = server_config.get("prefilter", {})
-        prefilter_enabled = prefilter_config.get("enabled", True)
-        logger.info(f"🔇 Minimal pre-filter enabled: {prefilter_enabled}")
-        self.prefilter = MinimalPreFilter(
-            confidence_threshold=prefilter_config.get("confidence_threshold", 0.5),
-            min_length=prefilter_config.get("min_length", 2),
-            greeting_protection=prefilter_config.get("greeting_protection", True),
-        ) if prefilter_enabled else None
-
-        # Interruption filter - blocks InterruptionFrames when bot is not speaking
-        # This prevents user queries from being cancelled by pipecat's interruption system
-        # when there's no ongoing bot speech to interrupt
-        interruption_config = server_config.get("interruption_filter", {})
-        interruption_filter_enabled = interruption_config.get("enabled", True)
-        logger.info(f"🛡️ Interruption filter enabled: {interruption_filter_enabled}")
-        self.interruption_filter = InterruptionFilterProcessor(
-            grace_period_after_bot_speech=interruption_config.get("grace_period", 0.5),
-            min_speaking_time_before_interrupt=interruption_config.get("min_speaking_time", 1.5),
-            transcription_wait_timeout=interruption_config.get("transcription_wait_timeout", 2.0),
-            debug=interruption_config.get("debug", False),
-        ) if interruption_filter_enabled else None
+        # Smart interruption processor - validates interruptions to prevent false barge-ins
+        smart_int_config = server_config.get("smart_interruption", {})
+        smart_int_enabled = smart_int_config.get("enabled", True)
+        logger.info(f"🛡️ Smart interruption validation enabled: {smart_int_enabled}")
+        self.smart_interruption = SmartInterruptionProcessor(
+            enabled=smart_int_enabled,
+            min_confidence_threshold=smart_int_config.get("min_confidence", 0.7),
+        )
 
         # Store LLM and context references for greeting injection
         self.llm = None
@@ -194,11 +174,13 @@ class VoiceAssistant:
         rag_config = self.config.get("rag", {})
         self.rag_service = create_rag_service(rag_config)
 
-        # Initialize Conversation Manager with A2UI support
+        # Initialize Conversation Manager with A2UI support and SmartTurn v3
         conversation_config = self.config.get("conversation", {})
         language_config = self.config.get("language", {})
         a2ui_config = self.config.get("a2ui", {})
         a2ui_enabled = a2ui_config.get("enabled", True)
+        server_config = self.config.get("server", {})
+        smart_turn_config = server_config.get("smart_turn", {})
 
         # Include system_prompt in llm_config so ConversationManager can access it
         llm_config = conversation_config.get("llm", {}).copy()
@@ -209,6 +191,7 @@ class VoiceAssistant:
             llm_config=llm_config,
             language_config=language_config,
             a2ui_enabled=a2ui_enabled,
+            smart_turn_config=smart_turn_config,  # SmartTurn v3 config for ML-based turn detection
         )
 
         logger.info("All services initialized successfully")
@@ -232,6 +215,8 @@ class VoiceAssistant:
         stt = self.stt_service.get_service()
         tts = self.tts_service.get_service()
         llm = self.conversation_manager.get_llm_service()
+
+        # Get context aggregator (SmartTurn v3 is now configured here via UserTurnStrategies)
         context_aggregator = self.conversation_manager.get_context_aggregator()
 
         # Store LLM, TTS and context for greeting injection
@@ -242,42 +227,60 @@ class VoiceAssistant:
         # Set up TTS service in conversation manager for function call feedback
         self.conversation_manager.set_tts_service(tts)
 
-        # Set up A2UI callback for emitting visual updates from RAG responses
-        self.conversation_manager.set_a2ui_callback(self._emit_a2ui_update)
-
-        # Connect TTS to tone processor for dynamic voice switching (emotion detection)
+        # Connect TTS to tone processor for dynamic voice switching
         self.tone_processor.set_tts_service(tts)
 
         # Connect VisualHintProcessor to ToneProcessor for A2UI query capture
         self.tone_processor.set_visual_hint_processor(self.visual_hint_processor)
 
-        # Initialize MSP-PODCAST wav2vec2 model for audio emotion detection
+        # Set up A2UI callback for emitting visual updates from RAG responses
+        # This enables the full LightRAG + A2UI pipeline
+        self.conversation_manager.set_a2ui_callback(self._emit_a2ui_update)
+
+        # Initialize MSP-PODCAST wav2vec2 for emotion detection
+        logger.info("[EMOTION-DIAG] About to call tone_processor.initialize()...")
         await self.tone_processor.initialize()
+        logger.info(
+            f"[EMOTION-DIAG] After initialize: "
+            f"detector_connected={self.tone_processor.emotion_detector.is_connected}, "
+            f"detector_model={self.tone_processor.emotion_detector.model is not None}, "
+            f"hybrid_detector={self.tone_processor.hybrid_detector is not None}, "
+            f"enabled={self.tone_processor.enabled}"
+        )
+
+        # Get smart interruption config for conditional pipeline inclusion
+        server_config = self.config.get("server", {})
+        smart_int_config = server_config.get("smart_interruption", {})
+        smart_int_enabled = smart_int_config.get("enabled", True)
+
+        # Create pipeline
+        # ToneAwareProcessor receives audio frames for SpeechBrain emotion detection
+        # VisualHintProcessor streams text word-by-word and emits visual hints
+        # TextFilterProcessor removes markdown before TTS
 
         # Build pipeline processors list
-        # Input -> STT -> PreFilter -> ToneAware -> Context -> LLM -> TextFilter -> TTS -> Output
         pipeline_processors = [
             transport.input(),
+            stt,                          # STT first to generate transcriptions
         ]
 
-        # STT to generate transcriptions
-        pipeline_processors.append(stt)
+        # Only add SmartInterruptionProcessor if enabled
+        if smart_int_enabled:
+            pipeline_processors.append(self.smart_interruption)  # Validate interruptions from transcriptions
+            logger.info("🛡️ SmartInterruptionProcessor added to pipeline")
+        else:
+            logger.info("🛡️ SmartInterruptionProcessor DISABLED - not added to pipeline")
 
-        # Add MinimalPreFilter after STT to filter garbage transcriptions
-        if self.prefilter:
-            pipeline_processors.append(self.prefilter)
-            logger.info("🔇 MinimalPreFilter added to pipeline (after STT)")
-
-        # Add ToneAwareProcessor after STT to receive audio + transcription frames
-        # for hybrid emotion detection (70% audio MSP-PODCAST + 30% LLM text)
-        pipeline_processors.append(self.tone_processor)
-        logger.info("🎭 ToneAwareProcessor added to pipeline (after STT)")
-
+        # Continue with rest of pipeline
+        # STTMuteFilter MUST be before context_aggregator.user() to block
+        # VAD/transcription frames during bot speech (prevents self-interruption)
         pipeline_processors.extend([
-            context_aggregator.user(),    # Context aggregator adds messages to LLM context
+            self.tone_processor,          # AFTER STT to receive both audio AND transcriptions for hybrid mode
+            self.stt_mute_filter,         # Mute BEFORE context - blocks VAD/STT frames during bot speech
+            context_aggregator.user(),    # Context aggregator (receives only unmuted frames)
             self.rtvi,
             llm,
-            self.visual_hint_processor,   # Stream text word-by-word
+            self.visual_hint_processor,   # Stream text and detect content for visual cards
             self.text_filter,             # Remove markdown before TTS
             tts,
             transport.output(),
@@ -304,21 +307,30 @@ class VoiceAssistant:
         if not self.pipeline:
             raise ValueError("Pipeline must be created before creating task")
 
-        # Build pipeline params
-        # allow_interruptions=False prevents the PipelineTask from processing
-        # InterruptionTaskFrames generated by Pipecat's deprecated VAD handler.
-        # These task-level frames bypass the pipeline entirely and cannot be filtered,
-        # so any noise triggering VAD would cut off the bot mid-speech.
-        # RAG calls are additionally protected by asyncio.shield + generation counter.
+        # Build pipeline params with interruption support
         pipeline_params = PipelineParams(
             enable_metrics=enable_metrics,
             enable_usage_metrics=enable_metrics,
-            idle_timeout_secs=60,
-            report_only_initial_ttfb=True,
-            allow_interruptions=False,
+            idle_timeout_secs=60,  # Increased from default ~5s to prevent premature cancellation
+            report_only_initial_ttfb=True,  # Only report first TTFB for cleaner metrics
+            allow_interruptions=True,  # Enable barge-in - user can interrupt bot speech
         )
 
-        logger.info("🎤 Interruptions DISABLED — InterruptionTaskFrames ignored by task")
+        # Interruption strategy configuration
+        # When interruption_strategies is set, pipecat DEFERS interruption to the
+        # LLM aggregator (waits for word count check). When empty, pipecat sends
+        # InterruptionFrame IMMEDIATELY on any UserStartedSpeakingFrame during bot speech.
+        # Using immediate interruption for reliable barge-in behavior.
+        server_config = self.config.get("server", {})
+        interruption_config = server_config.get("interruption", {})
+        min_words = interruption_config.get("min_words", 0)
+
+        if INTERRUPTION_STRATEGY_AVAILABLE and min_words > 0:
+            pipeline_params.interruption_strategies = [MinWordsInterruptionStrategy(min_words=min_words)]
+            logger.info(f"🎤 Interruption: DEFERRED mode (MinWords={min_words})")
+        else:
+            # No strategies = immediate interruption on any speech during bot output
+            logger.info(f"🎤 Interruption: IMMEDIATE mode (any speech stops TTS)")
 
         self.task = PipelineTask(
             self.pipeline,

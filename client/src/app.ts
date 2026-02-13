@@ -14,13 +14,12 @@
  */
 
 import {
-  PipecatClient,
-  PipecatClientOptions,
+  RTVIClient,
+  RTVIClientOptions,
   RTVIEvent,
 } from '@pipecat-ai/client-js';
 import {
-  WebSocketTransport,
-  ProtobufFrameSerializer,
+  WebSocketTransport
 } from "@pipecat-ai/websocket-transport";
 
 // A2UI imports
@@ -38,7 +37,7 @@ import { Loader } from './components/Loader';
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 class VoiceScannerApp {
-  private rtviClient: PipecatClient | null = null;
+  private rtviClient: RTVIClient | null = null;
   private transport: WebSocketTransport | null = null;
   private botPlayerAnalyser: AnalyserNode | null = null;
   private botPlayerDataArray: Uint8Array | null = null;
@@ -1848,24 +1847,6 @@ class VoiceScannerApp {
       // Store the player's AudioContext for speaker mute (suspend/resume)
       if (wavPlayer.context) {
         this.botPlayerContext = wavPlayer.context as AudioContext;
-        console.log('[BOT AUDIO] AudioContext state:', this.botPlayerContext.state);
-        console.log('[BOT AUDIO] AudioContext sampleRate:', this.botPlayerContext.sampleRate);
-
-        // CRITICAL: Resume AudioContext if suspended (browser autoplay policy)
-        // The AudioContext may be suspended if created outside a synchronous user gesture
-        if (this.botPlayerContext.state === 'suspended') {
-          console.log('[BOT AUDIO] AudioContext is SUSPENDED - resuming...');
-          this.botPlayerContext.resume().then(() => {
-            console.log('[BOT AUDIO] AudioContext resumed successfully, state:', this.botPlayerContext?.state);
-          }).catch((err) => {
-            console.error('[BOT AUDIO] Failed to resume AudioContext:', err);
-          });
-        }
-
-        // Listen for state changes
-        this.botPlayerContext.onstatechange = () => {
-          console.log('[BOT AUDIO] AudioContext state changed to:', this.botPlayerContext?.state);
-        };
       }
 
       // Get the analyser from the player
@@ -1937,20 +1918,6 @@ class VoiceScannerApp {
       this.log('Bot started speaking');
       // Note: Bot audio visualization uses simulated data since RTVI doesn't expose bot audio track
       this.setVoiceState('speaking');
-
-      // CRITICAL: Ensure AudioContext is running when bot audio arrives
-      if (this.botPlayerContext && this.botPlayerContext.state === 'suspended') {
-        console.log('[BOT AUDIO] BotStartedSpeaking: AudioContext suspended - resuming NOW');
-        this.botPlayerContext.resume();
-      }
-      // Also check via transport's player directly (in case setupBotPlayerAnalyser hasn't run yet)
-      try {
-        const player = (this.transport as any)?._mediaManager?._wavStreamPlayer;
-        if (player?.context?.state === 'suspended') {
-          console.log('[BOT AUDIO] BotStartedSpeaking: Player AudioContext suspended - resuming');
-          player.context.resume();
-        }
-      } catch (e) { /* ignore */ }
     });
 
     this.rtviClient.on(RTVIEvent.BotStoppedSpeaking, () => {
@@ -2025,29 +1992,13 @@ class VoiceScannerApp {
       const backendUrl = this.getBackendUrl();
       this.log(`Connecting to ${backendUrl}...`);
 
-      // Wrap the default protobuf serializer to handle text WebSocket messages
-      // Pipecat backend sends some frames (e.g., emotion detection) as JSON text
-      // instead of binary protobuf; the default serializer only handles binary Blobs
-      const protobuf = new ProtobufFrameSerializer();
-      const serializer = {
-        serialize: protobuf.serialize.bind(protobuf),
-        serializeAudio: protobuf.serializeAudio.bind(protobuf),
-        serializeMessage: protobuf.serializeMessage.bind(protobuf),
-        async deserialize(data: any) {
-          if (typeof data === 'string') {
-            try {
-              const msg = JSON.parse(data);
-              return { type: 'message' as const, message: msg };
-            } catch {
-              return { type: 'raw' as const, message: data };
-            }
-          }
-          return protobuf.deserialize(data);
-        },
-      };
-      this.transport = new WebSocketTransport({ serializer });
-      const config: PipecatClientOptions = {
+      this.transport = new WebSocketTransport();
+      const config: RTVIClientOptions = {
         transport: this.transport,
+        params: {
+          baseUrl: backendUrl,
+          endpoints: { connect: '/connect' },
+        },
         enableMic: true,
         enableCam: false,
         callbacks: {
@@ -2062,25 +2013,8 @@ class VoiceScannerApp {
             this.showNotification('CONNECTION ESTABLISHED');
 
             // Set up bot player analyser after connection (with delay to ensure player is ready)
-            // Also explicitly resume AudioContext to handle browser autoplay policy
             setTimeout(() => {
               this.setupBotPlayerAnalyser();
-              // Double-check: also try to resume via the wavStreamPlayer directly
-              try {
-                const mm = (this.transport as any)?._mediaManager;
-                const player = mm?._wavStreamPlayer;
-                if (player?.context?.state === 'suspended') {
-                  console.log('[BOT AUDIO] onConnected: Force-resuming suspended AudioContext');
-                  player.context.resume();
-                }
-                // Clear any stale interrupted track IDs that could block audio playback
-                if (player?.interruptedTrackIds?.size > 0) {
-                  console.log('[BOT AUDIO] onConnected: Clearing interruptedTrackIds:', [...player.interruptedTrackIds]);
-                  player.interruptedTrackIds.clear();
-                }
-              } catch (e) {
-                console.warn('[BOT AUDIO] onConnected: Could not access player internals:', e);
-              }
             }, 500);
           },
           onDisconnected: () => {
@@ -2206,13 +2140,11 @@ class VoiceScannerApp {
         },
       };
 
-      this.rtviClient = new PipecatClient(config);
+      this.rtviClient = new RTVIClient(config);
       this.setupTrackListeners();
 
       await this.rtviClient.initDevices();
-      await this.rtviClient.startBotAndConnect({
-        endpoint: `${backendUrl}/connect`,
-      });
+      await this.rtviClient.connect();
 
     } catch (error) {
       this.isConnecting = false;

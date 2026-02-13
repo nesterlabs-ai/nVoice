@@ -88,10 +88,15 @@ def get_msp_model():
     global _model, _processor, _model_loading, _model_quantized
 
     if _model is not None and _processor is not None:
+        logger.debug("[EMOTION-DIAG] get_msp_model: returning cached model")
         return _model, _processor
 
     if _model_loading:
-        logger.warning("MSP model is already loading in another thread, skipping...")
+        logger.error(
+            "[EMOTION-DIAG] get_msp_model: _model_loading=True but model is None! "
+            "This means the loading flag was not reset after a previous load. "
+            "This is a critical bug that disables emotion detection."
+        )
         return None, None
 
     _model_loading = True
@@ -110,8 +115,9 @@ def get_msp_model():
         class EmotionModel(Wav2Vec2PreTrainedModel):
             """Wav2Vec2 model with regression head for dimensional emotions."""
 
-            # Required for newer transformers versions (>=4.40)
+            # Required for transformers >=4.40 and >=5.x
             _tied_weights_keys = []
+            all_tied_weights_keys = {}
 
             def __init__(self, config):
                 super().__init__(config)
@@ -143,7 +149,7 @@ def get_msp_model():
         # Benefits: 2-3x faster inference, 75% smaller memory footprint
         # NOTE: Not supported on Apple Silicon (M1/M2/M3) - skip gracefully
         import platform
-        is_arm = True
+        is_arm = platform.machine() in ('arm64', 'aarch64')
 
         if is_arm:
             logger.info("⚠️ Skipping INT8 quantization (not supported on Apple Silicon)")
@@ -157,7 +163,7 @@ def get_msp_model():
                     {torch.nn.Linear},  # Quantize Linear layers (main compute)
                     dtype=torch.qint8
                 )
-                _model_quantized = False
+                _model_quantized = True
                 quantized_size = original_size * 0.3  # ~70% reduction for Linear layers
                 logger.info(f"✅ MSP-PODCAST model loaded and optimized:")
                 logger.info(f"   Original size: ~{original_size:.0f}MB")
@@ -170,7 +176,8 @@ def get_msp_model():
         
         # Force garbage collection after model load
         gc.collect()
-        
+
+        _model_loading = False
         return _model, _processor
 
     except ImportError as e:
@@ -299,19 +306,29 @@ class MSPEmotionDetector:
         Returns:
             True if initialization successful, False otherwise
         """
-        logger.info("🔌 MSP-PODCAST connect() called - attempting to load model...")
+        logger.info(
+            f"[EMOTION-DIAG] MSP-PODCAST connect() called. "
+            f"Current state: model={self.model is not None}, processor={self.processor is not None}, "
+            f"is_connected={self.is_connected}, _model_loading={_model_loading}"
+        )
         try:
             self.model, self.processor = get_msp_model()
             if self.model is not None and self.processor is not None:
                 self.is_connected = True
-                logger.info("✅ MSP-PODCAST emotion detection ready (natural conversation)")
+                logger.info(
+                    f"[EMOTION-DIAG] MSP-PODCAST connect() SUCCESS. "
+                    f"model={type(self.model).__name__}, is_connected={self.is_connected}"
+                )
                 return True
             else:
                 self.is_connected = False
-                logger.warning("⚠️ MSP-PODCAST model returned None - using text fallback")
+                logger.error(
+                    f"[EMOTION-DIAG] MSP-PODCAST connect() FAILED - get_msp_model() returned None! "
+                    f"_model_loading={_model_loading} (if True, this is the bug - flag stuck)"
+                )
                 return False
         except Exception as e:
-            logger.error(f"❌ Failed to initialize MSP-PODCAST: {e}")
+            logger.error(f"[EMOTION-DIAG] MSP-PODCAST connect() EXCEPTION: {e}")
             import traceback
             traceback.print_exc()
             self.is_connected = False
@@ -342,11 +359,20 @@ class MSPEmotionDetector:
             MSPEmotionResult with arousal/dominance/valence and mapped tone, or None if failed
         """
         if not self.enabled or not self.is_connected or self.model is None:
+            logger.debug(
+                f"[EMOTION-DIAG] process_audio early return: "
+                f"enabled={self.enabled}, is_connected={self.is_connected}, "
+                f"model_loaded={self.model is not None}"
+            )
             return None
 
         # Need at least 0.5 seconds of audio for meaningful detection
         min_bytes = int(sample_rate * 2 * 0.5)
         if len(audio_bytes) < min_bytes:
+            logger.debug(
+                f"[EMOTION-DIAG] process_audio: buffer too short "
+                f"({len(audio_bytes)} < {min_bytes} bytes)"
+            )
             return None
 
         try:
