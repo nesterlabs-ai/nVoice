@@ -2348,8 +2348,8 @@ body {
 
   .center-section .media-control-bar.close-mode {
     width: 140px;
-    bottom: 50%;
-    /* transform: translate(-50%, -50%); */
+    /* Keep at bottom like desktop; don't move to center on mobile */
+    bottom: 20px;
   }
 
   .center-section {
