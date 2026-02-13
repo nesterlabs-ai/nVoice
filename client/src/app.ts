@@ -171,7 +171,7 @@ class VoiceScannerApp {
   private emotionTopicNodes: { id: string; timestamp: Date; sentiment: 'positive' | 'neutral' | 'negative'; sentimentLabel: string; intensity: number }[] = [];
   private emotionNodeCounter: number = 0;
 
-  constructor() {
+  constructor() {  
     console.log("Nester AI Voice Scanner initializing...");
 
     this.botAudio = document.createElement('audio');
@@ -188,6 +188,9 @@ class VoiceScannerApp {
 
     // Hide loading after initialization
     setTimeout(() => this.hideLoadingOverlay(), 2500);
+
+    // Auto-connect on load (Start Conversation flow without user click)
+    setTimeout(() => this.handleConnect(), 600);
 
     // Expose test methods for debugging (no log spam on load)
     (window as any).testVisualCard = () => this.handleVisualHint({
@@ -238,7 +241,7 @@ class VoiceScannerApp {
     if (loadingTextEl) {
       this.loader = new Loader({
         container: loadingTextEl,
-        text: 'INITIALIZING',
+        text: 'Intitializing...',
       });
     }
 
@@ -648,6 +651,7 @@ class VoiceScannerApp {
     if (this.loadingOverlay) {
       this.loadingOverlay.classList.remove('hidden');
       this.animatePreloader();
+      this.setCloseButtonEnabled(false);
     }
   }
 
@@ -664,6 +668,7 @@ class VoiceScannerApp {
   private hideLoadingOverlay(): void {
     if (this.loadingOverlay) {
       this.loadingOverlay.classList.add('hidden');
+      this.setCloseButtonEnabled(true);
       this.addTerminalMessage('Voice scanner ready. Awaiting user input.', 'regular');
       // Dispatch event for components waiting for page ready
       window.dispatchEvent(new CustomEvent('nesterPageReady'));

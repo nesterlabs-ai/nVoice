@@ -30,13 +30,9 @@
   <!-- Loading Overlay -->
   <div class="loading-overlay" id="loading-overlay">
     <div class="loading-container">
-      <div class="loading-spinner"></div>
-      <div class="loading-text" id="loading-text">INITIALIZING</div>
+      <div class="loading-text" id="loading-text">Intitializing...</div>
     </div>
   </div>
-
-  <!-- Notification Banner -->
-  <div class="notification" id="notification">VOICE DETECTED</div>
 
   <!-- ===== NESTER DESIGN LANGUAGE LAYOUT ===== -->
 
@@ -165,42 +161,9 @@
       <div class="panel knowledge-graph-panel hidden" id="knowledge-graph-legacy"></div>
     </aside>
 
-    <!-- CENTER: Connect Button & Wave Visualizer -->
+    <!-- CENTER: Wave Visualizer (connect-area removed; connection starts automatically on load) -->
     <section class="center-section">
-      <!-- Connect/Disconnect Button -->
-      <div class="connect-area" id="connect-area">
-        <button class="connect-btn" id="connect-btn">
-          <span class="btn-text">START CONVERSATION</span>
-          <span class="btn-icon">→</span>
-        </button>
-        <p class="connect-hint">Click to begin voice interaction</p>
-      </div>
-
-      <!-- Status Display (shown when connected) -->
-      <div class="status-display hidden" id="status-display">
-        <div class="status-icon" id="status-icon">
-          <!-- Mic icon for listening -->
-          <svg class="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
-          <!-- Wave icon for speaking -->
-          <svg class="icon-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 3v18"/>
-            <path d="M8 8v8"/>
-            <path d="M16 8v8"/>
-            <path d="M4 11v2"/>
-            <path d="M20 11v2"/>
-          </svg>
-          <!-- Dots for thinking -->
-          <div class="thinking-dots">
-            <span></span><span></span><span></span>
-          </div>
-        </div>
-        <span class="status-text" id="status-text">LISTENING</span>
-      </div>
+      <div class="connect-area hidden" id="connect-area" aria-hidden="true"></div>
 
       <!-- Live subtitle: single line, centered above wave, shows current speaker only -->
       <div class="live-subtitle" id="live-subtitle" aria-live="polite">
