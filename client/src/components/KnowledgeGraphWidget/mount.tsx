@@ -68,7 +68,6 @@ export function highlightKeywords(keywords: string[]): void {
   stopCycle();
   currentKeywords = keywords;
   renderWidget();
-  console.log('[KnowledgeGraph] Highlighting keywords:', keywords.join(', '));
 }
 
 /**
@@ -88,7 +87,6 @@ export function highlightWithCycle(keywords: string[]): void {
 
   // Show first node immediately
   renderWidgetWithFocus(keywords[0]);
-  console.log('[KnowledgeGraph] Starting cycle:', keywords.join(' → '));
 
   // Cycle through nodes every 2 seconds, complete full loop back to first
   if (keywords.length > 1) {
@@ -101,12 +99,10 @@ export function highlightWithCycle(keywords: string[]): void {
 
       const focusNode = keywords[currentCycleIndex];
       renderWidgetWithFocus(focusNode);
-      console.log(`[KnowledgeGraph] → ${focusNode} (${currentCycleIndex + 1}/${keywords.length})`);
 
       // Stop after returning to first node (one complete cycle)
       if (cycleCount >= totalSteps) {
         stopCycle();
-        console.log('[KnowledgeGraph] Cycle complete');
       }
     }, 2000);
   }

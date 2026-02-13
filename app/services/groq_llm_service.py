@@ -78,6 +78,10 @@ class GroqLLMService(OpenAILLMService):
         """Build params, merging consecutive user messages first."""
         params = super().build_chat_completion_params(params_from_context)
 
+        # Llama models on Groq don't reliably handle parallel tool calls
+        if params.get("tools"):
+            params["parallel_tool_calls"] = False
+
         # params["messages"] comes from the context; merge in place
         if "messages" in params:
             original_count = len(params["messages"])

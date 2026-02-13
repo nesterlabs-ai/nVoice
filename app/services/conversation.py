@@ -172,7 +172,12 @@ class ConversationManager:
             logger.info(f"Initialized Google Gemini LLM service with model: {model}")
 
         # Register function handlers
-        self.llm_service.register_function("call_rag_system", self._handle_rag_call)
+        # cancel_on_interruption=False: RAG call continues in background during barge-in.
+        # Without this, interruption cancels the task, result_callback is never called,
+        # context gets "CANCELLED" tool result, and the bot goes silent.
+        self.llm_service.register_function(
+            "call_rag_system", self._handle_rag_call, cancel_on_interruption=False
+        )
         self.llm_service.register_function("end_conversation", self._handle_end_conversation)
 
         return self.llm_service
@@ -223,10 +228,8 @@ class ConversationManager:
                     phrase = self._get_next_thinking_phrase()
                     await self.tts_service.queue_frame(TTSSpeakFrame(phrase))
 
-            @self.llm_service.event_handler("on_function_calls_finished")
-            async def on_function_calls_finished(service, function_calls):
-                import time
-                logger.info(f"✅ FUNCTION CALL END: {function_calls} at {time.time()}")
+            # Note: on_function_calls_finished not available in Pipecat 0.0.98
+            # (only on_function_calls_started and on_completion_timeout are registered)
 
     def _strip_markdown(self, text: str) -> str:
         """Strip markdown formatting from text for voice output.
@@ -445,15 +448,6 @@ CRITICAL RAG RULES (SPEED IS IMPORTANT):
 - NEVER delay speaking by over-processing the RAG response
 """
 
-        # Prepend critical function-calling reminders
-        # Identity rules are now in config.yaml system_prompt to avoid duplication
-        function_reminder = """CRITICAL FUNCTION CALLING RULES:
-- For farewells (bye, goodbye, see you, end call, etc.): ALWAYS call end_conversation(). NEVER just respond with text.
-- For detailed questions or visual content: call call_rag_system(). The system prompt has specific guidance on when to use it.
-- When you receive RAG results, speak them naturally. Do not add "According to my knowledge base" or similar phrasing.
-
-"""
-        system_message = function_reminder + system_message
         # No initial user prompt - greeting is handled via direct TTS
         # This prevents the LLM from generating a multi-sentence greeting
         messages = [

@@ -30,6 +30,9 @@ import { A2UIDocument, isA2UIUpdate } from './types/a2ui';
 import { EmotionChart } from './components/EmotionChart';
 // Topic Timeline import
 import { TopicTimeline } from './components/TopicTimeline';
+// Synchronized Analysis (Topic Flow + Emotion)
+import { extractTopicsFromMessages, layoutTopics } from './components/SynchronizedAnalysisWidget/topicExtraction';
+import type { Message, Topic } from './components/SynchronizedAnalysisWidget/topicExtraction';
 // Wave Visualization Config
 import { waveConfig } from './config/waveVisualization';
 import { Loader } from './components/Loader';
@@ -135,9 +138,11 @@ class VoiceScannerApp {
 
   // Live subtitle above wave (single line, current speaker only)
   private liveSubtitle: HTMLElement | null = null;
-  private liveSubtitleLabel: HTMLElement | null = null;
   private liveSubtitleText: HTMLElement | null = null;
   private subtitleClearTimeout: ReturnType<typeof setTimeout> | null = null;
+  private botIsSpeaking: boolean = false;
+  private subtitleWordCount: number = 0;
+  private subtitleClearOnNextSentence: boolean = false;
 
   // Media control bar: speaker/mic icon toggle (slash = muted)
   private speakerMuted: boolean = false;
@@ -152,10 +157,19 @@ class VoiceScannerApp {
   private a2uiRenderer: A2UIRenderer | null = null;
   private a2uiPanel: HTMLElement | null = null;
   private a2uiStatus: HTMLElement | null = null;
+  private a2uiHasContent: boolean = false;
 
   // Emotion-reactive UI state
   private lastEmotionUpdate: number = 0;
   private emotionUpdateDebounceMs: number = 100;
+
+  // Conversation messages for SynchronizedAnalysis (Topic Flow + Emotion)
+  private conversationMessages: Message[] = [];
+  private messageIdCounter: number = 0;
+
+  // EmotionAnalysis widget: accumulated emotion data points from backend
+  private emotionTopicNodes: { id: string; timestamp: Date; sentiment: 'positive' | 'neutral' | 'negative'; sentimentLabel: string; intensity: number }[] = [];
+  private emotionNodeCounter: number = 0;
 
   constructor() {
     console.log("Nester AI Voice Scanner initializing...");
@@ -175,30 +189,17 @@ class VoiceScannerApp {
     // Hide loading after initialization
     setTimeout(() => this.hideLoadingOverlay(), 2500);
 
-    // Expose test method for debugging visual cards
-    (window as any).testVisualCard = () => {
-      console.log('[TEST] Manually triggering visual card test...');
-      this.handleVisualHint({
-        hint_type: 'project_card',
-        content_type: 'projects',
-        content: { mentioned: true },
-        confidence: 0.9,
-        trigger_text: 'Test trigger',
-        timestamp: Date.now() / 1000
-      });
-    };
-    // Expose test method for debugging emotion timeline
+    // Expose test methods for debugging (no log spam on load)
+    (window as any).testVisualCard = () => this.handleVisualHint({
+      hint_type: 'project_card', content_type: 'projects',
+      content: { mentioned: true }, confidence: 0.9,
+      trigger_text: 'Test trigger', timestamp: Date.now() / 1000
+    });
     (window as any).testEmotionTimeline = () => {
-      console.log('[TEST] Manually triggering emotion timeline test...');
-      const testEmotions = ['happy', 'neutral', 'excited', 'sad', 'calm'];
-      testEmotions.forEach((emotion, i) => {
-        setTimeout(() => {
-          this.addEmotionToTimeline(emotion);
-        }, i * 500);
+      ['happy', 'neutral', 'excited', 'sad', 'calm'].forEach((emotion, i) => {
+        setTimeout(() => this.addEmotionToTimeline(emotion), i * 500);
       });
     };
-
-    console.log('[DEBUG] testVisualCard() and testEmotionTimeline() functions available in console');
   }
 
   private setupDOMElements(): void {
@@ -212,7 +213,6 @@ class VoiceScannerApp {
     this.transcriptList = document.getElementById('transcript-list');
     this.transcriptStatus = document.getElementById('transcript-status');
     this.liveSubtitle = document.getElementById('live-subtitle');
-    this.liveSubtitleLabel = document.getElementById('live-subtitle-label');
     this.liveSubtitleText = document.getElementById('live-subtitle-text');
     this.debugPanel = document.getElementById('debug-panel');
     this.debugLog = document.getElementById('debug-log');
@@ -319,6 +319,10 @@ class VoiceScannerApp {
 
     document.getElementById('close-option-restart')?.addEventListener('click', () => this.onRestartOption());
     document.getElementById('close-option-peak')?.addEventListener('click', () => this.onPeakOption());
+
+    document.getElementById('a2ui-close')?.addEventListener('click', () => this.hideA2UIPanel());
+
+    this.updatePeakButtonState();
 
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
@@ -861,7 +865,94 @@ class VoiceScannerApp {
   }
 
   /**
-   * Add transcript bubble to conversation
+   * Refresh SynchronizedAnalysis widget with current conversation messages
+   */
+  private refreshSynchronizedAnalysis(): void {
+    try {
+      const topics = extractTopicsFromMessages(this.conversationMessages);
+      const topicNodes = layoutTopics(topics);
+      const categories = [...new Set(topics.map(t => t.category))];
+      console.log(`[Widget:ConversationAnalysis] ${topics.length} topics [${categories.join(', ')}] from ${this.conversationMessages.length} messages`);
+      (window as any).SynchronizedAnalysis?.updateTopics?.(topicNodes);
+      // Note: EmotionAnalysis widget is fed separately via pushEmotionToWidget()
+      // from live emotion detection data — do not overwrite with topic nodes.
+      this.updateVisitorIntent(topics);
+    } catch (e) {
+      console.warn('[Widget:ConversationAnalysis] Failed to refresh:', e);
+    }
+  }
+
+  /**
+   * Update Visitor Intent widget from extracted conversation topics.
+   * Derives intent description, confidence, issue category, urgency, and tech level.
+   */
+  private updateVisitorIntent(topics: Topic[]): void {
+    const descEl = document.getElementById('visitor-intent-desc');
+    const confFill = document.getElementById('visitor-intent-confidence-fill');
+    const languageEl = document.getElementById('visitor-language');
+    const issueEl = document.getElementById('visitor-issue');
+    const platformEl = document.getElementById('visitor-platform');
+    const techLevelEl = document.getElementById('visitor-tech-level');
+    const urgencyEl = document.getElementById('visitor-urgency');
+    const priorContactEl = document.getElementById('visitor-prior-contact');
+
+    if (topics.length === 0) {
+      if (descEl) descEl.textContent = 'Visitor intent will appear here as you speak';
+      if (confFill) confFill.style.width = '10%';
+      if (languageEl) languageEl.textContent = 'English';
+      if (issueEl) issueEl.textContent = 'N/A';
+      if (platformEl) platformEl.textContent = 'Web';
+      if (techLevelEl) techLevelEl.textContent = 'N/A';
+      if (urgencyEl) urgencyEl.textContent = 'N/A';
+      if (priorContactEl) priorContactEl.textContent = 'N/A';
+      return;
+    }
+
+    // Intent = latest topic name + category
+    const latest = topics[topics.length - 1];
+    const uniqueCategories = [...new Set(topics.map(t => t.category))];
+    const intentDesc = uniqueCategories.length > 1
+      ? `Discussing ${latest.name} (${uniqueCategories.join(', ')})`
+      : `Exploring ${latest.name} in ${latest.category}`;
+
+    // Confidence: more topics with keywords = higher confidence (cap at 95%)
+    const confidence = Math.min(95, 30 + topics.length * 15);
+
+    // Issue: primary category from the most recent topic
+    const issue = latest.category;
+
+    // Tech level: if Technology topics detected, infer higher tech level
+    const techTopicCount = topics.filter(t => t.category === 'Technology').length;
+    let techLevel = 'Beginner';
+    if (techTopicCount >= 3) techLevel = 'Advanced';
+    else if (techTopicCount >= 1) techLevel = 'Intermediate';
+
+    // Urgency: derive from latest sentiment
+    let urgency = 'Medium';
+    if (latest.sentiment === 'negative') urgency = 'High';
+    else if (latest.sentimentLabel === 'Excited') urgency = 'High';
+    else if (latest.sentiment === 'positive') urgency = 'Low';
+
+    console.log(`[Widget:VisitorIntent] "${intentDesc}" conf=${confidence}% issue=${issue} tech=${techLevel} urgency=${urgency}`);
+    if (descEl) descEl.textContent = intentDesc;
+    if (confFill) confFill.style.width = `${confidence}%`;
+    if (languageEl) languageEl.textContent = 'English';
+    if (issueEl) issueEl.textContent = issue;
+    if (platformEl) platformEl.textContent = 'Web';
+    if (techLevelEl) techLevelEl.textContent = techLevel;
+    if (urgencyEl) urgencyEl.textContent = urgency;
+    if (priorContactEl) priorContactEl.textContent = 'N/A';
+  }
+
+  /**
+   * Format timestamp for transcript log (HH:mm:ss)
+   */
+  private formatTranscriptTime(date: Date = new Date()): string {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  }
+
+  /**
+   * Add transcript line to conversation (log style: timestamp + speaker + message)
    */
   private addTranscript(text: string, isUser: boolean): void {
     if (!this.transcriptList) return;
@@ -869,25 +960,44 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
+    // Push to conversation messages for SynchronizedAnalysis (before accumulatingBotAnswer is cleared)
+    if (isUser) {
+      if (this.accumulatedBotAnswer.trim()) {
+        this.conversationMessages.push({
+          id: `msg-${this.messageIdCounter++}`,
+          text: this.accumulatedBotAnswer.trim(),
+          timestamp: new Date(),
+          isFinal: true,
+          speaker: 'ai',
+        });
+      }
+      this.conversationMessages.push({
+        id: `msg-${this.messageIdCounter++}`,
+        text,
+        timestamp: new Date(),
+        isFinal: true,
+        speaker: 'user',
+      });
+      this.refreshSynchronizedAnalysis();
+    }
+
     this.updateLiveSubtitle(isUser ? 'user' : 'bot', text);
 
-    const bubble = document.createElement('div');
-    bubble.className = `transcript-bubble ${isUser ? 'user' : 'bot'}`;
+    const line = document.createElement('div');
+    line.className = `transcript-line ${isUser ? 'transcript-line-user' : 'transcript-line-bot'}`;
 
-    // Add label
-    const label = document.createElement('span');
-    label.className = 'transcript-label';
-    label.textContent = isUser ? 'You: ' : 'NesterAI: ';
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'transcript-time';
+    timeSpan.textContent = this.formatTranscriptTime() + ' ';
 
-    // Add text
-    const textSpan = document.createElement('span');
-    textSpan.className = 'transcript-text';
-    textSpan.textContent = text;
+    const messageSpan = document.createElement('span');
+    messageSpan.className = 'transcript-message';
+    messageSpan.textContent = text;
 
-    bubble.appendChild(label);
-    bubble.appendChild(textSpan);
+    line.appendChild(timeSpan);
+    line.appendChild(messageSpan);
 
-    this.transcriptList.appendChild(bubble);
+    this.transcriptList.appendChild(line);
 
     // Scroll to bottom
     this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
@@ -897,7 +1007,7 @@ class VoiceScannerApp {
    * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice)
    */
   private updateLiveSubtitle(role: 'user' | 'bot', text: string): void {
-    if (!this.liveSubtitle || !this.liveSubtitleLabel || !this.liveSubtitleText) return;
+    if (!this.liveSubtitle || !this.liveSubtitleText) return;
     if (!text) return;
 
     // Reset auto-clear timer
@@ -905,12 +1015,15 @@ class VoiceScannerApp {
       clearTimeout(this.subtitleClearTimeout);
     }
 
-    // Update label and role styling
-    this.liveSubtitleLabel.textContent = role === 'user' ? 'You' : 'NesterAI';
-    this.liveSubtitleLabel.className = 'live-subtitle-label ' + role;
+    // Role class on container for .user / .bot text styling
+    this.liveSubtitle.classList.remove('user', 'bot');
+    this.liveSubtitle.classList.add(role);
+
+    // User speech: prefix with "- " so we can identify user vs bot at a glance
+    const displayText = role === 'user' ? `- ${text}` : text;
 
     // Render each word as an animated span
-    const words = text.split(/\s+/).filter(w => w.length > 0);
+    const words = displayText.split(/\s+/).filter(w => w.length > 0);
     this.liveSubtitleText.innerHTML = words.map(w =>
       `<span class="sub-word">${w}</span>`
     ).join(' ');
@@ -918,14 +1031,55 @@ class VoiceScannerApp {
     // Show the subtitle
     this.liveSubtitle.classList.add('visible');
 
-    // Auto-hide after 4s of no new updates
-    this.subtitleClearTimeout = setTimeout(() => {
-      this.liveSubtitle?.classList.remove('visible');
-    }, 4000);
+    // For user transcripts: always auto-hide after 4s
+    // For bot role when speaking: BotStoppedSpeaking handles the hide
+    if (role === 'user' || !this.botIsSpeaking) {
+      this.subtitleClearTimeout = setTimeout(() => {
+        this.liveSubtitle?.classList.remove('visible');
+      }, 4000);
+    }
   }
 
   /**
-   * Add bot transcript with typewriter effect (word by word)
+   * Append a single word to the live subtitle (same word-by-word behavior as transcript bubble).
+   * Used during bot typewriter so the subtitle streams one word at a time instead of re-rendering all.
+   */
+  private appendBotWordToLiveSubtitle(word: string, isFirstWord: boolean): void {
+    if (!this.liveSubtitle || !this.liveSubtitleText) return;
+
+    this.subtitleWordCount++;
+
+    if (this.subtitleClearTimeout) {
+      clearTimeout(this.subtitleClearTimeout);
+      this.subtitleClearTimeout = null;
+    }
+
+    this.liveSubtitle.classList.remove('user', 'bot');
+    this.liveSubtitle.classList.add('bot');
+
+    if (isFirstWord || this.subtitleClearOnNextSentence) {
+      this.liveSubtitleText.innerHTML = '';
+      this.subtitleClearOnNextSentence = false;
+    }
+
+    const wordSpan = document.createElement('span');
+    wordSpan.className = 'typewriter-word';
+    wordSpan.textContent = word + ' ';
+    this.liveSubtitleText.appendChild(wordSpan);
+
+    this.liveSubtitle.classList.add('visible');
+
+    // Only set fallback timer if bot is not currently speaking
+    // (BotStoppedSpeaking will handle the hide with dynamic delay)
+    if (!this.botIsSpeaking) {
+      this.subtitleClearTimeout = setTimeout(() => {
+        this.liveSubtitle?.classList.remove('visible');
+      }, 4000);
+    }
+  }
+
+  /**
+   * Add bot transcript with typewriter effect (word by word) - log style
    */
   private addBotTranscriptWithTypewriter(text: string): void {
     if (!this.transcriptList) return;
@@ -933,25 +1087,29 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
-    // Create new bubble if none exists
+    // Create new line if none exists (log style: timestamp + Nester AI + message)
     if (!this.currentBotBubble) {
       this.currentBotBubble = document.createElement('div');
-      this.currentBotBubble.className = 'transcript-bubble bot typewriter';
+      this.currentBotBubble.className = 'transcript-line transcript-line-bot typewriter';
 
-      const label = document.createElement('span');
-      label.className = 'transcript-label';
-      label.textContent = 'NesterAI: ';
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'transcript-time';
+      timeSpan.textContent = this.formatTranscriptTime() + ' ';
 
       const textSpan = document.createElement('span');
-      textSpan.className = 'transcript-text typewriter-text';
+      textSpan.className = 'transcript-message typewriter-text';
 
-      this.currentBotBubble.appendChild(label);
+      this.currentBotBubble.appendChild(timeSpan);
       this.currentBotBubble.appendChild(textSpan);
       this.transcriptList.appendChild(this.currentBotBubble);
     }
 
     // Split text into words and add to queue
     const words = text.split(/\s+/).filter(w => w.length > 0);
+    // Mark subtitle to clear on next word — keeps subtitle in sync with current spoken sentence
+    if (this.liveSubtitleText && this.liveSubtitleText.childNodes.length > 0) {
+      this.subtitleClearOnNextSentence = true;
+    }
     this.typewriterQueue.push(...words);
 
     // Start typewriter if not already running
@@ -973,16 +1131,19 @@ class VoiceScannerApp {
     const word = this.typewriterQueue.shift()!;
 
     if (this.currentBotBubble) {
-      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
+      const textSpan = this.currentBotBubble.querySelector('.transcript-message.typewriter-text');
       if (textSpan) {
-        // Add word with animation
+        // Same as live subtitle: first word = start of line
+        const isFirstWord = textSpan.childNodes.length === 0;
+
+        // Add word with animation (same as transcript bubble)
         const wordSpan = document.createElement('span');
         wordSpan.className = 'typewriter-word';
         wordSpan.textContent = word + ' ';
         textSpan.appendChild(wordSpan);
 
-        // Sync live subtitle with typewriter (voice sync)
-        this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
+        // Live subtitle: append one word at a time (same word-by-word behavior as bubble)
+        this.appendBotWordToLiveSubtitle(word, isFirstWord);
 
         // Scroll to bottom
         if (this.transcriptList) {
@@ -1000,7 +1161,7 @@ class VoiceScannerApp {
    */
   private finalizeBotBubble(): void {
     if (this.currentBotBubble) {
-      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
+      const textSpan = this.currentBotBubble.querySelector('.transcript-message.typewriter-text');
       if (textSpan) {
         this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
       }
@@ -1058,17 +1219,13 @@ class VoiceScannerApp {
 
       // Highlight matched nodes in the graph with cycling animation
       if (data.matched && data.matched.length > 0 && (window as any).KnowledgeGraph) {
-        console.log('[KnowledgeGraph] Selected nodes (by relevance):', data.matched.join(', '));
         (window as any).KnowledgeGraph.highlightWithCycle(data.matched);
-      } else {
-        console.log('[KnowledgeGraph] No matching nodes for conversation');
       }
 
       // Add topic to timeline - topic and type come from backend LLM call
       if (this.topicTimeline && data.topic) {
         const keywords = data.matched || [];
         this.topicTimeline.addTopic(data.topic, keywords, data.topicType, data.parentTopic);
-        console.log('[TopicTimeline] Added topic:', data.topic, 'type:', data.topicType);
 
         // Track this topic for future context (keep last 10)
         this.previousTopics.push(data.topic);
@@ -1093,6 +1250,44 @@ class VoiceScannerApp {
    */
   private toggleSidePanels(): void {
     this.mainLayout?.classList.toggle('panels-hidden');
+    this.updatePeakButtonState();
+
+    const isHomeScreen = this.mainLayout?.classList.contains('panels-hidden') ?? true;
+    if (isHomeScreen) {
+      // Returning to home — restore A2UI panel if it has content
+      if (this.a2uiHasContent && this.a2uiPanel) {
+        this.a2uiPanel.classList.add('visible');
+      }
+    } else {
+      // Switching to dashboard — hide A2UI panel (keep content flag)
+      this.a2uiPanel?.classList.remove('visible');
+      // Force widget refresh after dashboard cards become visible (ResizeObserver needs layout)
+      setTimeout(() => this.refreshSynchronizedAnalysis(), 100);
+    }
+  }
+
+  /**
+   * Update Peak button icon and text based on cards visibility (like speaker/mic)
+   * Cards hidden → Eye + "Peak"; Cards showing → EyeClosed + "Hide"
+   */
+  private updatePeakButtonState(): void {
+    const cardsShowing = this.mainLayout && !this.mainLayout.classList.contains('panels-hidden');
+    const iconPath = cardsShowing ? '/EyeClosed.svg' : '/Eye (1).svg';
+    const label = cardsShowing ? 'Hide' : 'Peak';
+
+    const controlPeak = document.getElementById('control-peak');
+    const controlPeakImg = controlPeak?.querySelector<HTMLImageElement>('.control-btn-icon');
+    const controlPeakLabel = controlPeak?.querySelector('.control-btn-label');
+    if (controlPeakImg) controlPeakImg.src = iconPath;
+    if (controlPeakLabel) controlPeakLabel.textContent = label;
+    controlPeak?.setAttribute('aria-label', cardsShowing ? 'Hide dashboard' : 'Peak view');
+
+    const closeOptionPeak = document.getElementById('close-option-peak');
+    const closeOptionPeakImg = closeOptionPeak?.querySelector<HTMLImageElement>('.close-option-icon');
+    const closeOptionPeakLabel = closeOptionPeak?.querySelector('.close-option-label');
+    if (closeOptionPeakImg) closeOptionPeakImg.src = iconPath;
+    if (closeOptionPeakLabel) closeOptionPeakLabel.textContent = label;
+    closeOptionPeak?.setAttribute('aria-label', cardsShowing ? 'Hide' : 'Peak');
   }
 
   /**
@@ -1146,6 +1341,75 @@ class VoiceScannerApp {
   }
 
   /**
+   * Chatterbox EMOTION_TO_PARAMS lookup (mirrors backend chatterbox_tts.py).
+   * Maps detected emotion → {exaggeration, cfg_weight} used for TTS voice control.
+   * ToneModulator clarity = 1 - cfg_weight (lower CFG = more assertive)
+   * ToneModulator intensity = exaggeration (higher = more expressive)
+   */
+  private static readonly EMOTION_TO_PARAMS: Record<string, { exaggeration: number; cfg_weight: number }> = {
+    neutral: { exaggeration: 0.4, cfg_weight: 0.5 },
+    sad: { exaggeration: 0.6, cfg_weight: 0.4 },
+    frustrated: { exaggeration: 0.5, cfg_weight: 0.5 },
+    excited: { exaggeration: 0.9, cfg_weight: 0.3 },
+    happy: { exaggeration: 0.8, cfg_weight: 0.35 },
+    angry: { exaggeration: 0.7, cfg_weight: 0.4 },
+  };
+
+  /**
+   * Update ToneModulator widget using Chatterbox CFG/exaggeration lookup.
+   */
+  private updateToneModulatorFromEmotion(detectedEmotion: string, nesterResponse?: string): void {
+    const params = VoiceScannerApp.EMOTION_TO_PARAMS[detectedEmotion] || VoiceScannerApp.EMOTION_TO_PARAMS['neutral'];
+    const clarity = 1 - params.cfg_weight;
+    const intensity = params.exaggeration;
+    console.log(`[Widget:ToneModulator] emotion=${detectedEmotion} response=${nesterResponse ?? '-'} cfg=${params.cfg_weight} exag=${params.exaggeration} → clarity=${clarity.toFixed(2)} intensity=${intensity.toFixed(2)}`);
+    (window as any).ToneModulator?.update?.({
+      detectedEmotion,
+      nesterResponse: nesterResponse ?? undefined,
+      clarity,
+      intensity,
+    });
+  }
+
+  /**
+   * Push a new emotion data point to the EmotionAnalysis widget.
+   * Maps backend emotion string to sentiment/label for the chart.
+   */
+  private pushEmotionToWidget(emotion: string, arousal: number, valence: number): void {
+    // Map emotion to sentiment
+    const posEmotions = ['happy', 'excited', 'content', 'calm'];
+    const negEmotions = ['sad', 'angry', 'frustrated', 'worried', 'fear'];
+    let sentiment: 'positive' | 'neutral' | 'negative' = 'neutral';
+    if (posEmotions.includes(emotion)) sentiment = 'positive';
+    else if (negEmotions.includes(emotion)) sentiment = 'negative';
+
+    // Map emotion to sentimentLabel (what the chart displays)
+    const labelMap: Record<string, string> = {
+      'excited': 'Excited', 'happy': 'Positive', 'content': 'Positive',
+      'calm': 'Calm', 'neutral': 'Neutral',
+      'sad': 'Concerned', 'angry': 'Concerned', 'frustrated': 'Concerned',
+      'worried': 'Concerned', 'fear': 'Concerned',
+    };
+
+    this.emotionTopicNodes.push({
+      id: `emo-${this.emotionNodeCounter++}`,
+      timestamp: new Date(),
+      sentiment,
+      sentimentLabel: labelMap[emotion] || 'Neutral',
+      intensity: Math.max(0, Math.min(1, (arousal + 1) / 2)), // normalize -1..1 to 0..1
+    });
+
+    // Keep last 30 points to avoid unbounded growth
+    if (this.emotionTopicNodes.length > 30) {
+      this.emotionTopicNodes = this.emotionTopicNodes.slice(-30);
+    }
+
+    const latest = this.emotionTopicNodes[this.emotionTopicNodes.length - 1];
+    console.log(`[Widget:EmotionAnalysis] ${emotion} → ${latest.sentimentLabel}(${latest.sentiment}) intensity=${latest.intensity.toFixed(2)} points=${this.emotionTopicNodes.length}`);
+    (window as any).EmotionAnalysis?.updateTopics?.(this.emotionTopicNodes);
+  }
+
+  /**
    * Update emotion display with detected emotion data
    */
   private updateEmotionDisplay(data: {
@@ -1189,6 +1453,12 @@ class VoiceScannerApp {
     this.addTerminalMessage(`emotion.detect({type: '${data.emotion}', conf: ${(data.confidence * 100).toFixed(0)}%});`, 'command');
 
     this.log(`Emotion detected: ${emotionName} (${Math.round(data.confidence * 100)}%)`);
+
+    // Tone Modulator: use Chatterbox CFG/exaggeration lookup for clarity/intensity
+    this.updateToneModulatorFromEmotion(data.emotion, data.tone);
+
+    // EmotionAnalysis widget: push live data point
+    this.pushEmotionToWidget(data.emotion, data.arousal, data.valence);
   }
 
   /**
@@ -1251,6 +1521,12 @@ class VoiceScannerApp {
     this.addTerminalMessage(terminalMsg, 'command');
 
     this.log(`🔄 Hybrid Emotion: ${emotionName} (${Math.round(data.confidence * 100)}%) | Audio: ${data.audio_emotion} ${audioPercent}% | Text: ${data.text_emotion} ${textPercent}%`);
+
+    // Tone Modulator: use Chatterbox CFG/exaggeration lookup for clarity/intensity
+    this.updateToneModulatorFromEmotion(data.primary_emotion);
+
+    // EmotionAnalysis widget: push live data point
+    this.pushEmotionToWidget(data.primary_emotion, data.arousal, data.valence);
   }
 
   /**
@@ -1274,6 +1550,11 @@ class VoiceScannerApp {
       this.toneLabel.textContent = displayName;
     }
 
+    // Tone Modulator: Nester response tone
+    if (typeof window !== 'undefined' && (window as unknown as { ToneModulator?: { update: (u: unknown) => void } }).ToneModulator?.update) {
+      (window as unknown as { ToneModulator: { update: (u: { nesterResponse?: string }) => void } }).ToneModulator.update({ nesterResponse: tone });
+    }
+
     this.addTerminalMessage(`voice.tone.switch('${tone}');`, 'command');
     this.log(`Voice tone switched to: ${displayName}`);
   }
@@ -1282,14 +1563,12 @@ class VoiceScannerApp {
    * Add emotion dot to timeline
    */
   private addEmotionToTimeline(emotion: string, _emoji?: string): void {
-    console.log('[Timeline] Adding emotion to timeline:', emotion, 'Element exists:', !!this.emotionTimeline);
     if (!this.emotionTimeline) {
-      console.warn('[Timeline] emotionTimeline element not found!');
       return;
     }
 
     const emotionColors: Record<string, string> = {
-      'neutral': '#6b7280',
+      'neutral': '#7D7D7D',
       'happy': '#10b981',
       'excited': '#8b5cf6',
       'sad': '#3b82f6',
@@ -1303,7 +1582,7 @@ class VoiceScannerApp {
 
     const dot = document.createElement('div');
     dot.className = 'timeline-dot';
-    dot.style.backgroundColor = emotionColors[emotion] || '#6b7280';
+    dot.style.backgroundColor = emotionColors[emotion] || '#7D7D7D';
     dot.title = `${emotion.charAt(0).toUpperCase() + emotion.slice(1)}`;
 
     // Keep only last 15 emotions
@@ -1312,7 +1591,6 @@ class VoiceScannerApp {
     }
 
     this.emotionTimeline.appendChild(dot);
-    console.log('[Timeline] Dot appended, current count:', this.emotionTimeline.children.length);
 
     // Animate dot entrance
     setTimeout(() => dot.classList.add('visible'), 10);
@@ -1763,9 +2041,7 @@ class VoiceScannerApp {
               source.connect(this.analyser);
               this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
               this.botAnalyserSetup = true;
-              console.log('[BOT AUDIO] Analyser set up via captureStream');
             } catch (e) {
-              console.warn('[BOT AUDIO] captureStream failed:', e);
             }
           };
         }
@@ -1777,7 +2053,6 @@ class VoiceScannerApp {
         this.analyser.smoothingTimeConstant = 0.5;
         source.connect(this.analyser);
         this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-        console.log('[BOT AUDIO] Analyser set up via MediaStreamSource');
       }
 
       this.startAudioVisualization();
@@ -1816,61 +2091,31 @@ class VoiceScannerApp {
    * This gives us real frequency data for bot audio visualization
    */
   private setupBotPlayerAnalyser(): void {
-    console.log('[BOT AUDIO] Setting up bot player analyser...');
     try {
-      if (!this.transport) {
-        console.warn('[BOT AUDIO] Transport not available');
-        return;
-      }
-      console.log('[BOT AUDIO] Transport found:', this.transport);
-
-      // Access the internal media manager and player
-      // Note: This accesses internal properties which may change in future versions
+      if (!this.transport) return;
       const mediaManager = (this.transport as any)._mediaManager;
-      console.log('[BOT AUDIO] MediaManager:', mediaManager);
-      if (!mediaManager) {
-        console.warn('[BOT AUDIO] MediaManager not found on transport');
-        // Log available properties on transport for debugging
-        console.log('[BOT AUDIO] Transport properties:', Object.keys(this.transport));
-        return;
-      }
-
+      if (!mediaManager) return;
       const wavPlayer = mediaManager._wavStreamPlayer;
-      console.log('[BOT AUDIO] WavStreamPlayer:', wavPlayer);
-      if (!wavPlayer) {
-        console.warn('[BOT AUDIO] WavStreamPlayer not found on media manager');
-        // Log available properties for debugging
-        console.log('[BOT AUDIO] MediaManager properties:', Object.keys(mediaManager));
-        return;
-      }
+      if (!wavPlayer) return;
 
-      // Store the player's AudioContext for speaker mute (suspend/resume)
       if (wavPlayer.context) {
         this.botPlayerContext = wavPlayer.context as AudioContext;
       }
 
-      // Get the analyser from the player
       if (wavPlayer.analyser) {
         this.botPlayerAnalyser = wavPlayer.analyser as AnalyserNode;
-        const freqBinCount = this.botPlayerAnalyser.frequencyBinCount;
-        this.botPlayerDataArray = new Uint8Array(freqBinCount);
-        console.log('[BOT AUDIO] ✅ Connected to WavStreamPlayer analyser - real frequency data available!');
-        console.log('[BOT AUDIO] Frequency bins:', freqBinCount);
+        this.botPlayerDataArray = new Uint8Array(this.botPlayerAnalyser.frequencyBinCount);
       } else {
-        console.warn('[BOT AUDIO] Analyser not found on WavStreamPlayer (may not be connected yet)');
-
-        // Try again after a short delay (player might connect later)
+        // Retry after delay — player might connect later
         setTimeout(() => {
           if (wavPlayer.analyser && !this.botPlayerAnalyser) {
             this.botPlayerAnalyser = wavPlayer.analyser as AnalyserNode;
-            const freqBinCount = this.botPlayerAnalyser.frequencyBinCount;
-            this.botPlayerDataArray = new Uint8Array(freqBinCount);
-            console.log('[BOT AUDIO] ✅ Connected to WavStreamPlayer analyser (delayed)');
+            this.botPlayerDataArray = new Uint8Array(this.botPlayerAnalyser.frequencyBinCount);
           }
         }, 1000);
       }
     } catch (e) {
-      console.warn('[BOT AUDIO] Could not set up bot player analyser:', e);
+      console.warn('[BOT AUDIO] Setup failed:', e);
     }
   }
 
@@ -1917,11 +2162,26 @@ class VoiceScannerApp {
     this.rtviClient.on(RTVIEvent.BotStartedSpeaking, () => {
       this.log('Bot started speaking');
       // Note: Bot audio visualization uses simulated data since RTVI doesn't expose bot audio track
+      this.botIsSpeaking = true;
+      if (this.subtitleClearTimeout) {
+        clearTimeout(this.subtitleClearTimeout);
+        this.subtitleClearTimeout = null;
+      }
       this.setVoiceState('speaking');
     });
 
     this.rtviClient.on(RTVIEvent.BotStoppedSpeaking, () => {
       this.log('Bot stopped speaking');
+      this.botIsSpeaking = false;
+      // Schedule subtitle hide with dynamic delay based on word count
+      const hideDelay = Math.min(Math.max(this.subtitleWordCount * 80, 1500), 4000);
+      this.subtitleWordCount = 0;
+      if (this.subtitleClearTimeout) {
+        clearTimeout(this.subtitleClearTimeout);
+      }
+      this.subtitleClearTimeout = setTimeout(() => {
+        this.liveSubtitle?.classList.remove('visible');
+      }, hideDelay);
       if (this.isConnected) {
         this.setVoiceState('listening');
       }
@@ -2046,6 +2306,7 @@ class VoiceScannerApp {
               this.accumulatedBotAnswer = '';
               // Clear A2UI from previous turn when new user query starts
               this.clearA2UI();
+              this.hideA2UIPanel();
               // Stop any ongoing graph node cycling
               if ((window as any).KnowledgeGraph?.stopCycle) {
                 (window as any).KnowledgeGraph.stopCycle();
@@ -2074,8 +2335,6 @@ class VoiceScannerApp {
             console.error('RTVI Error:', error);
           },
           onServerMessage: (message) => {
-            console.log('[Visual] Server message received:', JSON.stringify(message, null, 2));
-
             try {
               let messageData = null;
               let messageType = null;
@@ -2092,49 +2351,35 @@ class VoiceScannerApp {
                 messageData = message.data;
               }
 
-              console.log('[Visual] Parsed message type:', messageType);
-
               // Handle different message types
               switch (messageType) {
                 case 'hybrid_emotion_detected':
-                  console.log('[HYBRID EMOTION] Updating displays:', messageData);
                   this.updateHybridEmotionDisplay(messageData);
                   this.updateEmotionReactiveUI(messageData);
                   break;
                 case 'emotion_detected':
-                  console.log('[Emotion] Updating displays:', messageData);
                   this.updateEmotionDisplay(messageData);
                   this.updateEmotionReactiveUI(messageData);
                   break;
                 case 'tone_switched':
-                  console.log('[Tone] Switching to:', messageData.new_tone);
                   this.updateToneDisplay(messageData.new_tone);
                   break;
                 case 'streaming_text':
-                  console.log('[Streaming] Text received:', messageData.text, 'seq:', messageData.sequence_id);
                   this.handleStreamingText(messageData);
                   break;
                 case 'visual_hint':
-                  console.log('[Visual Hint] Received:', messageData.hint_type);
                   this.handleVisualHint(messageData);
                   break;
                 case 'a2ui_update':
-                  console.log('='.repeat(60));
-                  console.log('🎨 [A2UI] *** A2UI_UPDATE MESSAGE RECEIVED ***');
-                  console.log('   Raw messageData:', messageData);
-                  console.log('   isA2UIUpdate check:', isA2UIUpdate(messageData));
                   if (isA2UIUpdate(messageData)) {
-                    console.log('✅ [A2UI] Valid A2UI update - calling handleA2UIUpdate');
                     this.handleA2UIUpdate(messageData);
                   } else {
-                    console.warn('⚠️ [A2UI] Invalid A2UI update format');
-                    console.warn('   Expected: message_type="a2ui_update" and a2ui object');
+                    console.warn('[A2UI] Invalid update format');
                   }
-                  console.log('='.repeat(60));
                   break;
               }
             } catch (e) {
-              console.error('[Visual] Error handling server message:', e);
+              console.error('[ServerMessage] Error:', e);
             }
           },
         },
@@ -2204,11 +2449,20 @@ class VoiceScannerApp {
       // Clear A2UI display
       this.clearA2UI();
 
+      // Reset subtitle state
+      this.botIsSpeaking = false;
+      this.subtitleWordCount = 0;
+      this.subtitleClearOnNextSentence = false;
+
       // Clear topic timeline and history
       if (this.topicTimeline) {
         this.topicTimeline.clear();
       }
       this.previousTopics = [];
+
+      // Clear conversation messages and SynchronizedAnalysis
+      this.conversationMessages = [];
+      this.refreshSynchronizedAnalysis();
 
       this.isConnecting = false;
       this.isConnected = false;
@@ -2228,7 +2482,9 @@ class VoiceScannerApp {
   // ===== STREAMING TRANSCRIPT METHODS =====
 
   /**
-   * Handle streaming text events for word-by-word display
+   * Handle streaming text events for word-by-word display.
+   * NOTE: Bot transcript is rendered by onBotTranscript (addBotTranscriptWithTypewriter).
+   * We skip streaming_text transcript rendering to avoid duplicate bot lines.
    */
   private handleStreamingText(data: {
     text: string;
@@ -2237,23 +2493,8 @@ class VoiceScannerApp {
     utterance_id: string;
     timestamp: number;
   }): void {
-    // Start new utterance if needed
-    if (data.utterance_id !== this.currentUtteranceId) {
-      this.finalizeCurrentStreamingBubble();
-      this.currentUtteranceId = data.utterance_id;
-      this.streamingWords = [];
-      this.createStreamingBubble();
-    }
-
-    // Add word with animation (skip empty final markers)
-    if (data.text && data.text.trim()) {
-      this.addStreamingWord(data.text, data.sequence_id);
-    }
-
-    // Finalize on is_final
-    if (data.is_final) {
-      this.finalizeCurrentStreamingBubble();
-    }
+    // Disabled: onBotTranscript already renders bot text. Streaming_text would create duplicates.
+    void data;
   }
 
   /**
@@ -2266,16 +2507,16 @@ class VoiceScannerApp {
     this.welcomeMessage?.classList.add('hidden');
 
     this.streamingBubble = document.createElement('div');
-    this.streamingBubble.className = 'transcript-bubble bot streaming';
+    this.streamingBubble.className = 'transcript-line transcript-line-bot streaming';
 
-    const label = document.createElement('span');
-    label.className = 'transcript-label';
-    label.textContent = 'NesterAI: ';
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'transcript-time';
+    timeSpan.textContent = this.formatTranscriptTime() + ' ';
 
     const textContainer = document.createElement('span');
-    textContainer.className = 'transcript-text streaming-text';
+    textContainer.className = 'transcript-message streaming-text';
 
-    this.streamingBubble.appendChild(label);
+    this.streamingBubble.appendChild(timeSpan);
     this.streamingBubble.appendChild(textContainer);
     this.transcriptList.appendChild(this.streamingBubble);
     this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
@@ -2287,7 +2528,7 @@ class VoiceScannerApp {
   private addStreamingWord(word: string, sequenceId: number): void {
     if (!this.streamingBubble) return;
 
-    const textContainer = this.streamingBubble.querySelector('.streaming-text');
+    const textContainer = this.streamingBubble.querySelector('.transcript-message.streaming-text');
     if (!textContainer) return;
 
     // Create word span with animation
@@ -2297,10 +2538,11 @@ class VoiceScannerApp {
     wordSpan.style.animationDelay = `${(sequenceId % 10) * 30}ms`; // Stagger animation
 
     textContainer.appendChild(wordSpan);
+    const isFirstWord = this.streamingWords.length === 0;
     this.streamingWords.push(word);
 
-    // Sync live subtitle with streaming (voice sync)
-    this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
+    // Live subtitle: append one word at a time (same typewriter effect as transcript)
+    this.appendBotWordToLiveSubtitle(word, isFirstWord);
 
     // Auto-scroll
     if (this.transcriptList) {
@@ -2313,13 +2555,19 @@ class VoiceScannerApp {
    */
   private finalizeCurrentStreamingBubble(): void {
     if (this.streamingBubble) {
-      this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
+      // Subtitle already has words appended; just reset hide timer
+      if (this.liveSubtitle && this.liveSubtitle.classList.contains('visible')) {
+        if (this.subtitleClearTimeout) clearTimeout(this.subtitleClearTimeout);
+        this.subtitleClearTimeout = setTimeout(() => {
+          this.liveSubtitle?.classList.remove('visible');
+        }, 4000);
+      }
 
       this.streamingBubble.classList.remove('streaming');
       this.streamingBubble.classList.add('finalized');
 
       // Convert streaming words to static text for better performance
-      const textContainer = this.streamingBubble.querySelector('.streaming-text');
+      const textContainer = this.streamingBubble.querySelector('.transcript-message.streaming-text');
       if (textContainer && this.streamingWords.length > 0) {
         textContainer.innerHTML = '';
         textContainer.textContent = this.streamingWords.join(' ');
@@ -2970,17 +3218,13 @@ class VoiceScannerApp {
    * Display a visual card with optional auto-dismiss
    */
   private displayVisualCard(card: HTMLElement, autoDismissMs?: number): void {
-    console.log('[Visual Card] Displaying card:', card.className);
-
     // Get or create visual cards container
     if (!this.visualCardsContainer) {
       this.visualCardsContainer = document.getElementById('visual-cards-container');
-      console.log('[Visual Card] Container from DOM:', this.visualCardsContainer);
       if (!this.visualCardsContainer) {
         this.visualCardsContainer = document.createElement('div');
         this.visualCardsContainer.id = 'visual-cards-container';
         document.querySelector('.interface-container')?.appendChild(this.visualCardsContainer);
-        console.log('[Visual Card] Created new container');
       }
     }
 
@@ -3034,20 +3278,12 @@ class VoiceScannerApp {
    * Initialize the A2UI renderer
    */
   private initializeA2UIRenderer(): void {
-    console.log('='.repeat(60));
-    console.log('🎨 [A2UI] Initializing A2UI Renderer...');
     try {
       this.a2uiRenderer = new A2UIRenderer('a2ui-container');
       this.log('A2UI renderer initialized');
       this.addTerminalMessage('a2ui.renderer.init();', 'command');
-      console.log('✅ [A2UI] A2UIRenderer created successfully');
-      console.log('   Panel element:', this.a2uiPanel);
-      console.log('   Status element:', this.a2uiStatus);
-      console.log('='.repeat(60));
     } catch (error) {
-      console.error('='.repeat(60));
-      console.error('❌ [A2UI] Failed to initialize A2UI renderer:', error);
-      console.error('='.repeat(60));
+      console.error('[A2UI] Init failed:', error);
       this.log('A2UI renderer initialization failed');
     }
   }
@@ -3062,79 +3298,52 @@ class VoiceScannerApp {
     template_type?: string;
     timestamp?: number;
   }): void {
-    console.log('='.repeat(60));
-    console.log('🎨 [A2UI] handleA2UIUpdate CALLED');
-    console.log('   Full data received:', data);
-    console.log('   Renderer exists:', !!this.a2uiRenderer);
-    console.log('   A2UI doc exists:', !!data.a2ui);
-    
     if (!this.a2uiRenderer || !data.a2ui) {
-      console.warn('⚠️ [A2UI] Renderer not available or no A2UI data');
-      console.warn('   Renderer:', this.a2uiRenderer);
-      console.warn('   Data:', data);
-      console.log('='.repeat(60));
+      console.warn('[A2UI] Renderer not available or no data');
       return;
     }
 
     const templateType = data.a2ui.root?.type || 'unknown';
     const tier = data.tier || data.a2ui._metadata?.tier || 'auto';
-    const tierName = data.a2ui._metadata?.tier_name || 'unknown';
-    
-    console.log('📋 [A2UI] Document details:');
-    console.log(`   Template type: ${templateType}`);
-    console.log(`   Tier: ${tier} (${tierName})`);
-    console.log(`   Query: ${data.query || 'N/A'}`);
-    console.log(`   Timestamp: ${data.timestamp}`);
+    console.log(`[A2UI] Rendering template=${templateType} tier=${tier} query="${data.query || 'N/A'}"`);
 
-    // Update status indicator
     if (this.a2uiStatus) {
       this.a2uiStatus.textContent = 'RENDERING';
       this.a2uiStatus.classList.add('active');
-      console.log('📊 [A2UI] Status updated to RENDERING');
     }
-
-    // Show the A2UI panel if hidden
-    if (this.a2uiPanel) {
+    this.a2uiHasContent = true;
+    const isHomeScreen = this.mainLayout?.classList.contains('panels-hidden') ?? true;
+    if (this.a2uiPanel && isHomeScreen) {
       this.a2uiPanel.classList.add('visible');
-      console.log('📺 [A2UI] Panel made visible');
     }
 
     try {
-      console.log('🔄 [A2UI] Calling renderer.render()...');
-      // Render the A2UI document
       this.a2uiRenderer.render(data.a2ui);
-
-      // Log to terminal
       this.addTerminalMessage(`a2ui.render({ type: '${templateType}', tier: '${tier}' });`, 'command');
       this.log(`A2UI rendered: ${templateType} (${tier})`);
-      
-      console.log('✅ [A2UI] Render completed successfully!');
 
-      // Update status after render
       setTimeout(() => {
         if (this.a2uiStatus) {
           this.a2uiStatus.textContent = 'READY';
           this.a2uiStatus.classList.remove('active');
-          console.log('📊 [A2UI] Status updated to READY');
         }
       }, 500);
 
     } catch (error) {
-      console.error('❌ [A2UI] Render error:', error);
+      console.error('[A2UI] Render error:', error);
       this.addTerminalMessage(`a2ui.error: ${(error as Error).message}`, 'error');
-
       if (this.a2uiStatus) {
         this.a2uiStatus.textContent = 'ERROR';
         this.a2uiStatus.classList.remove('active');
       }
     }
-    console.log('='.repeat(60));
   }
 
   /**
    * Clear the A2UI display
    */
   private clearA2UI(): void {
+    this.a2uiHasContent = false;
     if (this.a2uiRenderer) {
       this.a2uiRenderer.clear();
     }
@@ -3147,6 +3356,7 @@ class VoiceScannerApp {
    * Hide the A2UI panel
    */
   private hideA2UIPanel(): void {
+    this.a2uiHasContent = false;
     if (this.a2uiPanel) {
       this.a2uiPanel.classList.remove('visible');
     }

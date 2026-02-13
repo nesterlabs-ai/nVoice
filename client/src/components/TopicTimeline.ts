@@ -136,7 +136,7 @@ export class TopicTimeline {
     this.calculatePositions();
     this.autoScroll();
 
-    console.log('[TopicTimeline] Added topic:', topic, 'type:', topicType, 'parent:', parentNode?.topic);
+    // Topic tracking is handled by [Widget:ConversationAnalysis] in app.ts
   }
 
   /**

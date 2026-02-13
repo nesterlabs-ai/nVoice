@@ -365,9 +365,10 @@ class VoiceAssistant:
             # This is critical: STTMuteFilter needs to see TTS start/stop frames
             # to know when bot speech begins/ends. Pushing directly to self.tts
             # bypasses the pipeline and the mute filter never unmutes.
-            greeting_text = "Hi, I'm Nester AI. We're trying to reimagine intelligence here. So tell me, what are you trying to build?"
+            greeting_text = "Hi, I'm Nester A I. We're trying to reimagine intelligence here. So tell me, what are you trying to build?"
             await self.task.queue_frame(TTSSpeakFrame(greeting_text))
-            logger.info("🎤 Greeting sent via task.queue_frame (flows through full pipeline)")
+            logger.info("🎤 Greeting sent via task.queue_frame (flo"
+                        "ws through full pipeline)")
 
             # Add greeting to conversation context so LLM knows it already greeted
             if self.conversation_manager and self.conversation_manager.context:

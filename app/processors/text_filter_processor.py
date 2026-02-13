@@ -93,6 +93,11 @@ class TextFilterProcessor(FrameProcessor):
         # Clean up multiple newlines
         text = re.sub(r'\n\s*\n', '\n', text)
 
+        # Strip leaked LLM function call syntax (Llama native format)
+        # e.g. <function=call_rag_system>{"question": "..."}</function>
+        text = re.sub(r'<function=[^>]*>\{[^}]*\}</function>', '', text)
+        text = re.sub(r'function=\w+\{[^}]*\}', '', text)
+
         # Escape XML/SSML special characters to prevent TTS errors
         # The & character must be escaped FIRST (before other escapes that use &)
         text = text.replace('&', ' and ')  # Replace & with "and" for natural speech

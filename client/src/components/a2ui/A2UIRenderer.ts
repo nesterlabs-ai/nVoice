@@ -29,30 +29,21 @@ export class A2UIRenderer {
   private container: HTMLElement;
 
   constructor(containerId: string) {
-    console.log('='.repeat(60));
-    console.log('🎨 [A2UI] A2UIRenderer INITIALIZING');
-    console.log(`   Container ID: ${containerId}`);
-    
     const element = document.getElementById(containerId);
     if (!element) {
-      console.error(`❌ [A2UI] Container element NOT FOUND: ${containerId}`);
+      console.error(`[A2UI] Container not found: ${containerId}`);
       throw new Error(`A2UI container element not found: ${containerId}`);
     }
     this.container = element;
-    console.log('✅ [A2UI] A2UIRenderer initialized successfully');
-    console.log('='.repeat(60));
+    console.log('[A2UI] Renderer initialized');
   }
 
   /**
    * Render an A2UI document
    */
   render(doc: A2UIDocument): void {
-    console.log('='.repeat(60));
-    console.log('🎨 [A2UI] RENDER CALLED');
-    console.log('   Document:', doc);
-    
     if (!doc || !doc.root) {
-      console.warn('⚠️ [A2UI] Invalid document - missing doc or doc.root');
+      console.warn('[A2UI] Invalid document - missing doc or doc.root');
       return;
     }
 
@@ -60,9 +51,7 @@ export class A2UIRenderer {
     const props = doc.root.props;
     const metadata = doc._metadata;
 
-    console.log(`📋 [A2UI] Template Type: ${templateType}`);
-    console.log(`📊 [A2UI] Tier: ${metadata?.tier_name || 'unknown'}`);
-    console.log('📝 [A2UI] Props:', props);
+    console.log(`[A2UI] Rendering ${templateType} (tier: ${metadata?.tier_name || 'unknown'})`);
 
     // Clear previous content
     this.container.innerHTML = '';
@@ -119,19 +108,15 @@ export class A2UIRenderer {
       badge.className = 'a2ui-tier-badge';
       badge.textContent = doc._metadata.tier_name;
       wrapper.appendChild(badge);
-      console.log(`🏷️ [A2UI] Added tier badge: ${doc._metadata.tier_name}`);
     }
 
     this.container.appendChild(wrapper);
-    console.log('✅ [A2UI] Render complete - element added to DOM');
-    console.log('='.repeat(60));
   }
 
   /**
    * Clear the rendered content
    */
   clear(): void {
-    console.log('🧹 [A2UI] Clearing container');
     this.container.innerHTML = '';
   }
 

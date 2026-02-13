@@ -26,7 +26,6 @@ export async function fetchGraph(
 ): Promise<KnowledgeGraph> {
   try {
     const url = `${LIGHTRAG_URL}/graphs?label=${encodeURIComponent(label)}&max_depth=${maxDepth}`;
-    console.log('[KnowledgeGraph] Fetching from:', url);
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -43,7 +42,6 @@ export async function fetchGraph(
     }
 
     const data = await response.json();
-    console.log('[KnowledgeGraph] Fetched graph:', data.nodes?.length, 'nodes,', data.edges?.length, 'edges');
     return data;
   } catch (error) {
     console.error('[KnowledgeGraph] Error fetching graph:', error);
@@ -56,15 +54,15 @@ export async function fetchGraph(
  */
 export async function fetchGraphLabels(): Promise<string[]> {
   try {
-    const labelHeaders: Record<string, string> = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
     if (LIGHTRAG_API_KEY) {
-      labelHeaders['X-API-Key'] = LIGHTRAG_API_KEY;
+      headers['X-API-Key'] = LIGHTRAG_API_KEY;
     }
     const response = await fetch(`${LIGHTRAG_URL}/graph/label/list`, {
       method: 'GET',
-      headers: labelHeaders,
+      headers,
     });
 
     if (!response.ok) {
@@ -83,13 +81,13 @@ export async function fetchGraphLabels(): Promise<string[]> {
  */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const healthHeaders: Record<string, string> = {};
+    const headers: Record<string, string> = {};
     if (LIGHTRAG_API_KEY) {
-      healthHeaders['X-API-Key'] = LIGHTRAG_API_KEY;
+      headers['X-API-Key'] = LIGHTRAG_API_KEY;
     }
     const response = await fetch(`${LIGHTRAG_URL}/health`, {
       method: 'GET',
-      headers: healthHeaders,
+      headers,
     });
     return response.ok;
   } catch {

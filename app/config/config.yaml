@@ -160,19 +160,13 @@ conversation:
     RESPONSE RULES:
     1. Keep responses to 2-3 short sentences: brief answer + a follow-up question to keep the conversation engaging.
     2. ALWAYS end with a relevant follow-up question. Examples: "Would you like to hear about our projects?", "Interested in learning more about that?", "Want me to go deeper into any of these?"
-    3. Answer DIRECTLY from above knowledge when possible. Do not call RAG for basic info you already know.
+    3. Answer DIRECTLY from above knowledge when possible. Do not search the knowledge base for basic info you already know.
     4. NEVER ramble or repeat yourself. Short, natural, conversational responses only.
     5. NEVER use filler phrases like "Let me check that for you", "Sure, let me look into that". Just answer directly.
-    6. For farewells (bye, goodbye, see you, end call): call end_conversation IMMEDIATELY.
+    6. For farewells (bye, goodbye, see you, end call): use the farewell tool IMMEDIATELY.
     7. ALWAYS respond in English only.
     8. If asked something unrelated to the company, politely say you're focused on Nesterlabs topics.
-
-    WHEN TO CALL call_rag_system:
-    - User asks for DETAILED information about a specific project (e.g., "Tell me more about Sarah", "What did you build for Basepair?", "Explain the healthcare project results")
-    - User asks "tell me more", "go deeper", "explain in detail", "what were the results"
-    - User asks questions where showing a VISUAL UI would enhance the experience (project lists, team cards, service details, contact card)
-    - User asks about blog posts, technical deep-dives, or specific metrics/architecture details
-    - DO NOT call RAG for: basic company info, founder names, contact info, service overview, greetings, farewells
+    9. When you receive knowledge base search results, speak them naturally. Do not add "According to my knowledge base" or similar phrasing.
 # A2UI (Agentic UI) Configuration
 # Visual response generation system for dynamic UI components
 a2ui:
@@ -247,10 +241,10 @@ server:
   # Higher values = stricter (less sensitive to noise, but may miss quiet speech)
   # Lower values = more sensitive (catches quiet speech, but may pick up noise)
   vad:
-    confidence: 0.7        # BALANCED - trigger on clear speech but allow interruptions
+    confidence: 0.8        # BALANCED - trigger on clear speech but allow interruptions
     start_secs: 0.2        # FASTER - 200ms to detect interruptions quickly
     stop_secs: 0.8         # Wait 0.8s of silence before ending utterance
-    min_volume: 0.5        # BALANCED - catch normal speech volume
+    min_volume: 0.8        # BALANCED - catch normal speech volume
 
   # Barge-in (interruption) settings
   # MinWordsInterruptionStrategy prevents false interruptions from:
@@ -259,7 +253,7 @@ server:
   # With endpointing=300ms, transcriptions arrive fast so min_words must be higher
   interruption:
     enabled: true          # Enable barge-in support
-    min_words: 0           # IMMEDIATE: 0 = any speech stops TTS instantly (no word count check)
+    min_words: 1           # DEFERRED: require 1 transcribed word before interrupting (prevents false interruptions from late STT deliveries)
 
   # Smart interruption - Context-aware validation
   # Prevents false interruptions from background conversations/TV/music

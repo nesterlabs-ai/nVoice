@@ -32,7 +32,7 @@
 
   /* Layout */
   --header-height: 0px;
-  --panel-width: 320px;
+  --panel-width: 560px;
   --panel-gap: 24px;
   --panel-radius: 4px;
 
@@ -119,14 +119,12 @@ body {
   font-family: inherit;
   font-size: inherit;
   letter-spacing: inherit;
-  background: linear-gradient(
-    90deg,
-    var(--text-secondary) 0%,
-    var(--text-secondary) 40%,
-    rgba(255, 255, 255, 0.9) 50%,
-    var(--text-secondary) 60%,
-    var(--text-secondary) 100%
-  );
+  background: linear-gradient(90deg,
+      var(--text-secondary) 0%,
+      var(--text-secondary) 40%,
+      rgba(255, 255, 255, 0.9) 50%,
+      var(--text-secondary) 60%,
+      var(--text-secondary) 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -135,8 +133,13 @@ body {
 }
 
 @keyframes loader-wave {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ===== NOTIFICATION ===== */
@@ -238,7 +241,6 @@ body {
 }
 
 /* ===== MAIN LAYOUT ===== */
-/* Center (L78) fills full width; left/right panels overlay on top */
 .main-layout {
   position: fixed;
   top: var(--header-height);
@@ -247,6 +249,417 @@ body {
   bottom: 0;
   padding: 0;
   overflow: hidden;
+}
+
+/* ===== 6-CARD DASHBOARD GRID ===== */
+.dashboard-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 42.2% 28% 28%;
+  grid-template-rows: repeat(2, 1fr);
+  row-gap: 16px;
+  column-gap: 16px;
+  padding-top: 70px;
+  padding-bottom: 188px;
+  /* Space for floating control bar */
+  padding-left: 40px;
+  padding-right: 40px;
+  overflow: hidden;
+  z-index: 5;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--transition-medium), visibility var(--transition-medium), pointer-events 0s var(--transition-medium);
+}
+
+.main-layout:not(.panels-hidden) .dashboard-grid {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* When cards showing: hide live-subtitle */
+.main-layout:not(.panels-hidden) .live-subtitle {
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* When cards showing: hide Start Conversation button */
+.main-layout:not(.panels-hidden) .connect-area {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.dashboard-card {
+  background: var(--bg-panel);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--panel-radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  border: 1px solid #4E1416;
+}
+
+.dashboard-card-header {
+  padding-top: 24px;
+  padding-left: 24px;
+  padding-right: 24px;
+  padding-bottom: 8px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.dashboard-card-label {
+  color: #F5F5F5;
+  font-family: "JetBrains Mono";
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.dashboard-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-left: 24px;
+  padding-right: 24px;
+  padding-bottom: 16px;
+}
+
+.dashboard-card-inner {
+  height: 100%;
+  min-height: 120px;
+}
+
+/* SynchronizedAnalysis in card 1: compact to fit dashboard card */
+#dashboard-card-1 .sync-analysis {
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#dashboard-card-1 .sync-card {
+  height: 100%;
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+/* Emotion Analysis in card 4: fill container */
+#dashboard-card-4 .dashboard-card-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#dashboard-card-4 .emotion-analysis-card {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Tone Modulator in card 5: fill container */
+#dashboard-card-5 .dashboard-card-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#dashboard-card-5 .tone-modulator-widget {
+  height: 100%;
+  min-height: 0;
+}
+
+.dashboard-card-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 16px;
+}
+
+/* VISITOR INTENT card - matches design spec */
+.visitor-intent-card {
+  box-shadow: 0 0 12px rgba(239, 51, 57, 0.08);
+}
+
+/* VISITOR INTENT responsive: fill card and use space on large screens */
+#dashboard-card-3 .dashboard-card-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#dashboard-card-3 .visitor-intent-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.visitor-intent-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-family: var(--font-mono);
+}
+
+.visitor-intent-section {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#dashboard-card-3 .visitor-info-section {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.visitor-intent-desc {
+  color: rgba(251, 251, 251, 0.75);
+  font-family: "JetBrains Mono";
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: normal;
+  margin-bottom: 12px;
+}
+
+.visitor-intent-confidence {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.visitor-intent-confidence .confidence-bar {
+  height: 6px;
+  background: #4E1416;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.visitor-intent-confidence .confidence-fill {
+  height: 100%;
+  background: #F46C72;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.visitor-intent-confidence .confidence-label {
+  color: #FBFBFB;
+  font-family: "JetBrains Mono";
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+  margin-top: 12px;
+}
+
+.visitor-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #281516;
+}
+
+.visitor-info-header {
+  color: #FBFBFB;
+  font-family: "JetBrains Mono";
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.visitor-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.visitor-info-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-right: 1px solid #281516;
+}
+
+.visitor-info-col-label {
+  color: #FBFBFB;
+  font-family: "JetBrains Mono";
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.visitor-info-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.visitor-info-item {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.visitor-info-item .key {
+  color: #8DAAC0;
+  font-family: "JetBrains Mono";
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+  opacity: 0.8;
+}
+
+.visitor-info-item .value {
+  color: #FBFBFB;
+  font-family: "JetBrains Mono";
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
+/* Dashboard card 4 - Emotion: compact layout */
+#dashboard-card-4 .dashboard-card-body {
+  padding-right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#dashboard-card-4 .emotion-display {
+  margin-bottom: 0;
+}
+
+#dashboard-card-4 .emotion-chart-section {
+  flex: 1;
+  min-height: 0;
+}
+
+#dashboard-card-4 .emotion-chart-section canvas {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 80px;
+}
+
+/* Dashboard card 6 - Transcript */
+#dashboard-card-6 .dashboard-card-body {
+  padding: 0;
+}
+
+/* Transcript card - log style (timestamp + speaker + message) */
+.transcript-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.transcript-header .status-dot {
+  flex-shrink: 0;
+}
+
+.transcript-log-body {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 12px 16px !important;
+  overflow-y: auto;
+}
+
+.transcript-welcome {
+  flex: none !important;
+  padding: 24px 0 !important;
+  justify-content: flex-start !important;
+}
+
+.transcript-welcome-text {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.transcript-line {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+.transcript-time {
+  color: #8DAAC0;
+  margin-right: 4px;
+}
+
+.transcript-speaker {
+  color: var(--text-primary);
+  margin-right: 4px;
+}
+
+.transcript-message {
+  display: inline;
+}
+
+.transcript-line-user .transcript-message {
+  color: #7DC8FF;
+  /* light blue for Visitor */
+}
+
+.transcript-line-bot .transcript-message {
+  color: #B5252B;
+  /* reddish-orange for Nester AI */
+}
+
+.transcript-line.typewriter .typewriter-text,
+.transcript-line .typewriter-text {
+  display: inline;
+}
+
+#dashboard-card-6 .dashboard-card-body.conversation-body,
+#dashboard-card-6 .dashboard-card-body.transcript-log-body {
+  padding: 12px 16px;
+}
+
+/* Responsive: tablet - 2 columns */
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+  }
+}
+
+/* Responsive: mobile - 1 column */
+@media (max-width: 640px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(6, minmax(140px, 1fr));
+    gap: 8px;
+    padding: 8px;
+    padding-bottom: 64px;
+  }
+
+  .dashboard-card-header {
+    padding: 10px 12px;
+  }
+
+  .dashboard-card-label {
+    font-size: 9px;
+  }
+
+  .dashboard-card-body {
+    padding: 8px;
+  }
 }
 
 /* dots.svg layer on top of main layout */
@@ -286,7 +699,7 @@ body {
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
 }
 
-/* When panels hidden: slide off-screen so center gets full width */
+/* When panels hidden: slide off-screen; when visible, show dashboard (hide legacy panels) */
 .main-layout.panels-hidden .left-panel {
   transform: translateX(calc(-100% - var(--panel-gap)));
   visibility: hidden;
@@ -299,6 +712,18 @@ body {
   visibility: hidden;
   pointer-events: none;
   transition: transform var(--transition-medium), visibility var(--transition-medium), pointer-events 0s var(--transition-medium);
+}
+
+/* When dashboard visible (Peak): hide legacy left/right, keep center for wave/control bar */
+.main-layout:not(.panels-hidden) .left-panel.legacy-panel,
+.main-layout:not(.panels-hidden) .right-panel {
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(calc(-100% - var(--panel-gap)));
+}
+
+.main-layout:not(.panels-hidden) .right-panel {
+  transform: translateX(calc(100% + var(--panel-gap)));
 }
 
 .panel {
@@ -344,8 +769,8 @@ body {
 
 /* Status Dot */
 .status-dot {
-  width: 6px;
-  height: 6px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   background: var(--text-muted);
 }
@@ -368,6 +793,13 @@ body {
 }
 
 /* ===== KNOWLEDGE GRAPH PANEL ===== */
+.synchronized-analysis-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+
 .knowledge-graph-panel {
   flex: 1;
   min-height: 0;
@@ -706,6 +1138,8 @@ body {
   left: 50%;
   width: 427px;
   transform: translateX(-50%);
+  z-index: 100;
+  /* Float above dashboard grid */
   margin-bottom: 0;
   z-index: 6;
   /* Figma Spring approx: Mass 1, Stiffness 151.5, Damping 18.46 */
@@ -717,9 +1151,9 @@ body {
 
 /* Expanded state: bar slides up from bottom to center, shrinks, buttons crossfade */
 .center-section .media-control-bar.close-mode {
-  bottom: 50%;
+  /* bottom: 50%; */
   width: 275px;
-  transform: translate(-50%, -50%);
+  /* transform: translate(-50%, -50%); */
 }
 
 .media-control-group,
@@ -1057,12 +1491,12 @@ body {
   /* Space for larger wave */
 }
 
-/* Back button (pill, white, dark border) */
+/* Back button (pill, white, dark border) - below dashboard cards layer */
 .back-btn {
   position: absolute;
   top: 81px;
   left: 155px;
-  z-index: 9;
+  z-index: 2;
   cursor: pointer;
   display: inline-flex;
   height: 32px;
@@ -1368,7 +1802,7 @@ body {
   }
 }
 
-/* ===== LIVE SUBTITLE (centered above wave, current speaker only) ===== */
+/* ===== LIVE SUBTITLE (centered block above controls, multi-line) ===== */
 .live-subtitle {
   position: absolute;
   bottom: calc(280px + 44px + 24px);
@@ -1377,57 +1811,60 @@ body {
   z-index: 5;
   pointer-events: none;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  max-width: 72%;
+  gap: 6px;
+  max-width: min(85%, 560px);
   opacity: 0;
   transition: opacity 0.35s ease;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: center;
 }
 
 .live-subtitle.visible {
   opacity: 1;
 }
 
-/* Glassmorphism pill background */
+/* Subtle card background */
 .live-subtitle::before {
   content: '';
   position: absolute;
-  inset: -8px -18px;
-  border-radius: 999px;
-  background: rgba(18, 18, 24, 0.52);
-  backdrop-filter: blur(18px);
-  border: 1px solid rgba(198, 198, 198, 0.1);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
-  z-index: -1;
+  inset: -12px -20px;
 }
 
-.live-subtitle-label {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-
-.live-subtitle-label.user {
-  color: rgba(14, 165, 233, 0.95);
-}
-
-.live-subtitle-label.bot {
-  color: rgba(168, 85, 247, 0.9);
-}
-
+/* Multi-line block: full utterance */
 .live-subtitle-text {
-  font-size: 15px;
-  line-height: 1.3;
-  color: rgba(240, 240, 245, 0.92);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 24px;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: break-word;
+  max-height: 6em;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+}
+
+/* User subtitle text */
+.live-subtitle.user .live-subtitle-text {
+  color: #FFFFFFBF;
+  font-weight: 500;
+  font-size: 24px;
+  font-style: italic;
+}
+
+/* Bot subtitle text */
+.live-subtitle.bot .live-subtitle-text {
+  font-size: 24px;
+  color: #FFFFFF;
+  font-weight: 400;
+}
+
+/* Live subtitle: smaller on mobile */
+@media (max-width: 640px) {
+
+  .live-subtitle-text,
+  .live-subtitle.user .live-subtitle-text,
+  .live-subtitle.bot .live-subtitle-text {
+    font-size: 16px;
+  }
 }
 
 /* Word-pop animation for each new word */
@@ -1452,6 +1889,13 @@ body {
   display: inline;
   opacity: 0;
   animation: subtitleWordPop 0.25s ease forwards;
+}
+
+/* Same typewriter-word animation in live subtitle (word-by-word append) */
+.live-subtitle-text .typewriter-word {
+  display: inline;
+  opacity: 0;
+  animation: typewriterFadeIn 0.15s ease forwards;
 }
 
 /* ===== WAVE VISUALIZER ===== */
@@ -1937,7 +2381,7 @@ body {
   .center-section .media-control-bar.close-mode {
     width: 140px;
     bottom: 50%;
-    transform: translate(-50%, -50%);
+    /* transform: translate(-50%, -50%); */
   }
 
   .center-section {
