@@ -122,7 +122,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   const getRowTopY = (rowNum: number) => topPadding + rowNum * rowHeight;
   const totalHeight = chartHeight;
   const leftPadding = 90;
-  const rightPadding = 80;
+  const rightPadding = 10;
   const pixelsPerSecond = 17;
   /** Total time range in seconds (from data or default). */
   const totalSeconds =
