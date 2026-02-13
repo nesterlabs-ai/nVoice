@@ -241,7 +241,7 @@ class VoiceScannerApp {
     if (loadingTextEl) {
       this.loader = new Loader({
         container: loadingTextEl,
-        text: 'INITIALIZING',
+        text: 'Intitializing...',
       });
     }
 
@@ -651,6 +651,7 @@ class VoiceScannerApp {
     if (this.loadingOverlay) {
       this.loadingOverlay.classList.remove('hidden');
       this.animatePreloader();
+      this.setCloseButtonEnabled(false);
     }
   }
 
@@ -667,6 +668,7 @@ class VoiceScannerApp {
   private hideLoadingOverlay(): void {
     if (this.loadingOverlay) {
       this.loadingOverlay.classList.add('hidden');
+      this.setCloseButtonEnabled(true);
       this.addTerminalMessage('Voice scanner ready. Awaiting user input.', 'regular');
       // Dispatch event for components waiting for page ready
       window.dispatchEvent(new CustomEvent('nesterPageReady'));

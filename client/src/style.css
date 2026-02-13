@@ -73,7 +73,7 @@ body {
 .loading-overlay {
   position: fixed;
   inset: 0;
-  background: var(--bg-primary);
+  background: transparent;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -110,8 +110,8 @@ body {
 
 .loading-text {
   font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.2em;
+  font-size: 24px;
+  letter-spacing: 0;
   color: var(--text-secondary);
 }
 
@@ -139,6 +139,17 @@ body {
 
   100% {
     background-position: -200% 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .loading-container {
+    gap: 16px;
+    padding: 0 24px;
+  }
+
+  .loading-text {
+    font-size: 16px;
   }
 }
 
