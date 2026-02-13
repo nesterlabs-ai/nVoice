@@ -20,5 +20,8 @@ numpy>=1.24.0    # Numerical operations for audio processing
 torch>=2.0.0  # PyTorch for wav2vec2 emotion detection models
 transformers>=4.30.0  # Hugging Face transformers for wav2vec2 models
 
+# Google Gemini for keyword extraction and text sentiment
+google-generativeai>=0.8.0
+
 # Semantic template selection for A2UI (intent understanding)
 sentence-transformers>=2.2.0  # Multi-qa-MiniLM-L6-cos-v1 for query embeddings
