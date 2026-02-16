@@ -121,7 +121,8 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   /** Row top Y for drawing rects (responsive). */
   const getRowTopY = (rowNum: number) => topPadding + rowNum * rowHeight;
   const totalHeight = chartHeight;
-  const leftPadding = 90;
+  /** Enough space so y-axis labels (e.g. "Technology") don't overlap the left edge of the plot when scrolled. */
+  const leftPadding = 106;
   const rightPadding = 10;
   const pixelsPerSecond = 17;
   /** Total time range in seconds (from data or default). */
@@ -199,6 +200,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                       opacity={1}
                     />
                   ))}
+                  {/* Connection lines only (no boxes yet) */}
                   {topics.map((topic, index) => {
                     if (index === 0) return null;
                     const prevTopic = topics[index - 1];
@@ -207,38 +209,22 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                     const y1 = getRowCenterY(prevTopic.row);
                     const y2 = getRowCenterY(topic.row);
                     return (
-                      <g key={`connection-${topic.id}`}>
-                        <motion.line
-                          x1={x1}
-                          y1={y1}
-                          x2={x2}
-                          y2={y2}
-                          stroke="#7D7D7D"
-                          strokeWidth={1.5}
-                          strokeDasharray="4,4"
-                          initial={{ pathLength: 0, opacity: 0 }}
-                          animate={{ pathLength: 1, opacity: 0.5 }}
-                          transition={{ delay: index * 0.1, duration: 0.4 }}
-                        />
-                        {topic.aiRole && (() => {
-                          const label = getTransitionLabel(topic.aiRole, prevTopic.name);
-                          const boxWidth = Math.max(60, label.length * 7 + 16);
-                          return (
-                            <motion.g
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              transition={{ delay: index * 0.1 + 0.2, duration: 0.3 }}
-                            >
-                              <rect x={(x1 + x2) / 2 - boxWidth / 2} y={(y1 + y2) / 2 - 10} width={boxWidth} height={20}
-                                fill="rgba(234, 179, 8, 0.15)" stroke="#eab308" strokeWidth={1} rx={3} />
-                              <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 + 1} fontSize="10" fontWeight="600"
-                                fill="#eab308" textAnchor="middle" dominantBaseline="middle">{label}</text>
-                            </motion.g>
-                          );
-                        })()}
-                      </g>
+                      <motion.line
+                        key={`connection-${topic.id}`}
+                        x1={x1}
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke="#7D7D7D"
+                        strokeWidth={1.5}
+                        strokeDasharray="4,4"
+                        initial={{ pathLength: 0, opacity: 0 }}
+                        animate={{ pathLength: 1, opacity: 0.5 }}
+                        transition={{ delay: index * 0.1, duration: 0.4 }}
+                      />
                     );
                   })}
+                  {/* Topic nodes (dots + names) drawn first so they sit under yellow boxes */}
                   {topics.map((topic, index) => {
                     const x = getTopicX(topic);
                     const y = getRowCenterY(topic.row);
@@ -269,6 +255,30 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                           {topic.name}
                         </motion.text>
                       </g>
+                    );
+                  })}
+                  {/* Yellow AI transition boxes on top so their text is never covered by dots */}
+                  {topics.map((topic, index) => {
+                    if (index === 0 || !topic.aiRole) return null;
+                    const prevTopic = topics[index - 1];
+                    const x1 = getTopicX(prevTopic);
+                    const x2 = getTopicX(topic);
+                    const y1 = getRowCenterY(prevTopic.row);
+                    const y2 = getRowCenterY(topic.row);
+                    const label = getTransitionLabel(topic.aiRole, prevTopic.name);
+                    const boxWidth = Math.max(60, label.length * 7 + 16);
+                    return (
+                      <motion.g
+                        key={`transition-box-${topic.id}`}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: index * 0.1 + 0.2, duration: 0.3 }}
+                      >
+                        <rect x={(x1 + x2) / 2 - boxWidth / 2} y={(y1 + y2) / 2 - 10} width={boxWidth} height={20}
+                          fill="rgba(234, 179, 8, 0.15)" stroke="#eab308" strokeWidth={1} rx={3} />
+                        <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 + 1} fontSize="10" fontWeight="600"
+                          fill="#eab308" textAnchor="middle" dominantBaseline="middle">{label}</text>
+                      </motion.g>
                     );
                   })}
                 </svg>

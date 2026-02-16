@@ -105,6 +105,8 @@
   pointer-events: none;
   z-index: 10;
   height: 100%;
+  /* Ensure chart content never shows through behind y-axis labels when scrolled */
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.5);
 }
 
 .sync-sticky-x {
