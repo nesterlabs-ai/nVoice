@@ -3,7 +3,7 @@
 .emotion-analysis-card {
   --emotion-grid-line-color: #44444E; /* Horizontal grid line color; override to change */
   --emotion-grid-line-color-vertical: #44444E; /* Vertical grid line color; override for different vertical color */
-  --emotion-x-axis-label-font-size: 10px; /* Horizontal x-axis time label font size */
+  --emotion-x-axis-label-font-size: 9px; /* Horizontal x-axis time label font size */
   --emotion-x-axis-label-color: #7D7D7D; /* Horizontal x-axis time label color */
   background: #000;
   border-radius: 0.5rem;
@@ -37,7 +37,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  left: 24px; /* Start after y-axis strip to reduce gap */
+  left: 43px; /* Start after y-axis strip to reduce gap */
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -109,14 +109,13 @@
 
 .emotion-analysis-sticky-x {
   position: absolute;
-  left: 0;
+  /* left: 0; */
   right: 0;
   bottom: 0;
   background: #000;
   pointer-events: none;
   z-index: 10;
   height: 24px;
-  /* border: 1px solid white; */
 }
 
 .emotion-scroll-to-latest {

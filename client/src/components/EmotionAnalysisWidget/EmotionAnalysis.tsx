@@ -259,13 +259,13 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
             </svg>
           </div>
         </div>
-        <div className="emotion-analysis-sticky-y" style={{ width: `${24}px` }}>
+        <div className="emotion-analysis-sticky-y" style={{ width: `${71}px` }}>
           <svg width={24} height="100%">
             <g>
               {[1.0, 0.8, 0.6, 0.4, 0.2, 0.0].map((value) => {
                 const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
                 return (
-                  <text key={`y-label-${value}`} x={24} y={y} textAnchor="end" dominantBaseline="middle"
+                  <text key={`y-label-${value}`} x={54} y={y} textAnchor="end" dominantBaseline="middle"
                     fontSize={Y_AXIS_LABEL_FONT_SIZE} fill="#7D7D7D" style={{ fontFamily: 'monospace' }}>{value.toFixed(2)}</text>
                 );
               })}

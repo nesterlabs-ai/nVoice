@@ -123,7 +123,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   const getRowTopY = (rowNum: number) => topPadding + rowNum * rowHeight;
   const totalHeight = chartHeight;
   /** Enough space so y-axis labels (e.g. "Technology") don't overlap the left edge of the plot when scrolled. */
-  const leftPadding = 106;
+  const leftPadding = 70;
   const rightPadding = 10;
   const pixelsPerSecond = 17;
   /** Total time range in seconds (from data or default). */
