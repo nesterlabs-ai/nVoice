@@ -14,7 +14,12 @@ import asyncio
 from typing import Any, Dict, List
 
 from loguru import logger
-from pipecat.frames.frames import TTSSpeakFrame, TextFrame
+from pipecat.frames.frames import (
+    TTSSpeakFrame,
+    TextFrame,
+    LLMFullResponseStartFrame,
+    LLMFullResponseEndFrame
+)
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -120,7 +125,7 @@ class VoiceAssistant:
         logger.info(f"🎨 A2UI system enabled (RAG-triggered only): {a2ui_enabled}")
         self.visual_hint_processor = VisualHintProcessor(
             enabled=True,
-            stream_words=True,  # Word-by-word streaming is the sole transcript renderer
+            stream_words=True,  # Word-by-word streaming for smooth subtitle updates
             detect_content=False,  # Legacy visual hints disabled
             use_a2ui=False,  # A2UI now handled via RAG calls in ConversationManager
         )
@@ -369,18 +374,23 @@ class VoiceAssistant:
             # Randomized greeting messages for variety
             import random
             greeting_options = [
-                "Hi, I'm Nester A I. We're reimagining intelligence through research, design, and technology. What brings you here today?",
-                "Hey there! I'm Nester A I from Nesterlabs. We build AI products with a human touch. What are you working on?",
-                "Welcome! I'm the Nesterlabs voice assistant. We specialize in voice AI and agentic systems. How can I help you today?",
-                "Hi! Nester A I here. We help companies build amazing AI experiences. Tell me about your project.",
-                "Hello! I'm Nester A I, your guide to Nesterlabs. We're an AI studio in the Bay Area. What would you like to explore?"
+                "Hi, I'm Nester A I. We're reimagining intelligence through research, design, and technology. What brings you here today? ",
+                "Hey there! I'm Nester A I from Nesterlabs. We build AI products with a human touch. What brings you here today? ",
+                "Hi! Nester A I here. We help companies build amazing AI experiences. What would you like to explore? ",
+                "Hello! I'm Nester A I, your guide to Nesterlabs. We're an AI studio in the Bay Area. What would you like to explore? "
             ]
+            # Add trailing space to ensure last word is emitted (not buffered for next chunk)
             greeting_text = random.choice(greeting_options)
 
-            # Send TextFrame first for subtitles/transcript, then TTSSpeakFrame for audio
+            # Send frames to properly signal utterance boundaries:
+            # 1. LLMFullResponseStartFrame - initializes utterance_id
+            # 2. TextFrame - the greeting text (flows through VisualHintProcessor → TTS)
+            # 3. LLMFullResponseEndFrame - flushes word buffer and finalizes
+            logger.info(f"🎤 Queueing greeting with utterance frames: '{greeting_text[:50]}...'")
+            await self.task.queue_frame(LLMFullResponseStartFrame())
             await self.task.queue_frame(TextFrame(greeting_text))
-            await self.task.queue_frame(TTSSpeakFrame(greeting_text))
-            logger.info(f"🎤 Greeting sent with subtitle: '{greeting_text[:50]}...'")
+            await self.task.queue_frame(LLMFullResponseEndFrame())
+            logger.info(f"✅ Greeting frames queued successfully")
 
             # Add greeting to conversation context so LLM knows it already greeted
             if self.conversation_manager and self.conversation_manager.context:

@@ -89,3 +89,24 @@ class ErrorResponse(BaseModel):
     message: str = Field(..., description="Error message")
     details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Error timestamp")
+
+
+class AppointmentBookingRequest(BaseModel):
+    """Request model for appointment booking."""
+
+    first_name: str = Field(..., min_length=1, max_length=100, description="User's first name")
+    last_name: str = Field(..., min_length=1, max_length=100, description="User's last name")
+    email: str = Field(
+        ...,
+        pattern=r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+        description="User's email address"
+    )
+    submitted_by: str = Field(default="Nester AI", description="Source of submission")
+
+
+class AppointmentBookingResponse(BaseModel):
+    """Response model for appointment booking."""
+
+    success: bool = Field(..., description="Whether the booking was successful")
+    message: Optional[str] = Field(None, description="Success message")
+    error: Optional[str] = Field(None, description="Error message if booking failed")

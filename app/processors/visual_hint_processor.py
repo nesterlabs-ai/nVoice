@@ -271,8 +271,10 @@ class VisualHintProcessor(FrameProcessor):
             # Stream text chunks word-by-word
             elif isinstance(frame, TextFrame):
                 text = frame.text if hasattr(frame, 'text') else str(frame)
+                logger.info(f"📝 [SUBTITLE] TextFrame received: '{text[:80]}...' (len={len(text)}, stream_words={self.stream_words})")
                 if text and text.strip():
                     if self.stream_words:
+                        logger.info(f"📤 [SUBTITLE] Emitting streaming text for: '{text[:50]}...'")
                         await self._emit_streaming_text(text)
 
                     # Buffer full text for content detection
@@ -282,6 +284,8 @@ class VisualHintProcessor(FrameProcessor):
                         await self._detect_and_emit_hints()
 
         # Always pass frame downstream to TTS
+        if isinstance(frame, TextFrame):
+            logger.info(f"➡️ [SUBTITLE] Passing TextFrame downstream to TTS: '{frame.text[:50] if hasattr(frame, 'text') else str(frame)[:50]}...'")
         await self.push_frame(frame, direction)
 
     async def _emit_streaming_text(self, text: str) -> None:
@@ -294,6 +298,12 @@ class VisualHintProcessor(FrameProcessor):
         Args:
             text: Text chunk from LLM
         """
+        # Initialize utterance_id if not set (e.g., for greeting messages)
+        if self._current_utterance_id is None:
+            self._current_utterance_id = str(uuid.uuid4())
+            self._sequence_counter = 0
+            logger.info(f"🆔 [SUBTITLE] Generated new utterance_id: {self._current_utterance_id[:8]}")
+
         # Prepend any leftover partial word from the previous chunk
         text = self._word_buffer + text
         self._word_buffer = ""
@@ -331,9 +341,10 @@ class VisualHintProcessor(FrameProcessor):
         try:
             data_frame = RTVIServerMessageFrame(data=message_data)
             await self.push_frame(data_frame)
-            logger.debug(f"📤 Streamed word: '{word}' (seq={seq})")
+            utterance_short = self._current_utterance_id[:8] if self._current_utterance_id else "None"
+            logger.info(f"📤 [SUBTITLE] Streamed word to client: '{word}' (seq={seq}, utterance={utterance_short})")
         except Exception as e:
-            logger.warning(f"Failed to emit streaming text: {e}")
+            logger.error(f"❌ [SUBTITLE] Failed to emit streaming text: {e}", exc_info=True)
 
     async def _detect_and_emit_hints(self) -> None:
         """Detect content patterns in buffered text and emit visual hints."""
@@ -484,6 +495,13 @@ class VisualHintProcessor(FrameProcessor):
     async def finalize_utterance(self) -> None:
         """Finalize the current utterance, emitting is_final=True."""
         if self._current_utterance_id:
+            # Flush any remaining buffered word first
+            if self.stream_words and self._word_buffer:
+                self._sequence_counter += 1
+                await self._emit_word(self._word_buffer, self._sequence_counter)
+                self._word_buffer = ""
+                logger.info(f"🔚 [SUBTITLE] Flushed final buffered word during finalization")
+
             # Emit final marker
             message_data = {
                 "message_type": "streaming_text",

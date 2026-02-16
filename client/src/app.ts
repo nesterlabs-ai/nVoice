@@ -129,6 +129,7 @@ class VoiceScannerApp {
   private streamingBubble: HTMLElement | null = null;
   private currentUtteranceId: string | null = null;
   private streamingWords: string[] = [];
+  private streamingTextActiveForSubtitle: boolean = false;  // Track if streaming_text is handling subtitle
 
   // Typewriter effect state for bot transcripts
   private currentBotBubble: HTMLElement | null = null;
@@ -143,6 +144,11 @@ class VoiceScannerApp {
   private botIsSpeaking: boolean = false;
   private subtitleWordCount: number = 0;
   private subtitleClearOnNextSentence: boolean = false;
+
+  // Subtitle word queue for typewriter effect with streaming_text
+  private subtitleWordQueue: Array<{word: string, isFirstWord: boolean}> = [];
+  private isProcessingSubtitleQueue: boolean = false;
+  private subtitleQueueSpeed: number = 300; // ms per word (synced with TTS audio duration ~200-270ms per word)
 
   // Media control bar: speaker/mic icon toggle (slash = muted)
   private speakerMuted: boolean = false;
@@ -1100,7 +1106,9 @@ class VoiceScannerApp {
     this.liveSubtitle.classList.remove('user', 'bot');
     this.liveSubtitle.classList.add('bot');
 
+    console.log(`[DEBUG] appendBotWordToLiveSubtitle: word="${word}", isFirstWord=${isFirstWord}, subtitleClearOnNextSentence=${this.subtitleClearOnNextSentence}, streamingBubble=${this.streamingBubble ? 'EXISTS' : 'NULL'}`);
     if (isFirstWord || this.subtitleClearOnNextSentence) {
+      console.log(`[DEBUG] CLEARING subtitle: isFirstWord=${isFirstWord}, subtitleClearOnNextSentence=${this.subtitleClearOnNextSentence}`);
       this.liveSubtitleText.innerHTML = '';
       this.subtitleClearOnNextSentence = false;
     }
@@ -1145,12 +1153,23 @@ class VoiceScannerApp {
       this.currentBotBubble.appendChild(timeSpan);
       this.currentBotBubble.appendChild(textSpan);
       this.transcriptList.appendChild(this.currentBotBubble);
+
+      // Clear subtitle ONLY if streaming_text is not already active for this response
+      // (prevents clearing subtitle when bot-transcript arrives after streaming_text has started)
+      console.log(`[DEBUG] Creating currentBotBubble: streamingBubble=${this.streamingBubble ? 'EXISTS' : 'NULL'}, currentUtteranceId=${this.currentUtteranceId}`);
+      if (this.liveSubtitleText && !this.streamingBubble) {
+        console.log(`[DEBUG] CLEARING subtitle because streamingBubble is NULL`);
+        this.liveSubtitleText.innerHTML = '';
+      } else if (this.streamingBubble) {
+        console.log(`[DEBUG] NOT clearing subtitle because streamingBubble exists`);
+      }
     }
 
     // Split text into words and add to queue
     const words = text.split(/\s+/).filter(w => w.length > 0);
-    // Mark subtitle to clear on next word — keeps subtitle in sync with current spoken sentence
-    if (this.liveSubtitleText && this.liveSubtitleText.childNodes.length > 0) {
+    // Mark subtitle to clear on next word ONLY if streaming_text is not active
+    // (prevents clearing subtitle when bot-transcript arrives while streaming_text is handling it)
+    if (this.liveSubtitleText && this.liveSubtitleText.childNodes.length > 0 && !this.streamingBubble) {
       this.subtitleClearOnNextSentence = true;
     }
     this.typewriterQueue.push(...words);
@@ -1185,8 +1204,11 @@ class VoiceScannerApp {
         wordSpan.textContent = word + ' ';
         textSpan.appendChild(wordSpan);
 
-        // Live subtitle: append one word at a time (same word-by-word behavior as bubble)
-        this.appendBotWordToLiveSubtitle(word, isFirstWord);
+        // Live subtitle: ONLY update if streaming_text is not handling it
+        // Check the flag instead of streamingBubble (which gets set to null after is_final)
+        if (!this.streamingTextActiveForSubtitle) {
+          this.appendBotWordToLiveSubtitle(word, isFirstWord);
+        }
 
         // Scroll to bottom
         if (this.transcriptList) {
@@ -1197,6 +1219,25 @@ class VoiceScannerApp {
 
     // Schedule next word
     setTimeout(() => this.processTypewriterQueue(), this.typewriterSpeed);
+  }
+
+  /**
+   * Process the subtitle word queue with typewriter effect for streaming_text
+   */
+  private processSubtitleWordQueue(): void {
+    if (this.subtitleWordQueue.length === 0) {
+      this.isProcessingSubtitleQueue = false;
+      return;
+    }
+
+    this.isProcessingSubtitleQueue = true;
+    const {word, isFirstWord} = this.subtitleWordQueue.shift()!;
+
+    // Update live subtitle with the word
+    this.appendBotWordToLiveSubtitle(word, isFirstWord);
+
+    // Schedule next word
+    setTimeout(() => this.processSubtitleWordQueue(), this.subtitleQueueSpeed);
   }
 
   /**
@@ -1221,6 +1262,10 @@ class VoiceScannerApp {
     this.currentBotBubble = null;
     this.typewriterQueue = [];
     this.isTypewriting = false;
+
+    // Also clear subtitle queue when user interrupts
+    this.subtitleWordQueue = [];
+    this.isProcessingSubtitleQueue = false;
   }
 
   // Store last user query and accumulated bot answer for graph highlighting
@@ -2343,6 +2388,7 @@ class VoiceScannerApp {
               this.log(`You: ${data.text}`);
               // Finalize previous bot bubble before adding user message
               this.finalizeBotBubble();
+              this.streamingTextActiveForSubtitle = false;  // Reset for next turn
               this.addTranscript(data.text, true);
               // Store query and reset accumulated answer for new turn
               this.lastUserQuery = data.text;
@@ -2519,8 +2565,7 @@ class VoiceScannerApp {
 
   /**
    * Handle streaming text events for word-by-word display.
-   * NOTE: Bot transcript is rendered by onBotTranscript (addBotTranscriptWithTypewriter).
-   * We skip streaming_text transcript rendering to avoid duplicate bot lines.
+   * This handles greeting messages that arrive as streaming_text before LLM responses.
    */
   private handleStreamingText(data: {
     text: string;
@@ -2529,8 +2574,35 @@ class VoiceScannerApp {
     utterance_id: string;
     timestamp: number;
   }): void {
-    // Disabled: onBotTranscript already renders bot text. Streaming_text would create duplicates.
-    void data;
+    console.log(`[SUBTITLE] streaming_text: "${data.text}" (seq=${data.sequence_id}, final=${data.is_final}, utterance=${data.utterance_id.substring(0, 8)})`);
+
+    // Handle final marker - finalize the current streaming bubble
+    if (data.is_final) {
+      this.finalizeCurrentStreamingBubble();
+      return;
+    }
+
+    // New utterance - create a new streaming bubble
+    if (data.utterance_id !== this.currentUtteranceId) {
+      console.log(`[DEBUG] New utterance detected: old=${this.currentUtteranceId}, new=${data.utterance_id.substring(0, 8)}`);
+      // Finalize previous bubble if exists
+      if (this.streamingBubble) {
+        console.log(`[DEBUG] Finalizing previous streamingBubble`);
+        this.finalizeCurrentStreamingBubble();
+      }
+
+      // Start new bubble
+      this.currentUtteranceId = data.utterance_id;
+      this.streamingTextActiveForSubtitle = true;  // streaming_text is now handling subtitle
+      console.log(`[DEBUG] Creating NEW streamingBubble for utterance=${data.utterance_id.substring(0, 8)}`);
+      this.createStreamingBubble();
+      console.log(`[DEBUG] streamingBubble created: ${this.streamingBubble ? 'YES' : 'NO'}, streamingTextActiveForSubtitle=true`);
+    }
+
+    // Add the word to the streaming bubble
+    if (data.text && data.text.trim()) {
+      this.addStreamingWord(data.text.trim(), data.sequence_id);
+    }
   }
 
   /**
@@ -2541,6 +2613,14 @@ class VoiceScannerApp {
 
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
+
+    // Reset streaming state and clear subtitle for new utterance
+    this.streamingWords = [];
+    this.subtitleWordQueue = [];  // Clear subtitle queue
+    this.isProcessingSubtitleQueue = false;  // Reset queue processor
+    if (this.liveSubtitleText) {
+      this.liveSubtitleText.innerHTML = '';
+    }
 
     this.streamingBubble = document.createElement('div');
     this.streamingBubble.className = 'transcript-line transcript-line-bot streaming';
@@ -2577,8 +2657,13 @@ class VoiceScannerApp {
     const isFirstWord = this.streamingWords.length === 0;
     this.streamingWords.push(word);
 
-    // Live subtitle: append one word at a time (same typewriter effect as transcript)
-    this.appendBotWordToLiveSubtitle(word, isFirstWord);
+    // Queue word for subtitle with typewriter effect
+    this.subtitleWordQueue.push({word, isFirstWord});
+
+    // Start processing queue if not already running
+    if (!this.isProcessingSubtitleQueue) {
+      this.processSubtitleWordQueue();
+    }
 
     // Auto-scroll
     if (this.transcriptList) {

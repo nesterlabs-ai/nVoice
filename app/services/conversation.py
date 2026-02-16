@@ -31,6 +31,8 @@ from pipecat.processors.aggregators.llm_response_universal import (
 from app.services.input_analyzer import InputAnalyzer
 from app.services.rag import RAGService, LightRAGService, A2UIResponse
 from app.services.groq_llm_service import GroqLLMService
+from app.services.tally_submission import TallySubmissionService
+from app.utils.validation import validate_email, spell_out_email
 
 # Import A2UI system
 try:
@@ -113,6 +115,10 @@ class ConversationManager:
         self.context = None  # Store LLMContext for greeting access
         self._thinking_phrase_index = 0  # Counter for cycling through phrases
 
+        # Appointment booking state
+        self._booking_in_progress = False
+        self.tally_service = TallySubmissionService()
+
         # A2UI integration
         self._a2ui_enabled = a2ui_enabled and A2UI_AVAILABLE
         self._a2ui_rag_service: Optional[A2UIRAGService] = None
@@ -179,6 +185,8 @@ class ConversationManager:
             "call_rag_system", self._handle_rag_call, cancel_on_interruption=False
         )
         self.llm_service.register_function("end_conversation", self._handle_end_conversation)
+        self.llm_service.register_function("start_appointment_booking", self._handle_start_booking)
+        self.llm_service.register_function("submit_appointment", self._handle_submit_appointment)
 
         return self.llm_service
 
@@ -218,8 +226,9 @@ class ConversationManager:
                 import time
                 logger.info(f"🔧 FUNCTION CALL START: {function_calls} at {time.time()}")
 
-                # Skip thinking phrase for end_conversation function (it has its own farewell)
-                if function_calls and any('end_conversation' in str(call) for call in function_calls):
+                # Skip thinking phrase for certain functions that don't need "let me check"
+                skip_functions = ['end_conversation', 'start_appointment_booking', 'submit_appointment', 'cancel_appointment_booking']
+                if function_calls and any(func in str(call) for func in skip_functions for call in function_calls):
                     return
 
                 # RAG calls now use the same voice as set by ToneAwareProcessor
@@ -380,6 +389,94 @@ class ConversationManager:
         await params.llm.push_frame(EndFrame(), FrameDirection.UPSTREAM)
         logger.info("🛑 EndFrame sent - session will terminate")
 
+    async def _handle_start_booking(self, params: FunctionCallParams) -> None:
+        """Handle start appointment booking function call.
+
+        Initiates the appointment booking flow and sets internal state.
+
+        Args:
+            params: Function call parameters
+        """
+        logger.info("📅 Start appointment booking function called")
+
+        # Set booking state flag
+        self._booking_in_progress = True
+
+        # Return a prompt to collect user information
+        response = "Great! What's your first name?"
+        await params.result_callback(response)
+
+        logger.info("✅ Appointment booking flow initiated")
+
+    async def _handle_submit_appointment(self, params: FunctionCallParams) -> None:
+        """Handle appointment submission function call.
+
+        Validates and submits the appointment data to Tally.so.
+
+        Args:
+            params: Function call parameters with first_name, last_name, email
+        """
+        logger.info("📋 Submit appointment function called")
+
+        # Extract parameters
+        first_name = params.arguments.get("first_name", "").strip()
+        last_name = params.arguments.get("last_name", "").strip()
+        email = params.arguments.get("email", "").strip()
+
+        logger.info(f"Appointment details: {first_name} {last_name} ({email})")
+
+        # Validate email
+        is_valid, normalized_email = validate_email(email)
+
+        if not is_valid:
+            logger.warning(f"Invalid email format: {email}")
+            error_msg = "That email doesn't look quite right. Could you please spell it out again slowly?"
+            await params.result_callback(error_msg)
+            return
+
+        # Validate required fields
+        if not first_name or not last_name:
+            logger.warning("Missing required fields")
+            error_msg = "I need both your first and last name. Could you provide those?"
+            await params.result_callback(error_msg)
+            return
+
+        try:
+            # Submit to Tally.so
+            result = await self.tally_service.submit_appointment(
+                first_name=first_name,
+                last_name=last_name,
+                email=normalized_email
+            )
+
+            if result["success"]:
+                logger.info("✅ Appointment submitted successfully")
+
+                # Reset booking state
+                self._booking_in_progress = False
+
+                # Return success message - LLM will then call end_conversation
+                success_msg = result["message"]
+                await params.result_callback(success_msg)
+
+            else:
+                logger.error(f"Appointment submission failed: {result.get('error')}")
+                error_msg = result["error"]
+                await params.result_callback(error_msg)
+                # Keep booking in progress so user can retry
+                logger.info("Booking state maintained for retry")
+
+        except Exception as e:
+            logger.error(f"Error submitting appointment: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+            error_msg = "I encountered an error while submitting. Could you please contact us directly at contact@nesterlabs.com?"
+            await params.result_callback(error_msg)
+
+            # Reset booking state on error
+            self._booking_in_progress = False
+
     def create_function_schemas(self) -> ToolsSchema:
         """Create function schemas for LLM tool usage.
         
@@ -400,12 +497,44 @@ class ConversationManager:
 
         end_conversation_function = FunctionSchema(
             name="end_conversation",
-            description="CRITICAL: Call this function IMMEDIATELY when the user says ANY farewell or wants to end. This includes single words like 'goodbye', 'bye', 'later' or phrases like 'see you', 'talk to you later', 'have a good day', 'end call', 'end conversation', 'hang up', 'disconnect', 'that's all', 'nothing else', 'I'm done', 'gotta go', 'need to go', 'catch you later', or ANY variation of farewell/goodbye. DO NOT just respond to farewells - you MUST call this function.",
+            description="Call this function when the user wants to end the conversation AND has declined the appointment offer. IMPORTANT: Before calling this, you must FIRST offer to schedule an appointment by asking politely. Only call end_conversation if they decline the appointment offer or after a successful appointment booking.",
             properties={},
             required=[],
         )
 
-        return ToolsSchema(standard_tools=[rag_function, end_conversation_function])
+        start_booking_function = FunctionSchema(
+            name="start_appointment_booking",
+            description="Start the appointment booking process. Call this when the user agrees to schedule an appointment (either after a farewell offer or mid-conversation contact request). This initiates the flow to collect their name and email.",
+            properties={},
+            required=[],
+        )
+
+        submit_appointment_function = FunctionSchema(
+            name="submit_appointment",
+            description="Submit appointment booking after collecting first name, last name, and email. CRITICAL: Only call this AFTER you have confirmed the email address character-by-character with the user and they have confirmed it is correct. Do not call this if the email has not been verbally confirmed.",
+            properties={
+                "first_name": {
+                    "type": "string",
+                    "description": "User's first name",
+                },
+                "last_name": {
+                    "type": "string",
+                    "description": "User's last name",
+                },
+                "email": {
+                    "type": "string",
+                    "description": "User's confirmed email address",
+                },
+            },
+            required=["first_name", "last_name", "email"],
+        )
+
+        return ToolsSchema(standard_tools=[
+            rag_function,
+            end_conversation_function,
+            start_booking_function,
+            submit_appointment_function
+        ])
 
     def create_context(self) -> LLMContext:
         """Create the LLM context with system messages and tools.
