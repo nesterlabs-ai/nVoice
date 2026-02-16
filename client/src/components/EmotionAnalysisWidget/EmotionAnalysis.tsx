@@ -203,6 +203,10 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
     });
     return Array.from(byX.entries()).map(([x, topic]) => ({ labelX: x, topic }));
   })();
+  /** Min offset so first emotion label + emoji are not clipped by left y-axis strip. */
+  const MIN_FIRST_LABEL_OFFSET = 35;
+  const getLabelXDisplay = (labelX: number, index: number) =>
+    index === 0 ? Math.max(labelX, leftPadding + MIN_FIRST_LABEL_OFFSET) : labelX;
 
   return (
     <div className="emotion-analysis-card">
@@ -240,14 +244,15 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
                     initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }}
                     transition={{ duration: 1.5, ease: 'easeInOut', delay: 0.4 }} />
                   {labelSlots.map(({ labelX, topic }, index) => {
+                    const xDisplay = getLabelXDisplay(labelX, index);
                     const emoji = sentimentToEmoji[topic.sentimentLabel] || '😐';
                     return (
                       <g key={`emoji-group-${topic.id}-${labelX}`}>
-                        <motion.text x={labelX} y={topPadding - 35} textAnchor="middle" fontSize={SENTIMENT_LABEL_FONT_SIZE} fill="#7D7D7D"
+                        <motion.text x={xDisplay} y={topPadding - 35} textAnchor="middle" fontSize={SENTIMENT_LABEL_FONT_SIZE} fill="#7D7D7D"
                           initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.1 + 0.5, duration: 0.4 }}>
                           {topic.sentimentLabel}
                         </motion.text>
-                        <motion.text x={labelX} y={topPadding - 15} textAnchor="middle" fontSize={SENTIMENT_EMOJI_FONT_SIZE} fill="#7D7D7D"
+                        <motion.text x={xDisplay} y={topPadding - 15} textAnchor="middle" fontSize={SENTIMENT_EMOJI_FONT_SIZE} fill="#7D7D7D"
                           initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 + 0.6, duration: 0.4 }}>
                           {emoji}
                         </motion.text>
@@ -259,13 +264,13 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
             </svg>
           </div>
         </div>
-        <div className="emotion-analysis-sticky-y" style={{ width: `${71}px` }}>
-          <svg width={24} height="100%">
+        <div className="emotion-analysis-sticky-y" style={{ width: `${leftPadding + 20}px` }}>
+          <svg width="100%" height="100%" viewBox={`0 0 ${leftPadding + 20} ${chartHeight}`} preserveAspectRatio="xMinYMin slice">
             <g>
               {[1.0, 0.8, 0.6, 0.4, 0.2, 0.0].map((value) => {
                 const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
                 return (
-                  <text key={`y-label-${value}`} x={54} y={y} textAnchor="end" dominantBaseline="middle"
+                  <text key={`y-label-${value}`} x={leftPadding + 14} y={y} textAnchor="end" dominantBaseline="middle"
                     fontSize={Y_AXIS_LABEL_FONT_SIZE} fill="#7D7D7D" style={{ fontFamily: 'monospace' }}>{value.toFixed(2)}</text>
                 );
               })}
@@ -275,7 +280,7 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
         <div className="emotion-analysis-sticky-x">
           <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
             {timeMarks.map((mark, index) => (
-              <text key={`time-${index}`} x={mark.x} y={10} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
+              <text key={`time-${index}`} x={mark.x + 2} y={10} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
                 {mark.label}
               </text>
             ))}

@@ -262,16 +262,22 @@ body {
   overflow: hidden;
 }
 
-.main-layout-logo {
+.main-layout-logo-link {
   position: absolute;
   top: 40px;
   left: 40px;
-  z-index: 2;
-  pointer-events: none;
+  z-index: 10;
+  display: inline-block;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.main-layout-logo {
+  display: block;
 }
 
 @media (max-width: 640px) {
-  .main-layout-logo {
+  .main-layout-logo-link {
     top: 16px;
     left: 16px;
   }

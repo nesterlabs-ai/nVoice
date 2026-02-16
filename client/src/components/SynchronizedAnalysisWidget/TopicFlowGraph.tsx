@@ -157,6 +157,12 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
     const elapsedSeconds = (topic.timestamp.getTime() - startTime) / 1000;
     return leftPadding + (elapsedSeconds / totalSeconds) * chartWidth;
   };
+  /** Min offset from left so first topic dot + label are not clipped by sticky y-axis. */
+  const MIN_FIRST_TOPIC_OFFSET = 52;
+  const getTopicXDisplay = (topic: TopicNode, index: number) => {
+    const x = getTopicX(topic);
+    return index === 0 ? Math.max(x, leftPadding + MIN_FIRST_TOPIC_OFFSET) : x;
+  };
 
   return (
     <div className="sync-card">
@@ -198,8 +204,8 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                   {topics.map((topic, index) => {
                     if (index === 0) return null;
                     const prevTopic = topics[index - 1];
-                    const x1 = getTopicX(prevTopic);
-                    const x2 = getTopicX(topic);
+                    const x1 = getTopicXDisplay(prevTopic, index - 1);
+                    const x2 = getTopicXDisplay(topic, index);
                     const y1 = getRowCenterY(prevTopic.row);
                     const y2 = getRowCenterY(topic.row);
                     return (
@@ -220,7 +226,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                   })}
                   {/* Topic nodes (dots + names) drawn first so they sit under yellow boxes */}
                   {topics.map((topic, index) => {
-                    const x = getTopicX(topic);
+                    const x = getTopicXDisplay(topic, index);
                     const y = getRowCenterY(topic.row);
                     return (
                       <g key={topic.id}>
@@ -255,8 +261,8 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                   {topics.map((topic, index) => {
                     if (index === 0 || !topic.aiRole) return null;
                     const prevTopic = topics[index - 1];
-                    const x1 = getTopicX(prevTopic);
-                    const x2 = getTopicX(topic);
+                    const x1 = getTopicXDisplay(prevTopic, index - 1);
+                    const x2 = getTopicXDisplay(topic, index);
                     const y1 = getRowCenterY(prevTopic.row);
                     const y2 = getRowCenterY(topic.row);
                     const label = getTransitionLabel(topic.aiRole, prevTopic.name);
