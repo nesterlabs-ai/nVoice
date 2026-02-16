@@ -44,6 +44,7 @@ class LoggingSmartTurnAnalyzer(BaseTurnAnalyzer):
         self._analysis_count = 0
         self._end_of_turn_detections = 0
         self._speech_chunks = 0
+        self._last_logged_speech_triggered = False  # Track state changes
 
         logger.info(f"[Session {session_id}] " + "=" * 50)
         logger.info(f"[Session {session_id}] 🧠 SMARTTURN V3 WRAPPER READY")
@@ -106,12 +107,21 @@ class LoggingSmartTurnAnalyzer(BaseTurnAnalyzer):
                 f"[Session {self._session_id}] 🧠 SmartTurn: FIRST SPEECH CHUNK - VAD detected speech!"
             )
 
-        # Log every 25 chunks (~800ms of audio at 16kHz with 512-sample frames)
-        if self._audio_chunks_received % 25 == 0:
+        # Log on state change (speech_triggered toggled) or every 250 chunks (~8s)
+        speech_triggered = self._analyzer.speech_triggered
+        state_changed = speech_triggered != self._last_logged_speech_triggered
+        if state_changed:
+            self._last_logged_speech_triggered = speech_triggered
+            logger.info(
+                f"[Session {self._session_id}] 🧠 SmartTurn: "
+                f"speech_triggered={'START' if speech_triggered else 'STOP'}, "
+                f"chunks={self._audio_chunks_received}, speech_chunks={self._speech_chunks}, state={result.name}"
+            )
+        elif self._audio_chunks_received % 250 == 0:
             logger.info(
                 f"[Session {self._session_id}] 🧠 SmartTurn: "
                 f"chunks={self._audio_chunks_received}, speech_chunks={self._speech_chunks}, "
-                f"speech_triggered={self._analyzer.speech_triggered}, state={result.name}"
+                f"speech_triggered={speech_triggered}, state={result.name}"
             )
 
         return result
