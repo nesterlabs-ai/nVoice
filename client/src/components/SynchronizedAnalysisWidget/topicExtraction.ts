@@ -176,7 +176,7 @@ export function extractTopicsFromMessages(messages: Message[]): Topic[] {
   let colorIndex = 0;
 
   messages.forEach((message, index) => {
-    if (message.speaker !== 'user') return;
+    // Process BOTH user and AI messages for conversation analysis
     const text = message.text.toLowerCase();
     let detectedCategory: string | null = null;
     let maxMatches = 0;
@@ -194,13 +194,20 @@ export function extractTopicsFromMessages(messages: Message[]): Topic[] {
         const matchedKeywords = categoryKeywords[detectedCategory].filter(k => text.includes(k));
         const sentimentData = analyzeSentiment(message.text);
         let aiRole: string | undefined;
-        // Search backwards for the nearest AI message before this user message
-        for (let i = index - 1; i >= 0; i--) {
-          if (messages[i].speaker === 'ai') {
-            aiRole = detectAIRole(messages[i].text);
-            break;
+
+        // For AI messages, detect their role directly
+        if (message.speaker === 'ai') {
+          aiRole = detectAIRole(message.text);
+        } else {
+          // For user messages, search backwards for the nearest AI message
+          for (let i = index - 1; i >= 0; i--) {
+            if (messages[i].speaker === 'ai') {
+              aiRole = detectAIRole(messages[i].text);
+              break;
+            }
           }
         }
+
         topics.push({
           id: `topic-${topics.length}`,
           name: topicName,

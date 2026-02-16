@@ -151,6 +151,9 @@ class ToneAwareProcessor(FrameProcessor):
         self._bot_is_speaking: bool = False
         self._pending_voice_switch: Optional[tuple] = None  # (voice, tone) to switch to
 
+        # Deferred emotion detection — run AFTER bot stops speaking to avoid GIL contention
+        self._pending_detections: list[tuple] = []  # Queue of (audio_buffer, transcript) from TranscriptionFrames
+
         # VAD threshold for silence detection
         self._vad_threshold: int = 500  # Skip audio below this amplitude
 
@@ -284,7 +287,7 @@ class ToneAwareProcessor(FrameProcessor):
                 self._frame_count = 0
             self._frame_count += 1
             if self._frame_count % 500 == 1:
-                logger.info(
+                logger.debug(
                     f"[EMOTION-DIAG] AudioRawFrame #{self._frame_count}: "
                     f"direction={direction}, audio_len={len(frame.audio)}, "
                     f"sample_rate={getattr(frame, 'sample_rate', 'N/A')}, "
@@ -294,6 +297,14 @@ class ToneAwareProcessor(FrameProcessor):
         # Track bot speaking state to avoid interrupting speech
         if isinstance(frame, BotStartedSpeakingFrame):
             self._bot_is_speaking = True
+            # Clear stale audio buffer — no point detecting emotion on leftover mic audio
+            self._audio_buffer = b""
+            self._audio_buffer_duration_ms = 0
+            # Cancel any running MSP inference to prevent GIL contention during bot speech
+            for task in list(self._background_tasks):
+                if not task.done():
+                    task.cancel()
+                    logger.debug("Cancelled running MSP task to protect bot audio output")
             logger.debug("Bot started speaking - voice switches deferred")
 
         elif isinstance(frame, BotStoppedSpeakingFrame):
@@ -304,23 +315,18 @@ class ToneAwareProcessor(FrameProcessor):
                 voice, tone = self._pending_voice_switch
                 self._pending_voice_switch = None
                 await self._apply_voice_switch(voice, tone)
+            # Run ALL deferred emotion detections now that bot audio output is done
+            if self._pending_detections:
+                logger.debug(f"[EMOTION-DIAG] Processing {len(self._pending_detections)} queued emotion detections")
+                for audio_buf, transcript in self._pending_detections:
+                    await self._trigger_emotion_detection(audio_buf, transcript)
+                self._pending_detections.clear()
+                logger.debug("[EMOTION-DIAG] All deferred emotion detections completed")
 
-        # Process audio frames for MSP-PODCAST (only user input, not bot output)
+        # Buffer audio frames for MSP-PODCAST (only during user speech, not bot speech or silence)
         if isinstance(frame, AudioRawFrame) and direction == FrameDirection.DOWNSTREAM:
-            if not self.emotion_detector.is_connected:
-                # Log once every 100 frames to avoid spam
-                if not hasattr(self, '_audio_skip_count'):
-                    self._audio_skip_count = 0
-                self._audio_skip_count += 1
-                if self._audio_skip_count % 100 == 1:
-                    logger.warning(
-                        f"[EMOTION-DIAG] Skipping audio frame: emotion_detector.is_connected=False, "
-                        f"model={self.emotion_detector.model is not None}, "
-                        f"enabled={self.emotion_detector.enabled} "
-                        f"(skipped {self._audio_skip_count} frames so far)"
-                    )
-            else:
-                await self._process_audio_frame(frame)
+            if not self._bot_is_speaking and self.emotion_detector.is_connected:
+                self._buffer_audio_frame(frame)
 
         # Process transcription frames for fallback/logging
         transcription_types = (
@@ -330,86 +336,91 @@ class ToneAwareProcessor(FrameProcessor):
         )
         if isinstance(frame, transcription_types):
             text = getattr(frame, "text", "")
-            frame_name = type(frame).__name__
-            logger.info(f"📥 {frame_name}: '{text}'")
+            is_final = isinstance(frame, TranscriptionFrame)
+
+            # Only log final transcriptions at INFO; interim at DEBUG
+            if is_final:
+                logger.info(f"📥 TranscriptionFrame: '{text}'")
+            else:
+                logger.debug(f"📥 {type(frame).__name__}: '{text}'")
 
             # Store transcript for hybrid mode
             if text and text.strip():
                 self._latest_transcript = text
-                logger.info(f"💾 Stored transcript for hybrid: '{text[:50]}'...")
+                if is_final:
+                    logger.info(f"💾 Stored transcript for hybrid: '{text[:50]}'...")
 
                 # Forward to VisualHintProcessor for A2UI query capture
                 if self._visual_hint_processor is not None:
                     self._visual_hint_processor.set_current_query(text)
-                    logger.debug(f"🎨 Forwarded query to VisualHintProcessor: '{text[:50]}...'")
 
-            # If MSP-PODCAST not connected, use text-based detection
-            if not self.emotion_detector.is_connected and text and text.strip():
-                await self._process_text_fallback(text)
+            # On final transcription: queue audio + transcript for deferred emotion detection
+            # MSP inference runs AFTER bot stops speaking to avoid GIL contention with audio output
+            if isinstance(frame, TranscriptionFrame) and text and text.strip():
+                if self.emotion_detector.is_connected and len(self._audio_buffer) > 0:
+                    # Queue for deferred detection (don't overwrite — analyze ALL utterances)
+                    buffer_copy = self._audio_buffer
+                    self._pending_detections.append((buffer_copy, text))
+                    self._audio_buffer = b""
+                    self._audio_buffer_duration_ms = 0
+                    logger.debug(
+                        f"[EMOTION-DIAG] Queued detection #{len(self._pending_detections)}: "
+                        f"buffer={len(buffer_copy)/32:.0f}ms, "
+                        f"transcript='{text[:30]}...'"
+                    )
+                elif not self.emotion_detector.is_connected:
+                    await self._process_text_fallback(text)
 
         # Always pass frame downstream
         await self.push_frame(frame, direction)
 
-    async def _process_audio_frame(self, frame: AudioRawFrame) -> None:
-        """Process audio frame with MSP-PODCAST model (NON-BLOCKING).
+    def _buffer_audio_frame(self, frame: AudioRawFrame) -> None:
+        """Buffer audio frame for later emotion detection (lightweight, no CPU work).
 
-        Buffers audio and launches emotion detection in background every 1000ms.
-        The pipeline continues immediately without waiting for emotion results.
+        Only buffers non-silent frames. Detection is triggered separately when
+        a final TranscriptionFrame arrives, not on buffer duration.
 
         Args:
             frame: Audio frame with raw PCM data
         """
-        # VAD filter: Skip silence to improve accuracy
+        # Quick amplitude check to skip silence (avoid numpy for speed)
         audio_array = np.frombuffer(frame.audio, dtype=np.int16)
         mean_amplitude = np.mean(np.abs(audio_array))
         if mean_amplitude < self._vad_threshold:
-            # Log every 200th silent frame to avoid spam
-            if not hasattr(self, '_silent_frame_count'):
-                self._silent_frame_count = 0
-            self._silent_frame_count += 1
-            if self._silent_frame_count % 200 == 1:
-                logger.debug(
-                    f"[EMOTION-DIAG] Skipping silent frame: amplitude={mean_amplitude:.0f} < "
-                    f"threshold={self._vad_threshold} (skipped {self._silent_frame_count} silent frames)"
-                )
             return  # Skip silent frames
 
-        # Add to buffer
+        # Add to buffer, cap at 3 seconds (96000 bytes at 16kHz 16-bit) to prevent unbounded growth
         self._audio_buffer += frame.audio
+        max_buffer_bytes = 96000  # 3 seconds at 16kHz * 2 bytes
+        if len(self._audio_buffer) > max_buffer_bytes:
+            # Keep only the last 2 seconds (most relevant for emotion)
+            self._audio_buffer = self._audio_buffer[-64000:]
 
-        # Get actual sample rate from frame (default 16kHz)
-        sample_rate = getattr(frame, 'sample_rate', 16000)
+    async def _trigger_emotion_detection(self, audio_buffer: bytes, transcript: str) -> None:
+        """Trigger emotion detection in background.
 
-        # Calculate buffer duration (16kHz * 2 bytes = 32 bytes/ms)
-        self._audio_buffer_duration_ms = len(self._audio_buffer) / 32
+        Called after bot stops speaking to avoid GIL contention with audio output.
 
-        # Process at 1000ms (MSP-PODCAST optimal for stable dimensions)
-        if self._audio_buffer_duration_ms >= self._min_buffer_ms:
-            # NON-BLOCKING: Launch emotion detection in background
-            # Copy buffer data before clearing (avoid race condition)
-            audio_buffer_copy = self._audio_buffer
-            transcript_copy = self._latest_transcript
+        Args:
+            audio_buffer: Saved audio data from user speech
+            transcript: The final transcription text
+        """
+        buffer_duration_ms = len(audio_buffer) / 32  # 16kHz * 2 bytes = 32 bytes/ms
 
-            logger.info(
-                f"[EMOTION-DIAG] Audio buffer ready: {self._audio_buffer_duration_ms:.0f}ms >= "
-                f"{self._min_buffer_ms}ms, launching detection. "
-                f"buffer_bytes={len(audio_buffer_copy)}, transcript='{transcript_copy[:30]}...'"
-            )
+        logger.debug(
+            f"[EMOTION-DIAG] Deferred detection: "
+            f"buffer={buffer_duration_ms:.0f}ms, transcript='{transcript[:30]}...'"
+        )
 
-            # Clear buffer immediately (don't wait for detection)
-            self._audio_buffer = b""
-            self._audio_buffer_duration_ms = 0
+        # Get sample rate (default 16kHz)
+        sample_rate = 16000
 
-            # Create background task for emotion detection
-            task = asyncio.create_task(
-                self._detect_emotion_async(audio_buffer_copy, sample_rate, transcript_copy)
-            )
-
-            # Track background task and clean up when done
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
-
-            logger.info("[EMOTION-DIAG] Emotion detection launched in background (non-blocking)")
+        # Create background task for emotion detection
+        task = asyncio.create_task(
+            self._detect_emotion_async(audio_buffer, sample_rate, transcript)
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def _detect_emotion_async(
         self,
@@ -428,21 +439,14 @@ class ToneAwareProcessor(FrameProcessor):
             transcript: Transcript for hybrid mode
         """
         try:
-            logger.info(
-                f"[EMOTION-DIAG] _detect_emotion_async called: "
-                f"buffer_size={len(audio_buffer)} bytes, sample_rate={sample_rate}, "
-                f"hybrid_mode={self.use_hybrid_mode}, hybrid_detector={self.hybrid_detector is not None}, "
-                f"emotion_detector_connected={self.emotion_detector.is_connected}, "
-                f"emotion_detector_model={self.emotion_detector.model is not None}"
+            logger.debug(
+                f"[EMOTION-DIAG] _detect_emotion_async: "
+                f"buffer={len(audio_buffer)}B, sr={sample_rate}, "
+                f"hybrid={self.use_hybrid_mode}, connected={self.emotion_detector.is_connected}"
             )
 
             # ===== HYBRID MODE: Audio + Text =====
             if self.use_hybrid_mode and self.hybrid_detector:
-                transcript_preview = transcript[:50] if transcript else "[EMPTY]"
-                logger.info(
-                    f"[EMOTION-DIAG] HYBRID MODE: Processing audio + text "
-                    f"(transcript: '{transcript_preview}')"
-                )
 
                 # Get audio emotion first
                 audio_result = await self.emotion_detector.process_audio(
@@ -905,6 +909,7 @@ class ToneAwareProcessor(FrameProcessor):
         self._audio_buffer_duration_ms = 0
         self._bot_is_speaking = False
         self._pending_voice_switch = None
+        self._pending_detections.clear()
 
         if self.tts_service:
             if isinstance(self.tts_service, ChatterboxTTSService):

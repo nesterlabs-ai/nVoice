@@ -29,6 +29,8 @@ OPTIMIZATIONS for 4GB RAM / 2 vCPU:
 import os
 import gc
 import time
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional
 from dataclasses import dataclass
 
@@ -284,6 +286,9 @@ class MSPEmotionDetector:
         last_result: Most recent emotion detection result
     """
 
+    # Shared thread pool for CPU-bound inference (1 worker to avoid CPU thrashing)
+    _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="msp-emotion")
+
     def __init__(self):
         """Initialize the MSP-PODCAST emotion detector."""
         self.enabled = True
@@ -294,7 +299,7 @@ class MSPEmotionDetector:
 
         # Result tracking
         self.last_result: Optional[MSPEmotionResult] = None
-        
+
         # Inference counter for periodic GC
         self._inference_count: int = 0
 
@@ -339,17 +344,93 @@ class MSPEmotionDetector:
         self.is_connected = False
         logger.info("MSP-PODCAST detector disconnected")
 
+    def _process_audio_sync(
+        self,
+        audio_bytes: bytes,
+        sample_rate: int = 16000
+    ) -> Optional[MSPEmotionResult]:
+        """Synchronous CPU-bound inference — runs in thread pool executor.
+
+        Kept off the asyncio event loop so audio output frames are never blocked.
+        """
+        try:
+            # Convert bytes to numpy array (16-bit PCM)
+            audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32)
+            audio_np = audio_np / 32768.0  # Normalize to [-1, 1]
+
+            # Resample to 16kHz if needed
+            if sample_rate != 16000:
+                import librosa
+                audio_np = librosa.resample(audio_np, orig_sr=sample_rate, target_sr=16000)
+
+            # Process through feature extractor
+            inputs = self.processor(
+                audio_np,
+                sampling_rate=16000,
+                return_tensors="pt",
+                padding=True
+            )
+
+            # Run inference with OPTIMIZED inference_mode
+            # inference_mode is faster than no_grad (no tensor version tracking)
+            with torch.inference_mode():
+                input_values = inputs['input_values'].to(self.device)
+                _, logits = self.model(input_values)
+
+                # Get predictions (arousal, dominance, valence)
+                predictions = logits[0].cpu().numpy()
+
+            arousal = float(predictions[0])
+            dominance = float(predictions[1])
+            valence = float(predictions[2])
+
+            # Map to emotion and tone
+            emotion, tone, confidence = map_dimensions_to_emotion(arousal, dominance, valence)
+
+            result = MSPEmotionResult(
+                arousal=arousal,
+                dominance=dominance,
+                valence=valence,
+                emotion=emotion,
+                tone=tone,
+                confidence=confidence,
+                timestamp=time.time()
+            )
+
+            self.last_result = result
+
+            # Increment inference counter for periodic GC
+            self._inference_count += 1
+
+            # Periodic garbage collection every 10 inferences
+            # Prevents memory fragmentation on constrained 4GB instance
+            if self._inference_count % 10 == 0:
+                gc.collect()
+                logger.debug(f"🧹 GC after {self._inference_count} inferences")
+
+            # Log detection
+            logger.info(
+                f"MSP: A={arousal:.2f} D={dominance:.2f} V={valence:.2f} -> "
+                f"{emotion}({confidence:.0%}) -> {tone}"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"MSP-PODCAST processing error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
     async def process_audio(
         self,
         audio_bytes: bytes,
         sample_rate: int = 16000
     ) -> Optional[MSPEmotionResult]:
         """Process audio chunk and detect dimensional emotions.
-        
-        OPTIMIZATIONS:
-        - Uses torch.inference_mode() (faster than no_grad, no tensor tracking)
-        - Periodic garbage collection to prevent memory fragmentation
-        - Optimized for 2 vCPU Lightsail instance
+
+        Offloads CPU-heavy inference (numpy, librosa, torch) to a thread pool
+        executor so the asyncio event loop stays free for audio output frames.
 
         Args:
             audio_bytes: Raw PCM audio bytes (16-bit, mono)
@@ -375,74 +456,13 @@ class MSPEmotionDetector:
             )
             return None
 
-        try:
-            # Convert bytes to numpy array (16-bit PCM)
-            audio_np = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32)
-            audio_np = audio_np / 32768.0  # Normalize to [-1, 1]
-
-            # Resample to 16kHz if needed
-            if sample_rate != 16000:
-                import librosa
-                audio_np = librosa.resample(audio_np, orig_sr=sample_rate, target_sr=16000)
-
-            # Process through feature extractor
-            inputs = self.processor(
-                audio_np,
-                sampling_rate=16000,
-                return_tensors="pt",
-                padding=True
-            )
-
-            # Run inference with OPTIMIZED inference_mode
-            # inference_mode is faster than no_grad (no tensor version tracking)
-            with torch.inference_mode():
-                input_values = inputs['input_values'].to(self.device)
-                _, logits = self.model(input_values)
-                
-                # Get predictions (arousal, dominance, valence)
-                predictions = logits[0].cpu().numpy()
-
-            arousal = float(predictions[0])
-            dominance = float(predictions[1])
-            valence = float(predictions[2])
-
-            # Map to emotion and tone
-            emotion, tone, confidence = map_dimensions_to_emotion(arousal, dominance, valence)
-
-            result = MSPEmotionResult(
-                arousal=arousal,
-                dominance=dominance,
-                valence=valence,
-                emotion=emotion,
-                tone=tone,
-                confidence=confidence,
-                timestamp=time.time()
-            )
-
-            self.last_result = result
-            
-            # Increment inference counter for periodic GC
-            self._inference_count += 1
-            
-            # Periodic garbage collection every 10 inferences
-            # Prevents memory fragmentation on constrained 4GB instance
-            if self._inference_count % 10 == 0:
-                gc.collect()
-                logger.debug(f"🧹 GC after {self._inference_count} inferences")
-
-            # Log detection
-            logger.info(
-                f"MSP: A={arousal:.2f} D={dominance:.2f} V={valence:.2f} -> "
-                f"{emotion}({confidence:.0%}) -> {tone}"
-            )
-
-            return result
-
-        except Exception as e:
-            logger.error(f"MSP-PODCAST processing error: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            self._process_audio_sync,
+            audio_bytes,
+            sample_rate,
+        )
 
     def reset(self) -> None:
         """Reset detector state."""
