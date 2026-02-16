@@ -194,6 +194,17 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
 
   const dataPoints = getDataPoints();
 
+  /** One label per unique snapped x so labels don't overlap when multiple topics share a 5s grid slot. */
+  const labelSlots = (() => {
+    const byX = new Map<number, EmotionTopicNode>();
+    topics.forEach((topic, index) => {
+      const x = dataPoints.xPositions[index];
+      const labelX = getLabelX(x);
+      byX.set(labelX, topic); // last topic at this x wins
+    });
+    return Array.from(byX.entries()).map(([x, topic]) => ({ labelX: x, topic }));
+  })();
+
   return (
     <div className="emotion-analysis-card">
       {!hideTitle && (
@@ -233,11 +244,10 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
                   <motion.path d={createPath(dataPoints.dominance)} stroke="#a855f7" strokeWidth={2} fill="none"
                     initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }}
                     transition={{ duration: 1.5, ease: 'easeInOut', delay: 0.4 }} />
-                  {topics.map((topic, index) => {
+                  {labelSlots.map(({ labelX, topic }, index) => {
                     const emoji = sentimentToEmoji[topic.sentimentLabel] || '😐';
-                    const labelX = getLabelX(dataPoints.xPositions[index]);
                     return (
-                      <g key={`emoji-group-${topic.id}`}>
+                      <g key={`emoji-group-${topic.id}-${labelX}`}>
                         <motion.text x={labelX} y={topPadding - 35} textAnchor="middle" fontSize={SENTIMENT_LABEL_FONT_SIZE} fill="#7D7D7D"
                           initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.1 + 0.5, duration: 0.4 }}>
                           {topic.sentimentLabel}
