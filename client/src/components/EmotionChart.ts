@@ -61,7 +61,6 @@ export class EmotionChart {
       timestamp: now,
     });
 
-    console.log('[EmotionChart] Initialized - ready for per-turn data');
   }
 
   private resizeCanvas(): void {
@@ -77,7 +76,6 @@ export class EmotionChart {
     this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
     this.ctx.scale(dpr, dpr);
 
-    console.log('[EmotionChart] Canvas resized:', width, 'x', height);
   }
 
   /**
@@ -96,7 +94,6 @@ export class EmotionChart {
       this.data.shift();
     }
 
-    console.log('[EmotionChart] Added turn data - V:', valence.toFixed(2), 'A:', arousal.toFixed(2), 'D:', dominance.toFixed(2));
   }
 
   private animate = (): void => {

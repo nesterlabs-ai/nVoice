@@ -35,7 +35,6 @@ export class A2UIRenderer {
       throw new Error(`A2UI container element not found: ${containerId}`);
     }
     this.container = element;
-    console.log('[A2UI] Renderer initialized');
   }
 
   /**
@@ -51,7 +50,6 @@ export class A2UIRenderer {
     const props = doc.root.props;
     const metadata = doc._metadata;
 
-    console.log(`[A2UI] Rendering ${templateType} (tier: ${metadata?.tier_name || 'unknown'})`);
 
     // Clear previous content
     this.container.innerHTML = '';

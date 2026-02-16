@@ -41,13 +41,11 @@ export function mountToneModulator(containerId: string = 'tone-modulator-root'):
   }
 
   if (root) {
-    console.log('[ToneModulator] Widget already mounted');
     return;
   }
 
   root = createRoot(container);
   renderWidget();
-  console.log('[ToneModulator] Widget mounted');
 }
 
 export interface ToneModulatorUpdate {
@@ -93,7 +91,6 @@ export function unmountToneModulator(): void {
     root.unmount();
     root = null;
     state = { detectedEmotion: 'neutral', nesterResponse: 'calm', clarityData: [], intensityData: [], xAxisIntervalSec: 5 };
-    console.log('[ToneModulator] Widget unmounted');
   }
 }
 

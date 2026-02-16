@@ -48,14 +48,12 @@ export function mountEmotionAnalysis(containerId: string = 'emotion-analysis-roo
   }
 
   if (root) {
-    console.log('[EmotionAnalysis] Widget already mounted');
     renderWidget();
     return;
   }
 
   root = createRoot(container);
   renderWidget();
-  console.log('[EmotionAnalysis] Widget mounted');
 }
 
 /**
@@ -75,7 +73,6 @@ export function unmountEmotionAnalysis(): void {
     root.unmount();
     root = null;
     currentTopics = [];
-    console.log('[EmotionAnalysis] Widget unmounted');
   }
 }
 

@@ -26,13 +26,11 @@ export function mountKnowledgeGraph(containerId: string = 'knowledge-graph-root'
   }
 
   if (root) {
-    console.log('[KnowledgeGraph] Widget already mounted');
     return;
   }
 
   root = createRoot(container);
   renderWidget();
-  console.log('[KnowledgeGraph] Widget mounted');
 }
 
 /**
@@ -54,7 +52,6 @@ function renderWidget(): void {
  * Handle node click events
  */
 function handleNodeClick(nodeId: string, nodeData: KnowledgeGraphNode): void {
-  console.log('[KnowledgeGraph] Node clicked:', nodeId, nodeData);
   // Dispatch custom event for the main app to handle
   window.dispatchEvent(new CustomEvent('knowledgeGraphNodeClick', {
     detail: { nodeId, nodeData }
@@ -150,7 +147,6 @@ export function unmountKnowledgeGraph(): void {
   if (root) {
     root.unmount();
     root = null;
-    console.log('[KnowledgeGraph] Widget unmounted');
   }
 }
 

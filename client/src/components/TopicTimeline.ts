@@ -64,7 +64,6 @@ export class TopicTimeline {
 
     window.addEventListener('resize', () => this.resizeCanvas());
 
-    console.log('[TopicTimeline] Initialized');
   }
 
   private resizeCanvas(): void {

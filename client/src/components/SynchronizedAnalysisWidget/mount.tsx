@@ -31,13 +31,11 @@ export function mountSynchronizedAnalysis(containerId: string = 'synchronized-an
   }
 
   if (root) {
-    console.log('[SynchronizedAnalysis] Widget already mounted');
     return;
   }
 
   root = createRoot(container);
   renderWidget();
-  console.log('[SynchronizedAnalysis] Widget mounted');
 }
 
 /**
@@ -56,7 +54,6 @@ export function unmountSynchronizedAnalysis(): void {
     root.unmount();
     root = null;
     currentTopics = [];
-    console.log('[SynchronizedAnalysis] Widget unmounted');
   }
 }
 

@@ -310,7 +310,6 @@ export function KnowledgeGraphWidget({
         })));
 
         setSearchIndex(index);
-        console.log('[KnowledgeGraph] Graph loaded:', data.nodes.length, 'nodes');
       } catch (e) {
         console.error('[KnowledgeGraph] Failed to load graph:', e);
         setError('Failed to load knowledge graph');
@@ -358,7 +357,6 @@ export function KnowledgeGraphWidget({
       }
     });
 
-    console.log('[KnowledgeGraph] Matched nodes for cycling:', matchedNodes);
 
     if (matchedNodes.length === 0) {
       setHighlightedNodes(new Set());

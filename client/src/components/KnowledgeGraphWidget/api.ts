@@ -10,7 +10,6 @@ const LIGHTRAG_URL = (window as any).__LIGHTRAG_URL__ ||
                      (window as any).LIGHTRAG_URL ||
                      'http://localhost:9621';
 
-console.log(`####LightRAG URL: `, LIGHTRAG_URL);
 
 // LightRAG API key for authentication
 const LIGHTRAG_API_KEY = (window as any).__LIGHTRAG_API_KEY__ ||

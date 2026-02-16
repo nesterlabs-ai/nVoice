@@ -178,7 +178,6 @@ class VoiceScannerApp {
   private emotionNodeCounter: number = 0;
 
   constructor() {  
-    console.log("Nester AI Voice Scanner initializing...");
 
     this.botAudio = document.createElement('audio');
     this.botAudio.autoplay = true;
@@ -254,11 +253,9 @@ class VoiceScannerApp {
     // Initialize Emotion Chart
     try {
       this.emotionChart = new EmotionChart('emotion-chart-canvas');
-      console.log('[EmotionChart] Initialized successfully');
       // Expose for testing
       (window as any).testEmotionChart = () => {
         if (this.emotionChart) {
-          console.log('[EmotionChart] Adding test data points...');
           this.emotionChart.addDataPoint(0.7, 0.6, 0.8);
           setTimeout(() => this.emotionChart?.addDataPoint(0.5, 0.4, 0.3), 500);
           setTimeout(() => this.emotionChart?.addDataPoint(0.8, 0.7, 0.6), 1000);
@@ -272,7 +269,6 @@ class VoiceScannerApp {
     // Initialize Topic Timeline
     try {
       this.topicTimeline = new TopicTimeline('topic-timeline-canvas');
-      console.log('[TopicTimeline] Initialized successfully');
     } catch (e) {
       console.warn('[TopicTimeline] Failed to initialize:', e);
     }
@@ -358,7 +354,7 @@ class VoiceScannerApp {
    */
   private async onRestartOption(): Promise<void> {
     this.hideCloseOptions();
-    // Hide all dashboard cards if they are visible (peak was open)
+    // Hide all dashboard cards if they are visible (peek was open)
     if (this.mainLayout && !this.mainLayout.classList.contains('panels-hidden')) {
       this.mainLayout.classList.add('panels-hidden');
       this.updatePeakButtonState();
@@ -910,7 +906,6 @@ class VoiceScannerApp {
 
     this.debugLog.appendChild(entry);
     this.debugLog.scrollTop = this.debugLog.scrollHeight;
-    console.log(message);
   }
 
   /**
@@ -921,7 +916,6 @@ class VoiceScannerApp {
       const topics = extractTopicsFromMessages(this.conversationMessages);
       const topicNodes = layoutTopics(topics);
       const categories = [...new Set(topics.map(t => t.category))];
-      console.log(`[Widget:ConversationAnalysis] ${topics.length} topics [${categories.join(', ')}] from ${this.conversationMessages.length} messages`);
       (window as any).SynchronizedAnalysis?.updateTopics?.(topicNodes);
       // Note: EmotionAnalysis widget is fed separately via pushEmotionToWidget()
       // from live emotion detection data — do not overwrite with topic nodes.
@@ -982,7 +976,6 @@ class VoiceScannerApp {
     else if (latest.sentimentLabel === 'Excited') urgency = 'High';
     else if (latest.sentiment === 'positive') urgency = 'Low';
 
-    console.log(`[Widget:VisitorIntent] "${intentDesc}" conf=${confidence}% issue=${issue} tech=${techLevel} urgency=${urgency}`);
     if (descEl) descEl.textContent = intentDesc;
     if (confFill) confFill.style.width = `${confidence}%`;
     if (languageEl) languageEl.textContent = 'English';
@@ -1106,9 +1099,7 @@ class VoiceScannerApp {
     this.liveSubtitle.classList.remove('user', 'bot');
     this.liveSubtitle.classList.add('bot');
 
-    console.log(`[DEBUG] appendBotWordToLiveSubtitle: word="${word}", isFirstWord=${isFirstWord}, subtitleClearOnNextSentence=${this.subtitleClearOnNextSentence}, streamingBubble=${this.streamingBubble ? 'EXISTS' : 'NULL'}`);
     if (isFirstWord || this.subtitleClearOnNextSentence) {
-      console.log(`[DEBUG] CLEARING subtitle: isFirstWord=${isFirstWord}, subtitleClearOnNextSentence=${this.subtitleClearOnNextSentence}`);
       this.liveSubtitleText.innerHTML = '';
       this.subtitleClearOnNextSentence = false;
     }
@@ -1156,12 +1147,9 @@ class VoiceScannerApp {
 
       // Clear subtitle ONLY if streaming_text is not already active for this response
       // (prevents clearing subtitle when bot-transcript arrives after streaming_text has started)
-      console.log(`[DEBUG] Creating currentBotBubble: streamingBubble=${this.streamingBubble ? 'EXISTS' : 'NULL'}, currentUtteranceId=${this.currentUtteranceId}`);
       if (this.liveSubtitleText && !this.streamingBubble) {
-        console.log(`[DEBUG] CLEARING subtitle because streamingBubble is NULL`);
         this.liveSubtitleText.innerHTML = '';
       } else if (this.streamingBubble) {
-        console.log(`[DEBUG] NOT clearing subtitle because streamingBubble exists`);
       }
     }
 
@@ -1355,13 +1343,13 @@ class VoiceScannerApp {
   }
 
   /**
-   * Update Peak button icon and text based on cards visibility (like speaker/mic)
-   * Cards hidden → Eye + "Peak"; Cards showing → EyeClosed + "Hide"
+   * Update Peek button icon and text based on cards visibility (like speaker/mic)
+   * Cards hidden → Eye + "Peek"; Cards showing → EyeClosed + "Hide"
    */
   private updatePeakButtonState(): void {
     const cardsShowing = this.mainLayout && !this.mainLayout.classList.contains('panels-hidden');
     const iconPath = cardsShowing ? '/EyeClosed.svg' : '/Eye (1).svg';
-    const label = cardsShowing ? 'Hide' : 'Peak';
+    const label = cardsShowing ? 'Hide' : 'Peek';
 
     const controlPeak = document.getElementById('control-peak');
     const controlPeakImg = controlPeak?.querySelector<HTMLImageElement>('.control-btn-icon');
@@ -1450,7 +1438,6 @@ class VoiceScannerApp {
     const params = VoiceScannerApp.EMOTION_TO_PARAMS[detectedEmotion] || VoiceScannerApp.EMOTION_TO_PARAMS['neutral'];
     const clarity = 1 - params.cfg_weight;
     const intensity = params.exaggeration;
-    console.log(`[Widget:ToneModulator] emotion=${detectedEmotion} response=${nesterResponse ?? '-'} cfg=${params.cfg_weight} exag=${params.exaggeration} → clarity=${clarity.toFixed(2)} intensity=${intensity.toFixed(2)}`);
     (window as any).ToneModulator?.update?.({
       detectedEmotion,
       nesterResponse: nesterResponse ?? undefined,
@@ -1493,7 +1480,6 @@ class VoiceScannerApp {
     }
 
     const latest = this.emotionTopicNodes[this.emotionTopicNodes.length - 1];
-    console.log(`[Widget:EmotionAnalysis] ${emotion} → ${latest.sentimentLabel}(${latest.sentiment}) intensity=${latest.intensity.toFixed(2)} points=${this.emotionTopicNodes.length}`);
     (window as any).EmotionAnalysis?.updateTopics?.(this.emotionTopicNodes);
   }
 
@@ -2574,7 +2560,6 @@ class VoiceScannerApp {
     utterance_id: string;
     timestamp: number;
   }): void {
-    console.log(`[SUBTITLE] streaming_text: "${data.text}" (seq=${data.sequence_id}, final=${data.is_final}, utterance=${data.utterance_id.substring(0, 8)})`);
 
     // Handle final marker - finalize the current streaming bubble
     if (data.is_final) {
@@ -2584,19 +2569,15 @@ class VoiceScannerApp {
 
     // New utterance - create a new streaming bubble
     if (data.utterance_id !== this.currentUtteranceId) {
-      console.log(`[DEBUG] New utterance detected: old=${this.currentUtteranceId}, new=${data.utterance_id.substring(0, 8)}`);
       // Finalize previous bubble if exists
       if (this.streamingBubble) {
-        console.log(`[DEBUG] Finalizing previous streamingBubble`);
         this.finalizeCurrentStreamingBubble();
       }
 
       // Start new bubble
       this.currentUtteranceId = data.utterance_id;
       this.streamingTextActiveForSubtitle = true;  // streaming_text is now handling subtitle
-      console.log(`[DEBUG] Creating NEW streamingBubble for utterance=${data.utterance_id.substring(0, 8)}`);
       this.createStreamingBubble();
-      console.log(`[DEBUG] streamingBubble created: ${this.streamingBubble ? 'YES' : 'NO'}, streamingTextActiveForSubtitle=true`);
     }
 
     // Add the word to the streaming bubble
@@ -3426,7 +3407,6 @@ class VoiceScannerApp {
 
     const templateType = data.a2ui.root?.type || 'unknown';
     const tier = data.tier || data.a2ui._metadata?.tier || 'auto';
-    console.log(`[A2UI] Rendering template=${templateType} tier=${tier} query="${data.query || 'N/A'}"`);
 
     if (this.a2uiStatus) {
       this.a2uiStatus.textContent = 'RENDERING';
