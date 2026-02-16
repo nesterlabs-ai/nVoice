@@ -14,7 +14,7 @@ import asyncio
 from typing import Any, Dict, List
 
 from loguru import logger
-from pipecat.frames.frames import TTSSpeakFrame
+from pipecat.frames.frames import TTSSpeakFrame, TextFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -365,10 +365,22 @@ class VoiceAssistant:
             # This is critical: STTMuteFilter needs to see TTS start/stop frames
             # to know when bot speech begins/ends. Pushing directly to self.tts
             # bypasses the pipeline and the mute filter never unmutes.
-            greeting_text = "Hi, I'm Nester A I. We're trying to reimagine intelligence here. So tell me, what are you trying to build?"
+
+            # Randomized greeting messages for variety
+            import random
+            greeting_options = [
+                "Hi, I'm Nester A I. We're reimagining intelligence through research, design, and technology. What brings you here today?",
+                "Hey there! I'm Nester A I from Nesterlabs. We build AI products with a human touch. What are you working on?",
+                "Welcome! I'm the Nesterlabs voice assistant. We specialize in voice AI and agentic systems. How can I help you today?",
+                "Hi! Nester A I here. We help companies build amazing AI experiences. Tell me about your project.",
+                "Hello! I'm Nester A I, your guide to Nesterlabs. We're an AI studio in the Bay Area. What would you like to explore?"
+            ]
+            greeting_text = random.choice(greeting_options)
+
+            # Send TextFrame first for subtitles/transcript, then TTSSpeakFrame for audio
+            await self.task.queue_frame(TextFrame(greeting_text))
             await self.task.queue_frame(TTSSpeakFrame(greeting_text))
-            logger.info("🎤 Greeting sent via task.queue_frame (flo"
-                        "ws through full pipeline)")
+            logger.info(f"🎤 Greeting sent with subtitle: '{greeting_text[:50]}...'")
 
             # Add greeting to conversation context so LLM knows it already greeted
             if self.conversation_manager and self.conversation_manager.context:
