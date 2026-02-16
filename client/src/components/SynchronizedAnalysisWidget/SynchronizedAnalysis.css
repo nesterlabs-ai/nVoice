@@ -8,7 +8,7 @@
 .sync-card {
   --sync-grid-line-color: #44444E; /* Horizontal/row grid line color; override to customize */
   --sync-grid-line-color-vertical: #44444E; /* Vertical grid line color; override for different vertical color */
-  --sync-x-axis-label-font-size: 10px; /* Horizontal x-axis time label font size */
+  --sync-x-axis-label-font-size: 9px; /* Horizontal x-axis time label font size */
   --sync-x-axis-label-color: #7D7D7D; /* Horizontal x-axis time label color */
   background: #000;
   border-radius: 0.5rem;
@@ -105,6 +105,8 @@
   pointer-events: none;
   z-index: 10;
   height: 100%;
+  /* Ensure chart content never shows through behind y-axis labels when scrolled */
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.5);
 }
 
 .sync-sticky-x {

@@ -130,8 +130,7 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
   const totalWidth = leftPadding + chartWidth + rightPadding;
 
   const getTimeBasedPositions = () => {
-    if (topics.length === 0) return { startTime: 0, totalSeconds: 30, timeMarks: [] as { time: Date; x: number; label: string }[] };
-    const startTime = topics[0].timestamp.getTime();
+    const startTime = topics.length > 0 ? topics[0].timestamp.getTime() : Date.now() - totalSeconds * 1000;
     const timeMarks: { time: Date; x: number; label: string }[] = [];
     for (let sec = 0; sec <= totalSeconds; sec += 5) {
       const markTime = new Date(startTime + sec * 1000);
@@ -194,6 +193,17 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
 
   const dataPoints = getDataPoints();
 
+  /** One label per unique snapped x so labels don't overlap when multiple topics share a 5s grid slot. */
+  const labelSlots = (() => {
+    const byX = new Map<number, EmotionTopicNode>();
+    topics.forEach((topic, index) => {
+      const x = dataPoints.xPositions[index];
+      const labelX = getLabelX(x);
+      byX.set(labelX, topic); // last topic at this x wins
+    });
+    return Array.from(byX.entries()).map(([x, topic]) => ({ labelX: x, topic }));
+  })();
+
   return (
     <div className="emotion-analysis-card">
       {!hideTitle && (
@@ -202,28 +212,24 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
         </div>
       )}
       <div ref={bodyRef} className="emotion-analysis-body">
-        {topics.length === 0 ? (
-          <div className="emotion-analysis-empty">
-            <p>Emotion data will appear here as you speak</p>
-          </div>
-        ) : (
-          <>
-            <div ref={scrollRef} className="emotion-analysis-scroll" onScroll={handleScrollInternal}>
-              <div ref={containerRef} className="emotion-analysis-chart-inner" style={{ height: `${chartHeight}px`, width: `${totalWidth}px` }}>
-                <svg ref={svgRef} width={totalWidth} height={chartHeight}>
-                  <g opacity={1}>
-                    {[0, 0.2, 0.4, 0.6, 0.8, 1.0].map((value) => {
-                      const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
-                      return (
-                        <line key={`grid-h-${value}`} x1={leftPadding} x2={leftPadding + chartWidth} y1={y} y2={y}
-                          stroke="var(--emotion-grid-line-color)" strokeWidth={1} strokeDasharray="2,3"  opacity={1}/>
-                      );
-                    })}
-                  </g>
-                  {timeMarks.map((mark, index) => (
-                    <line key={`grid-v-${index}`} x1={mark.x} y1={topPadding} x2={mark.x} y2={chartHeight - bottomPadding}
-                      stroke="var(--emotion-grid-line-color-vertical, var(--emotion-grid-line-color))" strokeWidth={1} strokeDasharray="2,3" opacity={1} />
-                  ))}
+        <div ref={scrollRef} className="emotion-analysis-scroll" onScroll={handleScrollInternal}>
+          <div ref={containerRef} className="emotion-analysis-chart-inner" style={{ height: `${chartHeight}px`, width: `${totalWidth}px` }}>
+            <svg ref={svgRef} width={totalWidth} height={chartHeight}>
+              <g opacity={1}>
+                {[0, 0.2, 0.4, 0.6, 0.8, 1.0].map((value) => {
+                  const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
+                  return (
+                    <line key={`grid-h-${value}`} x1={leftPadding} x2={leftPadding + chartWidth} y1={y} y2={y}
+                      stroke="var(--emotion-grid-line-color)" strokeWidth={1} strokeDasharray="2,3"  opacity={1}/>
+                  );
+                })}
+              </g>
+              {timeMarks.map((mark, index) => (
+                <line key={`grid-v-${index}`} x1={mark.x} y1={topPadding} x2={mark.x} y2={chartHeight - bottomPadding}
+                  stroke="var(--emotion-grid-line-color-vertical, var(--emotion-grid-line-color))" strokeWidth={1} strokeDasharray="2,3" opacity={1} />
+              ))}
+              {topics.length > 0 && (
+                <>
                   <motion.path d={createPath(dataPoints.arousal)} stroke="#f97316" strokeWidth={2} fill="none"
                     initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }}
                     transition={{ duration: 1.5, ease: 'easeInOut' }} />
@@ -233,11 +239,10 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
                   <motion.path d={createPath(dataPoints.dominance)} stroke="#a855f7" strokeWidth={2} fill="none"
                     initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }}
                     transition={{ duration: 1.5, ease: 'easeInOut', delay: 0.4 }} />
-                  {topics.map((topic, index) => {
+                  {labelSlots.map(({ labelX, topic }, index) => {
                     const emoji = sentimentToEmoji[topic.sentimentLabel] || '😐';
-                    const labelX = getLabelX(dataPoints.xPositions[index]);
                     return (
-                      <g key={`emoji-group-${topic.id}`}>
+                      <g key={`emoji-group-${topic.id}-${labelX}`}>
                         <motion.text x={labelX} y={topPadding - 35} textAnchor="middle" fontSize={SENTIMENT_LABEL_FONT_SIZE} fill="#7D7D7D"
                           initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.1 + 0.5, duration: 0.4 }}>
                           {topic.sentimentLabel}
@@ -249,37 +254,37 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
                       </g>
                     );
                   })}
-                </svg>
-              </div>
-            </div>
-            <div className="emotion-analysis-sticky-y" style={{ width: `${24}px` }}>
-              <svg width={24} height="100%">
-                <g>
-                  {[1.0, 0.8, 0.6, 0.4, 0.2, 0.0].map((value) => {
-                    const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
-                    return (
-                      <text key={`y-label-${value}`} x={24} y={y} textAnchor="end" dominantBaseline="middle"
-                        fontSize={Y_AXIS_LABEL_FONT_SIZE} fill="#7D7D7D" style={{ fontFamily: 'monospace' }}>{value.toFixed(2)}</text>
-                    );
-                  })}
-                </g>
-              </svg>
-            </div>
-            <div className="emotion-analysis-sticky-x">
-              <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
-                {timeMarks.map((mark, index) => (
-                  <text key={`time-${index}`} x={mark.x} y={10} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
-                    {mark.label}
-                  </text>
-                ))}
-              </svg>
-            </div>
-            {isManuallyControlled && (
-              <button className="emotion-scroll-to-latest" onClick={scrollToLatest} title="Scroll to latest">
-                →
-              </button>
-            )}
-          </>
+                </>
+              )}
+            </svg>
+          </div>
+        </div>
+        <div className="emotion-analysis-sticky-y" style={{ width: `${71}px` }}>
+          <svg width={24} height="100%">
+            <g>
+              {[1.0, 0.8, 0.6, 0.4, 0.2, 0.0].map((value) => {
+                const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
+                return (
+                  <text key={`y-label-${value}`} x={54} y={y} textAnchor="end" dominantBaseline="middle"
+                    fontSize={Y_AXIS_LABEL_FONT_SIZE} fill="#7D7D7D" style={{ fontFamily: 'monospace' }}>{value.toFixed(2)}</text>
+                );
+              })}
+            </g>
+          </svg>
+        </div>
+        <div className="emotion-analysis-sticky-x">
+          <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
+            {timeMarks.map((mark, index) => (
+              <text key={`time-${index}`} x={mark.x} y={10} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
+                {mark.label}
+              </text>
+            ))}
+          </svg>
+        </div>
+        {isManuallyControlled && (
+          <button className="emotion-scroll-to-latest" onClick={scrollToLatest} title="Scroll to latest">
+            →
+          </button>
         )}
       </div>
       <div className="emotion-analysis-legend">
