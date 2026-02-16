@@ -374,10 +374,10 @@ class VoiceAssistant:
             # Randomized greeting messages for variety
             import random
             greeting_options = [
-                "Hi, I'm Nester A I. We're reimagining intelligence through research, design, and technology. What brings you here today? ",
-                "Hey there! I'm Nester A I from Nesterlabs. We build AI products with a human touch. What brings you here today? ",
-                "Hi! Nester A I here. We help companies build amazing AI experiences. What would you like to explore? ",
-                "Hello! I'm Nester A I, your guide to Nesterlabs. We're an AI studio in the Bay Area. What would you like to explore? "
+                "Hi, I'm Nester AI. We're reimagining intelligence through research, design, and technology. What brings you here today? ",
+                "Hey there! I'm Nester AI from Nesterlabs. We build AI products with a human touch. What brings you here today? ",
+                "Hi! Nester AI here. We help companies build amazing AI experiences. What would you like to explore? ",
+                "Hello! I'm Nester AI, your guide to Nesterlabs. We're an AI studio in the Bay Area. What would you like to explore? "
             ]
             # Add trailing space to ensure last word is emitted (not buffered for next chunk)
             greeting_text = random.choice(greeting_options)
