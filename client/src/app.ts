@@ -2497,15 +2497,8 @@ class VoiceScannerApp {
       this.subtitleWordCount = 0;
       this.subtitleClearOnNextSentence = false;
 
-      // Clear topic timeline and history
-      if (this.topicTimeline) {
-        this.topicTimeline.clear();
-      }
-      this.previousTopics = [];
-
-      // Clear conversation messages and SynchronizedAnalysis
-      this.conversationMessages = [];
-      this.refreshSynchronizedAnalysis();
+      // Do NOT clear card data on disconnect (X): keep conversation history visible in all cards.
+      // Card data is only cleared when user clicks Restart (resetAllCardsData).
 
       this.isConnecting = false;
       this.isConnected = false;
