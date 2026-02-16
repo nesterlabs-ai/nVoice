@@ -105,6 +105,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
     topics.forEach(topic => {
       if (rowCategories[topic.row] === undefined) rowCategories[topic.row] = topic.category;
     });
+    if (topics.length === 0) rowCategories[0] = '—';
     return { rowCategories };
   };
 
@@ -137,8 +138,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   const totalWidth = leftPadding + chartWidth + rightPadding;
 
   const getTimeBasedPositions = () => {
-    if (topics.length === 0) return { startTime: 0, totalSeconds: 30, timeMarks: [] as { time: Date; x: number; label: string }[] };
-    const startTime = topics[0].timestamp.getTime();
+    const startTime = topics.length > 0 ? topics[0].timestamp.getTime() : Date.now() - totalSeconds * 1000;
     const timeMarks: { time: Date; x: number; label: string }[] = [];
     for (let sec = 0; sec <= totalSeconds; sec += 5) {
       const markTime = new Date(startTime + sec * 1000);
@@ -161,19 +161,13 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   return (
     <div className="sync-card">
       <div ref={bodyRef} className="sync-card-body">
-        {topics.length === 0 ? (
-          <div className="sync-empty-state">
-            <p>Topics will appear here as you speak</p>
-          </div>
-        ) : (
-          <>
-            <div
-              ref={scrollRef}
-              className="sync-scroll-area-both"
-              onScroll={handleScrollInternal}
-            >
-              <div ref={containerRef} className="sync-chart-inner" style={{ height: `${totalHeight}px`, width: `${totalWidth}px` }}>
-                <svg width={totalWidth} height={totalHeight}>
+        <div
+          ref={scrollRef}
+          className="sync-scroll-area-both"
+          onScroll={handleScrollInternal}
+        >
+          <div ref={containerRef} className="sync-chart-inner" style={{ height: `${totalHeight}px`, width: `${totalWidth}px` }}>
+            <svg width={totalWidth} height={totalHeight}>
                   {rows.map((rowNum) => (
                     <rect
                       key={`row-${rowNum}`}
@@ -309,8 +303,6 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                 →
               </button>
             )}
-          </>
-        )}
       </div>
       <div className="sync-legend">
         <div className="sync-legend-item">
