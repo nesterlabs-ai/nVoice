@@ -280,7 +280,7 @@ export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
         <div className="emotion-analysis-sticky-x">
           <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
             {timeMarks.map((mark, index) => (
-              <text key={`time-${index}`} x={mark.x} y={10} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
+              <text key={`time-${index}`} x={mark.x + 2} y={10} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
                 {mark.label}
               </text>
             ))}
