@@ -348,12 +348,55 @@ class VoiceScannerApp {
   }
 
   /**
-   * Restart: hide options bar, disconnect, then connect (same flow as connect-btn)
+   * Restart: hide cards if visible, reset all card data, hide options bar, disconnect, then connect (same flow as connect-btn)
    */
   private async onRestartOption(): Promise<void> {
     this.hideCloseOptions();
+    // Hide all dashboard cards if they are visible (peak was open)
+    if (this.mainLayout && !this.mainLayout.classList.contains('panels-hidden')) {
+      this.mainLayout.classList.add('panels-hidden');
+      this.updatePeakButtonState();
+    }
+    this.resetAllCardsData();
     await this.disconnect();
     this.handleConnect();
+  }
+
+  /**
+   * Reset all dashboard card data for a new conversation (SynchronizedAnalysis, Emotion, VisitorIntent, ToneModulator, KnowledgeGraph, Transcript).
+   */
+  private resetAllCardsData(): void {
+    this.conversationMessages = [];
+    this.emotionTopicNodes = [];
+    this.emotionNodeCounter = 0;
+    this.previousTopics = [];
+    if (this.topicTimeline) this.topicTimeline.clear();
+    this.refreshSynchronizedAnalysis();
+    (window as any).EmotionAnalysis?.updateTopics?.([]);
+    this.updateVisitorIntent([]);
+    (window as any).ToneModulator?.update?.({ detectedEmotion: 'neutral', nesterResponse: 'calm' });
+    (window as any).KnowledgeGraph?.stopCycle?.();
+    (window as any).KnowledgeGraph?.clear?.();
+
+    // Clear transcript DOM and show welcome message
+    if (this.transcriptList && this.welcomeMessage) {
+      this.transcriptList.innerHTML = '';
+      this.transcriptList.appendChild(this.welcomeMessage);
+      this.welcomeMessage.classList.remove('hidden');
+    }
+    this.currentBotBubble = null;
+    this.streamingBubble = null;
+    this.typewriterQueue = [];
+    this.isTypewriting = false;
+    this.accumulatedBotAnswer = '';
+    if (this.subtitleClearTimeout) {
+      clearTimeout(this.subtitleClearTimeout);
+      this.subtitleClearTimeout = null;
+    }
+    this.botIsSpeaking = false;
+    this.subtitleWordCount = 0;
+    this.subtitleClearOnNextSentence = false;
+    if (this.liveSubtitleText) this.liveSubtitleText.textContent = '';
   }
 
   /**
