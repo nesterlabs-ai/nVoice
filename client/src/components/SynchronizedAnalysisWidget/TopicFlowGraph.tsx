@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { TopicNode, getTransitionLabel } from './topicExtraction';
+
+/** Minimum time gap (ms) between displayed red dots; dots within 1–4s of the previous are skipped. */
+const MIN_DOT_SPACING_MS = 5 * 1000;
 
 interface TopicFlowGraphProps {
   topics: TopicNode[];
@@ -22,6 +25,20 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   const [isManuallyControlled, setIsManuallyControlled] = useState(false);
   const autoScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const programmaticScrollRef = useRef(false);
+
+  /** Only show dots that are at least 5 seconds apart; skip dots with 1–4s gap. */
+  const displayedTopics = useMemo(() => {
+    if (topics.length === 0) return [];
+    const out: TopicNode[] = [topics[0]];
+    for (let i = 1; i < topics.length; i++) {
+      const t = topics[i];
+      const last = out[out.length - 1];
+      if (t.timestamp.getTime() - last.timestamp.getTime() >= MIN_DOT_SPACING_MS) {
+        out.push(t);
+      }
+    }
+    return out;
+  }, [topics]);
 
   const isAtRightEdge = () => {
     if (!scrollRef.current) return true;
@@ -55,14 +72,14 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   };
 
   useEffect(() => {
-    if (!isManuallyControlled && scrollRef.current && topics.length > 0) {
+    if (!isManuallyControlled && scrollRef.current && displayedTopics.length > 0) {
       // Wait for DOM to update with new SVG dimensions before scrolling
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (!scrollRef.current) return;
-          const lastTopic = topics[topics.length - 1];
+          const lastTopic = displayedTopics[displayedTopics.length - 1];
           const plotH = chartHeight - 20 - STICKY_X_HEIGHT;
-          const rowCnt = Math.max(new Set(topics.map((t) => t.row)).size, 1);
+          const rowCnt = Math.max(new Set(displayedTopics.map((t) => t.row)).size, 1);
           const lastTopicY = 20 + (lastTopic.row + 0.5) * (plotH / rowCnt);
           const viewportHeight = scrollRef.current.clientHeight;
           const currentScrollTop = scrollRef.current.scrollTop;
@@ -82,7 +99,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
         });
       });
     }
-  }, [topics, scrollRef, isManuallyControlled, chartHeight]);
+  }, [displayedTopics, scrollRef, isManuallyControlled, chartHeight]);
 
   useEffect(() => () => {
     if (autoScrollTimeoutRef.current) clearTimeout(autoScrollTimeoutRef.current);
@@ -102,10 +119,10 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
 
   const getRowInfo = () => {
     const rowCategories: { [row: number]: string } = {};
-    topics.forEach(topic => {
+    displayedTopics.forEach(topic => {
       if (rowCategories[topic.row] === undefined) rowCategories[topic.row] = topic.category;
     });
-    if (topics.length === 0) rowCategories[0] = '—';
+    if (displayedTopics.length === 0) rowCategories[0] = '—';
     return { rowCategories };
   };
 
@@ -126,10 +143,10 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   const leftPadding = 70;
   const rightPadding = 10;
   const pixelsPerSecond = 17;
-  /** Total time range in seconds (from data or default). */
+  /** Total time range in seconds (from displayed data or default). */
   const totalSeconds =
-    topics.length >= 2
-      ? Math.max(Math.ceil((topics[topics.length - 1].timestamp.getTime() - topics[0].timestamp.getTime()) / 1000) + 10, 30)
+    displayedTopics.length >= 2
+      ? Math.max(Math.ceil((displayedTopics[displayedTopics.length - 1].timestamp.getTime() - displayedTopics[0].timestamp.getTime()) / 1000) + 10, 30)
       : 30;
   /** Plot width: at least fill container (responsive), or wider for horizontal scroll when timeline is long. */
   const containerPlotWidth = containerWidth > 0 ? containerWidth - leftPadding - rightPadding : 400;
@@ -138,8 +155,9 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
   const totalWidth = leftPadding + chartWidth + rightPadding;
 
   const getTimeBasedPositions = () => {
-    const startTime = topics.length > 0 ? topics[0].timestamp.getTime() : Date.now() - totalSeconds * 1000;
+    const startTime = displayedTopics.length > 0 ? displayedTopics[0].timestamp.getTime() : Date.now() - totalSeconds * 1000;
     const timeMarks: { time: Date; x: number; label: string }[] = [];
+    // Grid lines every 5 seconds; displayed red dots are filtered to be at least 5s apart.
     for (let sec = 0; sec <= totalSeconds; sec += 5) {
       const markTime = new Date(startTime + sec * 1000);
       const x = leftPadding + (sec / totalSeconds) * chartWidth;
@@ -163,6 +181,11 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
     const x = getTopicX(topic);
     return index === 0 ? Math.max(x, leftPadding + MIN_FIRST_TOPIC_OFFSET) : x;
   };
+
+  /** Max chars for topic label to avoid overlap; show ellipsis if longer. */
+  const MAX_TOPIC_LABEL_LEN = 18;
+  const formatTopicLabel = (name: string) =>
+    name.length > MAX_TOPIC_LABEL_LEN ? `${name.slice(0, MAX_TOPIC_LABEL_LEN - 1)}…` : name;
 
   return (
     <div className="sync-card">
@@ -201,9 +224,9 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                     />
                   ))}
                   {/* Connection lines only (no boxes yet) */}
-                  {topics.map((topic, index) => {
+                  {displayedTopics.map((topic, index) => {
                     if (index === 0) return null;
-                    const prevTopic = topics[index - 1];
+                    const prevTopic = displayedTopics[index - 1];
                     const x1 = getTopicXDisplay(prevTopic, index - 1);
                     const x2 = getTopicXDisplay(topic, index);
                     const y1 = getRowCenterY(prevTopic.row);
@@ -225,7 +248,7 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                     );
                   })}
                   {/* Topic nodes (dots + names) drawn first so they sit under yellow boxes */}
-                  {topics.map((topic, index) => {
+                  {displayedTopics.map((topic, index) => {
                     const x = getTopicXDisplay(topic, index);
                     const y = getRowCenterY(topic.row);
                     return (
@@ -252,15 +275,15 @@ export function TopicFlowGraph({ topics, scrollRef, onScroll }: TopicFlowGraphPr
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: index * 0.1 + 0.2, duration: 0.4 }}
                         >
-                          {topic.name}
+                          {formatTopicLabel(topic.name)}
                         </motion.text>
                       </g>
                     );
                   })}
                   {/* Yellow AI transition boxes on top so their text is never covered by dots */}
-                  {topics.map((topic, index) => {
+                  {displayedTopics.map((topic, index) => {
                     if (index === 0 || !topic.aiRole) return null;
-                    const prevTopic = topics[index - 1];
+                    const prevTopic = displayedTopics[index - 1];
                     const x1 = getTopicXDisplay(prevTopic, index - 1);
                     const x2 = getTopicXDisplay(topic, index);
                     const y1 = getRowCenterY(prevTopic.row);
