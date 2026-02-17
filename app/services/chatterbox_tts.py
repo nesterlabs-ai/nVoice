@@ -7,6 +7,7 @@ Chatterbox model with emotion control via exaggeration and cfg_weight parameters
 Compatible with Pipecat pipeline framework.
 """
 
+import time
 import aiohttp
 from typing import Optional, Dict, Any, AsyncGenerator
 
@@ -162,17 +163,16 @@ class ChatterboxTTSService(TTSService):
         Yields:
             Pipecat frames (TTSStartedFrame, TTSAudioRawFrame, TTSStoppedFrame)
         """
-        logger.debug(
-            f"ChatterboxTTSService: Generating TTS [{text}] "
-            f"(emotion={self._current_emotion})"
+        params = self.get_emotion_params()
+        logger.info(
+            f"🔊 Chatterbox TTS request: text='{text[:80]}{'...' if len(text) > 80 else ''}' "
+            f"emotion={self._current_emotion} exaggeration={params['exaggeration']} "
+            f"cfg_weight={params['cfg_weight']}"
         )
 
         try:
             # Signal TTS started
             yield TTSStartedFrame()
-
-            # Get emotion parameters
-            params = self.get_emotion_params()
 
             payload = {
                 "voice_uuid": self._voice_uuid,
@@ -183,53 +183,115 @@ class ChatterboxTTSService(TTSService):
                 "precision": "PCM_16",
             }
 
+            # Log full request details for debugging
+            logger.info(
+                f"🔊 Chatterbox API call: url={self._stream_url} "
+                f"voice_uuid={self._voice_uuid[:8]}...{self._voice_uuid[-4:]} "
+                f"sample_rate={self._sample_rate} precision=PCM_16"
+            )
+
             session = await self._get_session()
+            start_time = time.time()
 
-            # Use streaming endpoint for lower latency
+            # Try streaming endpoint first (lower latency)
             async with session.post(self._stream_url, json=payload) as response:
+                latency_ms = (time.time() - start_time) * 1000
+
+                # If streaming fails with 500, try non-streaming synthesis endpoint
+                if response.status == 500:
+                    error_text = await response.text()
+                    logger.warning(
+                        f"🔊 Chatterbox stream endpoint failed (500), trying synthesis endpoint... "
+                        f"error={error_text[:100]}"
+                    )
+
+                    # Retry with non-streaming synthesis endpoint
+                    start_time_retry = time.time()
+                    async with session.post(self._synthesis_url, json=payload) as retry_response:
+                        latency_ms = (time.time() - start_time_retry) * 1000
+                        response = retry_response  # Use retry response for the rest of the code
+
                 if response.status == 200:
-                    # Accumulate full response since we need to strip WAV header
-                    audio_data = await response.read()
+                    logger.info(f"🔊 Chatterbox TTS: streaming started (ttfb={latency_ms:.0f}ms)")
 
-                    # Strip WAV header (44 bytes standard, but check for RIFF header)
-                    if audio_data[:4] == b'RIFF':
-                        # Find 'data' chunk
-                        data_index = audio_data.find(b'data')
-                        if data_index != -1:
-                            # Skip 'data' + 4 bytes for chunk size
-                            header_size = data_index + 8
-                            audio_data = audio_data[header_size:]
-                        else:
-                            # Fallback to standard 44-byte header
-                            audio_data = audio_data[44:]
+                    # Stream audio chunks as they arrive (word-by-word playback)
+                    header_stripped = False
+                    header_buffer = b''
+                    chunks_sent = 0
+                    total_bytes = 0
+                    first_chunk_time = None
 
-                    # Yield raw PCM audio in chunks
-                    chunk_size = 4096
-                    for i in range(0, len(audio_data), chunk_size):
-                        chunk = audio_data[i:i + chunk_size]
+                    async for chunk in response.content.iter_chunked(4096):
+                        if not chunk:
+                            continue
+
+                        if first_chunk_time is None:
+                            first_chunk_time = time.time()
+
+                        total_bytes += len(chunk)
+
+                        # Strip WAV header from first chunk(s) only
+                        if not header_stripped:
+                            header_buffer += chunk
+
+                            # Check if we have enough data to detect and strip WAV header
+                            if len(header_buffer) >= 44:
+                                if header_buffer[:4] == b'RIFF':
+                                    # Find 'data' chunk marker
+                                    data_index = header_buffer.find(b'data')
+                                    if data_index != -1:
+                                        # Skip 'data' + 4 bytes for chunk size
+                                        header_size = data_index + 8
+                                        chunk = header_buffer[header_size:]
+                                        header_buffer = b''
+                                        header_stripped = True
+                                        logger.debug(f"🔊 Stripped WAV header ({header_size} bytes)")
+                                    else:
+                                        # Haven't found 'data' marker yet, keep buffering
+                                        continue
+                                else:
+                                    # No WAV header (already PCM)
+                                    chunk = header_buffer
+                                    header_buffer = b''
+                                    header_stripped = True
+
+                        # Yield audio chunk immediately for streaming playback
                         if chunk:
                             yield TTSAudioRawFrame(
                                 audio=chunk,
                                 sample_rate=self._sample_rate,
                                 num_channels=1,
                             )
+                            chunks_sent += 1
+
+                    total_ms = (time.time() - start_time) * 1000
+                    audio_duration_secs = total_bytes / (self._sample_rate * 2)
+                    logger.info(
+                        f"🔊 Chatterbox TTS complete: total={total_ms:.0f}ms "
+                        f"audio={total_bytes} bytes ({audio_duration_secs:.1f}s) "
+                        f"chunks={chunks_sent}"
+                    )
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"Chatterbox stream failed: {response.status} - {error_text}"
+                        f"🔊 Chatterbox TTS FAILED: status={response.status} "
+                        f"latency={latency_ms:.0f}ms error={error_text[:200]}"
                     )
                     yield ErrorFrame(f"Chatterbox TTS failed: {response.status}")
 
             # Signal TTS stopped
             yield TTSStoppedFrame()
+            logger.info(f"🔊 Chatterbox TTS complete for: '{text[:50]}...'")
 
         except aiohttp.ClientError as e:
-            logger.error(f"Chatterbox API error: {e}")
+            logger.error(f"🔊 Chatterbox API connection error: {e}")
             yield ErrorFrame(f"Chatterbox API error: {e}")
             yield TTSStoppedFrame()
 
         except Exception as e:
-            logger.error(f"Chatterbox TTS error: {e}")
+            logger.error(f"🔊 Chatterbox TTS unexpected error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             yield ErrorFrame(f"Chatterbox TTS error: {e}")
             yield TTSStoppedFrame()
 
