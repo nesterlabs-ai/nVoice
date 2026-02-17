@@ -6,9 +6,15 @@ coordinating between input analysis, RAG processing, and response generation.
 A2UI Integration:
 - When RAG is called, A2UI templates can be filled from knowledge base
 - A2UI updates are emitted to frontend for visual rendering
+
+Feedback Integration:
+- When user ends conversation, feedback UI is shown
+- Feedback is collected before session closes
 """
 
+import asyncio
 import re
+import time
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
@@ -39,6 +45,39 @@ try:
 except ImportError as e:
     A2UI_AVAILABLE = False
     logger.warning(f"A2UI system not available: {e}")
+
+# Import feedback generator
+from app.services.a2ui.feedback_generator import generate_feedback_message
+
+# Import feedback store access (for reading submitted responses)
+from app.services.feedback_store import get_feedback_by_session
+
+# Question ID to readable label mapping for TTS
+FEEDBACK_QUESTION_LABELS = {
+    "overall_experience": "overall experience",
+    "information_helpful": "information helpfulness",
+    "voice_quality": "voice quality",
+    "would_use_again": "likelihood to use again",
+}
+
+# Response value to readable text mapping for TTS
+FEEDBACK_RESPONSE_LABELS = {
+    "excellent": "Excellent",
+    "good": "Good",
+    "okay": "Okay",
+    "poor": "Poor",
+    "very_helpful": "Very Helpful",
+    "somewhat": "Somewhat Helpful",
+    "not_really": "Not Really Helpful",
+    "not_at_all": "Not Helpful At All",
+    "clear": "Clear and Natural",
+    "mostly_clear": "Mostly Clear",
+    "hard_to_understand": "Hard to Understand",
+    "definitely": "Definitely",
+    "probably": "Probably",
+    "maybe": "Maybe",
+    "no": "No",
+}
 
 # SmartTurn v3 - ML-based end-of-turn detection (optional)
 # Use LoggingSmartTurnAnalyzer wrapper for detailed turn detection logs
@@ -132,6 +171,15 @@ class ConversationManager:
         else:
             logger.info("A2UI disabled or not available")
 
+        # Feedback state tracking
+        self._waiting_for_feedback = False
+        self._feedback_start_time: Optional[float] = None
+        self._feedback_timeout_task: Optional[asyncio.Task] = None
+        self._feedback_callback: Optional[Callable] = None  # Callback to emit feedback UI
+        self._session_id: str = ""
+        self._feedback_received = False
+        self._llm_ref = None  # Store LLM reference for closing session
+
         logger.info("Initialized Conversation Manager")
 
     def initialize_llm(self) -> LLMService:
@@ -192,6 +240,23 @@ class ConversationManager:
         """
         self._a2ui_callback = callback
         logger.info("🎨 A2UI callback registered for frontend updates")
+
+    def set_feedback_callback(self, callback: Callable) -> None:
+        """Set the callback function for emitting feedback UI to frontend.
+
+        Args:
+            callback: Async function that takes (message_data: Dict) and emits to frontend
+        """
+        self._feedback_callback = callback
+        logger.info("📝 Feedback callback registered for frontend updates")
+
+    def set_session_id(self, session_id: str) -> None:
+        """Set the session ID for feedback tracking.
+
+        Args:
+            session_id: The session identifier
+        """
+        self._session_id = session_id
 
     def _get_next_thinking_phrase(self) -> str:
         """Get the next thinking phrase in the cycle.
@@ -347,38 +412,204 @@ class ConversationManager:
             await params.result_callback(error_response)
 
     async def _handle_end_conversation(self, params: FunctionCallParams) -> None:
-        """Handle end conversation function call.
+        """Handle end conversation function call with feedback collection.
 
-        When the LLM detects the user wants to end the conversation, this sends
-        an EndFrame upstream to gracefully terminate the session.
+        When the LLM detects the user wants to end the conversation, this:
+        1. Speaks a feedback prompt
+        2. Emits feedback UI to the frontend
+        3. Waits for feedback submission or timeout
+        4. Then closes the session
 
         Args:
             params: Function call parameters
         """
-        import asyncio
-        from pipecat.frames.frames import TTSSpeakFrame
-
         logger.warning("🔴 End conversation function called by LLM")
 
-        # Push farewell message directly to TTS to avoid extra LLM round
-        farewell_message = "Goodbye! Thank you for visiting Nesterlabs."
-        logger.info(f"📢 Pushing farewell message to TTS: '{farewell_message}'")
+        # Store LLM reference for later session closure
+        self._llm_ref = params.llm
 
-        if self.tts_service:
-            await self.tts_service.queue_frame(TTSSpeakFrame(farewell_message))
+        # Check if feedback callback is available
+        if self._feedback_callback:
+            # Feedback flow: ask for feedback before closing
+            feedback_prompt = (
+                "Before you go, I'd love your feedback. "
+                "Please take a moment to rate your experience on the screen. "
+                "You can also skip if you're in a hurry."
+            )
+            logger.info(f"📢 Pushing feedback prompt to TTS: '{feedback_prompt}'")
 
-        # Return empty response to function to avoid LLM generating more text
-        await params.result_callback("")
+            if self.tts_service:
+                await self.tts_service.queue_frame(TTSSpeakFrame(feedback_prompt))
 
-        # Wait for: TTS generation + TTS playback
-        # ~1s TTS generation + ~2.5s TTS playback = 3.5s total
-        logger.info("⏳ Waiting 3.5 seconds for farewell TTS to complete...")
-        await asyncio.sleep(3.5)
-        logger.info("✅ Wait complete, sending EndFrame")
+            # Emit feedback UI to frontend
+            await self._emit_feedback_ui()
 
-        # Push EndFrame upstream to terminate the session
-        await params.llm.push_frame(EndFrame(), FrameDirection.UPSTREAM)
-        logger.info("🛑 EndFrame sent - session will terminate")
+            # Return empty response to prevent LLM generating more text
+            await params.result_callback("")
+
+            # Set feedback waiting state
+            self._waiting_for_feedback = True
+            self._feedback_start_time = time.time()
+            self._feedback_received = False
+
+            # Start feedback timeout (45 seconds, polls every 2s for submitted feedback)
+            self._feedback_timeout_task = asyncio.create_task(
+                self._feedback_timeout_handler()
+            )
+
+            logger.info("📝 Waiting for feedback submission or timeout...")
+            # Session closure will be handled by close_session() called from API or timeout
+
+        else:
+            # No feedback callback - use legacy immediate close
+            logger.info("No feedback callback - using immediate close")
+            farewell_message = "Goodbye! Thank you for visiting Nesterlabs."
+            logger.info(f"📢 Pushing farewell message to TTS: '{farewell_message}'")
+
+            if self.tts_service:
+                await self.tts_service.queue_frame(TTSSpeakFrame(farewell_message))
+
+            await params.result_callback("")
+
+            # Wait for TTS playback
+            logger.info("⏳ Waiting 3.5 seconds for farewell TTS to complete...")
+            await asyncio.sleep(3.5)
+            logger.info("✅ Wait complete, sending EndFrame")
+
+            # Push EndFrame upstream to terminate the session
+            await params.llm.push_frame(EndFrame(), FrameDirection.UPSTREAM)
+            logger.info("🛑 EndFrame sent - session will terminate")
+
+    async def _emit_feedback_ui(self) -> None:
+        """Emit feedback UI component to frontend."""
+        feedback_message = generate_feedback_message(self._session_id)
+
+        if self._feedback_callback:
+            try:
+                await self._feedback_callback(feedback_message)
+                logger.info(f"📤 Sent feedback UI for session {self._session_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to emit feedback UI: {e}")
+
+    async def _feedback_timeout_handler(self) -> None:
+        """Handle feedback timeout - polls every 2 seconds for 45 seconds total.
+
+        If feedback is submitted before timeout, closes immediately with responses.
+        If timeout expires without feedback, closes with default farewell.
+        """
+        total_timeout = 45  # Total seconds to wait
+        poll_interval = 2   # Check every 2 seconds
+        elapsed = 0
+
+        while elapsed < total_timeout:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+            # Check if feedback was already received (session closed elsewhere)
+            if not self._waiting_for_feedback:
+                return
+
+            # Check if feedback was submitted to the API
+            feedback_data = get_feedback_by_session(self._session_id)
+            if feedback_data and not feedback_data.get("skipped", False):
+                logger.info(f"✅ Feedback detected for session {self._session_id}, closing with responses")
+                await self.close_session(feedback_received=True)
+                return
+            elif feedback_data and feedback_data.get("skipped", False):
+                logger.info(f"⏭️ Feedback skipped for session {self._session_id}")
+                await self.close_session(feedback_received=False)
+                return
+
+        # Timeout reached without feedback
+        if self._waiting_for_feedback:
+            logger.info(f"⏰ Feedback timeout ({total_timeout}s) for session {self._session_id}")
+            await self.close_session(feedback_received=False)
+
+    def _build_feedback_response_message(self) -> str:
+        """Build a TTS message that reads back the user's feedback selections."""
+        feedback_data = get_feedback_by_session(self._session_id)
+
+        if not feedback_data or not feedback_data.get("responses"):
+            return "Thank you for your feedback! Goodbye, and have a great day!"
+
+        responses = feedback_data["responses"]
+        parts = ["You selected"]
+
+        response_texts = []
+        for question_id, value in responses.items():
+            question_label = FEEDBACK_QUESTION_LABELS.get(question_id, question_id)
+            response_label = FEEDBACK_RESPONSE_LABELS.get(value, value)
+            response_texts.append(f"{response_label} for {question_label}")
+
+        if response_texts:
+            # Join with commas and "and" for the last item
+            if len(response_texts) == 1:
+                parts.append(response_texts[0])
+            elif len(response_texts) == 2:
+                parts.append(f"{response_texts[0]} and {response_texts[1]}")
+            else:
+                parts.append(", ".join(response_texts[:-1]) + f", and {response_texts[-1]}")
+
+        parts.append(". Thank you for your feedback! Goodbye, and have a great day!")
+
+        return " ".join(parts)
+
+    async def close_session(self, feedback_received: bool = False) -> None:
+        """Close the session after feedback or timeout.
+
+        Called by:
+        - Timeout handler when feedback is detected
+        - Timeout handler after 45 seconds
+        - Skip button click
+
+        Args:
+            feedback_received: Whether feedback was submitted
+        """
+        # Cancel timeout task if still running
+        if self._feedback_timeout_task and not self._feedback_timeout_task.done():
+            self._feedback_timeout_task.cancel()
+            try:
+                await self._feedback_timeout_task
+            except asyncio.CancelledError:
+                pass
+
+        self._waiting_for_feedback = False
+        self._feedback_received = feedback_received
+
+        # Build and speak the farewell message
+        if feedback_received:
+            # Speak back the user's selections
+            farewell = self._build_feedback_response_message()
+            logger.info(f"📢 Speaking feedback summary (full): '{farewell}'")
+            logger.info(f"📢 Session ID for feedback lookup: {self._session_id}")
+        else:
+            farewell = "Goodbye! Thank you for visiting Nesterlabs."
+            logger.info("📢 No feedback received, using default farewell")
+
+        logger.info(f"📢 Pushing farewell message: '{farewell}'")
+
+        # Push TTS frame through the pipeline (not queue_frame which may not work during wait state)
+        if self._llm_ref:
+            await self._llm_ref.push_frame(TTSSpeakFrame(farewell), FrameDirection.DOWNSTREAM)
+            logger.info("✅ TTS frame pushed downstream through LLM")
+        elif self.tts_service:
+            # Fallback to queue_frame if no LLM reference
+            await self.tts_service.queue_frame(TTSSpeakFrame(farewell))
+            logger.info("⚠️ Used queue_frame fallback (LLM ref not available)")
+
+        # Wait for TTS to complete speaking all 4 feedback selections
+        await asyncio.sleep(13.0)  # Allow TTS to speak full summary before closing
+
+        # Close the session
+        if self._llm_ref:
+            await self._llm_ref.push_frame(EndFrame(), FrameDirection.UPSTREAM)
+            logger.info(f"🛑 Session {self._session_id} closed (feedback_received={feedback_received})")
+        else:
+            logger.warning("No LLM reference available to close session")
+
+    def is_waiting_for_feedback(self) -> bool:
+        """Check if session is waiting for feedback."""
+        return self._waiting_for_feedback
 
     def create_function_schemas(self) -> ToolsSchema:
         """Create function schemas for LLM tool usage.

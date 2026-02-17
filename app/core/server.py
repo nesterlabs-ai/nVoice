@@ -7,6 +7,7 @@ including WebSocket transport management and session handling.
 
 import asyncio
 import os
+import uuid
 from typing import Any, Dict
 
 from loguru import logger
@@ -123,8 +124,12 @@ class VoiceAssistantServer:
 
         while self._running:
             try:
+                # Generate session ID for this session
+                session_id = str(uuid.uuid4())[:8]
+
                 # Create fresh voice assistant for each session
-                voice_assistant = VoiceAssistant(self.config)
+                voice_assistant = VoiceAssistant(self.config, session_id=session_id)
+                logger.info(f"[Session {session_id}] Created new VoiceAssistant instance")
 
                 # Create fresh transport for each session
                 transport = self.create_websocket_transport()

@@ -701,3 +701,83 @@ async def extract_graph_keywords(payload: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Graph keyword extraction failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Feedback Endpoints ====================
+
+from pydantic import BaseModel
+from datetime import datetime
+from app.services.feedback_store import (
+    store_feedback,
+    get_feedback_by_session,
+    list_all_feedback,
+    feedback_count,
+)
+
+
+class FeedbackSubmission(BaseModel):
+    """Feedback submission from frontend."""
+    session_id: str
+    responses: Dict[str, str]  # {"overall_experience": "excellent", ...}
+    skipped: bool = False
+
+
+@router.post("/feedback/submit")
+async def submit_feedback(feedback: FeedbackSubmission) -> Dict[str, Any]:
+    """
+    Receive feedback from frontend feedback component.
+
+    This endpoint is called when user:
+    1. Clicks "Submit Feedback" with selections
+    2. Clicks "Skip" button
+    3. Timeout auto-submits
+
+    Returns success and triggers session closure.
+    """
+    # Store feedback
+    feedback_data = {
+        "session_id": feedback.session_id,
+        "responses": feedback.responses,
+        "skipped": feedback.skipped,
+        "submitted_at": datetime.utcnow().isoformat(),
+    }
+
+    store_feedback(feedback.session_id, feedback_data)
+    logger.info(f"📝 Feedback received for session {feedback.session_id}: {feedback_data}")
+
+    # Note: Session closure is triggered via WebSocket from the frontend
+    # The frontend sends a close signal after feedback submission
+    # Or the ConversationManager's timeout handler closes it automatically
+
+    return {
+        "success": True,
+        "message": "Feedback received",
+        "session_id": feedback.session_id
+    }
+
+
+@router.get("/feedback/questions")
+async def get_feedback_questions() -> Dict[str, Any]:
+    """Get the feedback questions configuration."""
+    from app.config.feedback_questions import get_feedback_questions
+    return {
+        "questions": get_feedback_questions()
+    }
+
+
+@router.get("/feedback/{session_id}")
+async def get_feedback(session_id: str) -> Dict[str, Any]:
+    """Get feedback for a specific session."""
+    feedback_data = get_feedback_by_session(session_id)
+    if feedback_data is None:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return feedback_data
+
+
+@router.get("/feedback")
+async def list_feedback() -> Dict[str, Any]:
+    """List all feedback (for admin/debugging)."""
+    return {
+        "count": feedback_count(),
+        "feedback": list_all_feedback()
+    }

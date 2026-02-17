@@ -26,6 +26,10 @@ import {
 import { A2UIRenderer } from './components/a2ui/A2UIRenderer';
 import { A2UIDocument, isA2UIUpdate } from './types/a2ui';
 
+// Feedback imports
+import { FeedbackRenderer } from './components/FeedbackSelector/FeedbackRenderer';
+import './components/FeedbackSelector/FeedbackSelector.css';
+
 // Emotion Chart import
 import { EmotionChart } from './components/EmotionChart';
 // Topic Timeline import
@@ -158,6 +162,10 @@ class VoiceScannerApp {
   private a2uiPanel: HTMLElement | null = null;
   private a2uiStatus: HTMLElement | null = null;
   private a2uiHasContent: boolean = false;
+
+  // Feedback state
+  private feedbackRenderer: FeedbackRenderer | null = null;
+  private currentSessionId: string = '';
 
   // Emotion-reactive UI state
   private lastEmotionUpdate: number = 0;
@@ -2377,6 +2385,9 @@ class VoiceScannerApp {
                     console.warn('[A2UI] Invalid update format');
                   }
                   break;
+                case 'feedback_request':
+                  this.handleFeedbackRequest(messageData);
+                  break;
               }
             } catch (e) {
               console.error('[ServerMessage] Error:', e);
@@ -3368,6 +3379,93 @@ class VoiceScannerApp {
   private showA2UIPanel(): void {
     if (this.a2uiPanel) {
       this.a2uiPanel.classList.add('visible');
+    }
+  }
+
+  // ===== FEEDBACK METHODS =====
+
+  /**
+   * Handle feedback request from backend
+   */
+  private handleFeedbackRequest(data: {
+    a2ui: {
+      title: string;
+      subtitle: string;
+      questions: Array<{
+        id: string;
+        question: string;
+        options: Array<{ label: string; value: string; emoji?: string }>;
+      }>;
+      config: {
+        submitButtonText: string;
+        skipButtonText: string;
+        timeoutSeconds: number;
+      };
+    };
+    session_id: string;
+    timestamp: number;
+  }): void {
+    console.log('[Feedback] Received feedback request for session:', data.session_id);
+    this.currentSessionId = data.session_id;
+
+    // Initialize feedback renderer if not exists
+    if (!this.feedbackRenderer) {
+      this.feedbackRenderer = new FeedbackRenderer(
+        'feedback-root',
+        (responses, skipped) => this.submitFeedback(responses, skipped)
+      );
+    }
+
+    // Render the feedback form with full config
+    this.feedbackRenderer.render({
+      ...data.a2ui,
+      session_id: data.session_id,
+      timestamp: data.timestamp
+    });
+
+    this.log('Feedback form displayed');
+    this.addTerminalMessage('feedback.show();', 'command');
+  }
+
+  /**
+   * Submit feedback to backend
+   */
+  private async submitFeedback(
+    responses: Record<string, string>,
+    skipped: boolean
+  ): Promise<void> {
+    console.log('[Feedback] Submitting feedback:', { responses, skipped, sessionId: this.currentSessionId });
+
+    try {
+      const response = await fetch('/feedback/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: this.currentSessionId,
+          responses,
+          skipped
+        })
+      });
+
+      if (!response.ok) {
+        console.error('[Feedback] Submit failed:', response.statusText);
+        this.addTerminalMessage(`feedback.error: ${response.statusText}`, 'error');
+      } else {
+        console.log('[Feedback] Submit successful');
+        this.addTerminalMessage('feedback.submitted();', 'command');
+      }
+    } catch (error) {
+      console.error('[Feedback] Submit error:', error);
+      this.addTerminalMessage(`feedback.error: ${(error as Error).message}`, 'error');
+    }
+  }
+
+  /**
+   * Close the feedback form
+   */
+  private closeFeedback(): void {
+    if (this.feedbackRenderer) {
+      this.feedbackRenderer.close();
     }
   }
 

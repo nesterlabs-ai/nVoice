@@ -10,6 +10,11 @@ export default defineConfig({
                 target: 'http://0.0.0.0:7860', // Replace with your backend URL
                 changeOrigin: true,
             },
+            // Proxy feedback API to backend
+            '/feedback': {
+                target: 'http://0.0.0.0:7860',
+                changeOrigin: true,
+            },
         },
     },
 });

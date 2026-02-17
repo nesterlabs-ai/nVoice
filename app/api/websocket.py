@@ -211,7 +211,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
 
         # Create dedicated VoiceAssistant instance for this session
-        voice_assistant = VoiceAssistant(voice_assistant_server.config)
+        voice_assistant = VoiceAssistant(voice_assistant_server.config, session_id=session_id)
         logger.info(f"[Session {session_id}] VoiceAssistant instance created")
 
         # Log emotion detection state for this session

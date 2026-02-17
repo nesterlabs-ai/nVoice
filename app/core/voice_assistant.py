@@ -61,13 +61,15 @@ class VoiceAssistant:
         runner: Pipeline runner
     """
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Dict[str, Any] = None, session_id: str = ""):
         """Initialize the Voice Assistant.
 
         Args:
             config: Configuration dictionary containing settings for all services
+            session_id: Unique session identifier for tracking feedback
         """
         self.config = config or {}
+        self.session_id = session_id
 
         # Initialize services
         self.stt_service = None
@@ -194,6 +196,11 @@ class VoiceAssistant:
             smart_turn_config=smart_turn_config,  # SmartTurn v3 config for ML-based turn detection
         )
 
+        # Set session ID for feedback tracking
+        if self.session_id:
+            self.conversation_manager.set_session_id(self.session_id)
+            logger.info(f"[Session {self.session_id}] Session ID set on ConversationManager")
+
         logger.info("All services initialized successfully")
 
     async def create_pipeline(self, transport: BaseTransport) -> Pipeline:
@@ -236,6 +243,9 @@ class VoiceAssistant:
         # Set up A2UI callback for emitting visual updates from RAG responses
         # This enables the full LightRAG + A2UI pipeline
         self.conversation_manager.set_a2ui_callback(self._emit_a2ui_update)
+
+        # Set up feedback callback for emitting feedback UI on conversation end
+        self.conversation_manager.set_feedback_callback(self._emit_feedback_request)
 
         # Initialize MSP-PODCAST wav2vec2 for emotion detection
         logger.info("[EMOTION-DIAG] About to call tone_processor.initialize()...")
@@ -465,6 +475,30 @@ class VoiceAssistant:
             logger.info("✅ A2UI update emitted to frontend successfully")
         except Exception as e:
             logger.error(f"❌ Failed to emit A2UI update: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    async def _emit_feedback_request(self, message_data: Dict[str, Any]) -> None:
+        """Emit feedback request to frontend via the pipeline.
+
+        This callback is called by ConversationManager when the user ends the conversation
+        to show the feedback collection UI.
+
+        Args:
+            message_data: Feedback request message containing a2ui and session_id
+        """
+        logger.info("=" * 60)
+        logger.info("📝 EMITTING FEEDBACK REQUEST TO FRONTEND")
+        logger.info(f"   Session: {message_data.get('session_id', 'unknown')}")
+        logger.info("=" * 60)
+
+        try:
+            from pipecat.processors.frameworks.rtvi import RTVIServerMessageFrame
+            data_frame = RTVIServerMessageFrame(data=message_data)
+            await self.rtvi.push_frame(data_frame)
+            logger.info("✅ Feedback request emitted to frontend successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to emit feedback request: {e}")
             import traceback
             logger.error(traceback.format_exc())
 
