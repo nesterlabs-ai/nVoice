@@ -1824,14 +1824,21 @@ body.a2ui-panel-visible .live-subtitle {
   inset: -12px -20px;
 }
 
-/* Multi-line block: full utterance */
+/* Multi-line block: max 2 lines, older lines shift up (rolling); scrollable to show latest, scrollbar hidden */
 .live-subtitle-text {
   font-size: 24px;
   line-height: 1.45;
+  max-height: 2.9em; /* 2 lines (2 * 1.45) */
+  overflow-y: auto;
+  overflow-x: hidden;
   white-space: normal;
   overflow-wrap: break-word;
-  overflow-y: auto;
   font-family: var(--font-mono);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.live-subtitle-text::-webkit-scrollbar {
+  display: none;
 }
 
 /* User subtitle text */
@@ -1862,7 +1869,7 @@ body.a2ui-panel-visible .live-subtitle {
   }
 }
 
-/* Live subtitle: mobile */
+/* Live subtitle: mobile (2 lines = 2.8em at line-height 1.4) */
 @media (max-width: 640px) {
   .live-subtitle {
     width: 90%;
@@ -1873,6 +1880,7 @@ body.a2ui-panel-visible .live-subtitle {
   .live-subtitle.bot .live-subtitle-text {
     font-size: 16px;
     line-height: 1.4;
+    max-height: 2.8em;
   }
 }
 

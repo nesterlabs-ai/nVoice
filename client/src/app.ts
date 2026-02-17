@@ -150,6 +150,10 @@ class VoiceScannerApp {
   private isProcessingSubtitleQueue: boolean = false;
   private subtitleQueueSpeed: number = 300; // ms per word (synced with TTS audio duration ~200-270ms per word)
 
+  // Live subtitle: 2 lines × 42 words per line = 84 words max; when exceeded, remove first line (42 words)
+  private static readonly SUBTITLE_WORDS_PER_LINE = 42;
+  private static readonly SUBTITLE_MAX_WORDS = 84;
+
   // Media control bar: speaker/mic icon toggle (slash = muted)
   private speakerMuted: boolean = false;
   private micMuted: boolean = false;
@@ -1080,6 +1084,25 @@ class VoiceScannerApp {
         this.liveSubtitle?.classList.remove('visible');
       }, 4000);
     }
+
+    // Keep only last 2 lines visible (roll older words off the top)
+    requestAnimationFrame(() => this.trimSubtitleToTwoLines());
+  }
+
+  /**
+   * Trim leading word spans so only the last 2 lines remain visible (rolling subtitle).
+   * Uses word count: 42 words per line, 84 words total. When over 84 words, remove the first 42 (one line).
+   * Always scrolls to bottom so the newest words are visible (not clipped by overflow).
+   */
+  private trimSubtitleToTwoLines(): void {
+    if (!this.liveSubtitleText) return;
+    const el = this.liveSubtitleText;
+    const wordSpans = Array.from(el.querySelectorAll(':scope > .typewriter-word, :scope > .sub-word'));
+    if (wordSpans.length > VoiceScannerApp.SUBTITLE_MAX_WORDS) {
+      const removeCount = VoiceScannerApp.SUBTITLE_WORDS_PER_LINE;
+      wordSpans.slice(0, removeCount).forEach((node) => node.remove());
+    }
+    el.scrollTop = el.scrollHeight;
   }
 
   /**
@@ -1118,6 +1141,9 @@ class VoiceScannerApp {
         this.liveSubtitle?.classList.remove('visible');
       }, 4000);
     }
+
+    // Keep only last 2 lines visible (roll older words off the top)
+    requestAnimationFrame(() => this.trimSubtitleToTwoLines());
   }
 
   /**
