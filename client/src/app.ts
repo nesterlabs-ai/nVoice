@@ -145,10 +145,16 @@ class VoiceScannerApp {
   private subtitleWordCount: number = 0;
   private subtitleClearOnNextSentence: boolean = false;
 
-  // Subtitle word queue for typewriter effect with streaming_text
-  private subtitleWordQueue: Array<{word: string, isFirstWord: boolean}> = [];
-  private isProcessingSubtitleQueue: boolean = false;
-  private subtitleQueueSpeed: number = 300; // ms per word (synced with TTS audio duration ~200-270ms per word)
+  /** Max characters per subtitle line (wrap at word boundary). */
+  private static readonly MAX_SUBTITLE_LINE_CHARS = 42;
+  /** Delay in ms between revealing each subtitle line. */
+  private static readonly SUBTITLE_LINE_REVEAL_DELAY_MS = 2000;
+  /** Max subtitle lines visible at once; when a new line appears, the oldest is hidden. */
+  private static readonly MAX_SUBTITLE_LINES_VISIBLE = 2;
+  /** Timeouts for sequential line reveal; cleared when a new render starts. */
+  private subtitleRevealTimeouts: ReturnType<typeof setTimeout>[] = [];
+  /** Lines we've already scheduled (so we only append new lines, don't reset on every word). */
+  private lastScheduledSubtitleLines: string[] = [];
 
   // Media control bar: speaker/mic icon toggle (slash = muted)
   private speakerMuted: boolean = false;
@@ -398,6 +404,9 @@ class VoiceScannerApp {
     this.botIsSpeaking = false;
     this.subtitleWordCount = 0;
     this.subtitleClearOnNextSentence = false;
+    for (const t of this.subtitleRevealTimeouts) clearTimeout(t);
+    this.subtitleRevealTimeouts = [];
+    this.lastScheduledSubtitleLines = [];
     if (this.liveSubtitleText) this.liveSubtitleText.textContent = '';
   }
 
@@ -1046,7 +1055,111 @@ class VoiceScannerApp {
   }
 
   /**
-   * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice)
+   * Split text into lines of at most maxChars characters, wrapping at word boundaries.
+   * Words longer than maxChars are broken mid-word.
+   */
+  private textToLines(text: string, maxChars: number): string[] {
+    if (!text.trim()) return [];
+    const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+    const lines: string[] = [];
+    let current = '';
+    for (const w of words) {
+      const candidate = current ? current + ' ' + w : w;
+      if (candidate.length <= maxChars) {
+        current = candidate;
+      } else {
+        if (current) {
+          lines.push(current);
+          current = '';
+        }
+        let rest = w;
+        while (rest.length > maxChars) {
+          lines.push(rest.slice(0, maxChars));
+          rest = rest.slice(maxChars);
+        }
+        if (rest.length > 0) current = rest;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  /**
+   * Render subtitle as separate lines (max 42 chars per line).
+   * Reveals lines sequentially with SUBTITLE_LINE_REVEAL_DELAY_MS between each.
+   * When the 3rd line appears, the 1st is hidden (rolling window of 2 lines).
+   * Only appends new lines when transcript grows (no reset on every word) so the delay is visible.
+   */
+  private renderSubtitleLines(lines: string[]): void {
+    if (!this.liveSubtitleText) return;
+
+    const delayMs = VoiceScannerApp.SUBTITLE_LINE_REVEAL_DELAY_MS;
+    const maxVisible = VoiceScannerApp.MAX_SUBTITLE_LINES_VISIBLE;
+
+    const shouldReset =
+      lines.length === 0 ||
+      this.lastScheduledSubtitleLines.length === 0 ||
+      lines[0] !== this.lastScheduledSubtitleLines[0] ||
+      lines.length <= this.lastScheduledSubtitleLines.length;
+
+    const isAppending =
+      !shouldReset &&
+      lines.length > this.lastScheduledSubtitleLines.length &&
+      this.lastScheduledSubtitleLines.every((l, j) => lines[j] === l);
+
+    if (shouldReset) {
+      for (const t of this.subtitleRevealTimeouts) clearTimeout(t);
+      this.subtitleRevealTimeouts = [];
+      this.liveSubtitleText.innerHTML = '';
+      this.lastScheduledSubtitleLines = [];
+      if (lines.length === 0) return;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        const idx = i;
+        const timeout = setTimeout(() => {
+          if (!this.liveSubtitleText) return;
+          if (idx >= maxVisible) {
+            const first = this.liveSubtitleText.firstElementChild;
+            if (first) first.remove();
+          }
+          const el = document.createElement('span');
+          el.className = 'subtitle-line';
+          el.textContent = line;
+          this.liveSubtitleText.appendChild(el);
+        }, idx * delayMs);
+        this.subtitleRevealTimeouts.push(timeout);
+      }
+      this.lastScheduledSubtitleLines = [...lines];
+      return;
+    }
+
+    if (isAppending) {
+      const start = this.lastScheduledSubtitleLines.length;
+      for (let i = start; i < lines.length; i++) {
+        const line = lines[i]!;
+        const idx = i;
+        const delayFromNow = (i - start + 1) * delayMs;
+        const timeout = setTimeout(() => {
+          if (!this.liveSubtitleText) return;
+          if (idx >= maxVisible) {
+            const first = this.liveSubtitleText.firstElementChild;
+            if (first) first.remove();
+          }
+          const el = document.createElement('span');
+          el.className = 'subtitle-line';
+          el.textContent = line;
+          this.liveSubtitleText.appendChild(el);
+        }, delayFromNow);
+        this.subtitleRevealTimeouts.push(timeout);
+      }
+      this.lastScheduledSubtitleLines = [...lines];
+    }
+  }
+
+  /**
+   * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice).
+   * Wraps text to 42 characters per line.
    */
   private updateLiveSubtitle(role: 'user' | 'bot', text: string): void {
     if (!this.liveSubtitle || !this.liveSubtitleText) return;
@@ -1064,11 +1177,9 @@ class VoiceScannerApp {
     // User speech: prefix with "- " so we can identify user vs bot at a glance
     const displayText = role === 'user' ? `- ${text}` : text;
 
-    // Render each word as an animated span
-    const words = displayText.split(/\s+/).filter(w => w.length > 0);
-    this.liveSubtitleText.innerHTML = words.map(w =>
-      `<span class="sub-word">${w}</span>`
-    ).join(' ');
+    // Wrap to 42 chars per line and render line by line
+    const lines = this.textToLines(displayText, VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS);
+    this.renderSubtitleLines(lines);
 
     // Show the subtitle
     this.liveSubtitle.classList.add('visible');
@@ -1083,41 +1194,11 @@ class VoiceScannerApp {
   }
 
   /**
-   * Append a single word to the live subtitle (same word-by-word behavior as transcript bubble).
-   * Used during bot typewriter so the subtitle streams one word at a time instead of re-rendering all.
+   * Update bot live subtitle with full text as it comes from transcript (no typewriter effect, no delay).
    */
-  private appendBotWordToLiveSubtitle(word: string, isFirstWord: boolean): void {
-    if (!this.liveSubtitle || !this.liveSubtitleText) return;
-
-    this.subtitleWordCount++;
-
-    if (this.subtitleClearTimeout) {
-      clearTimeout(this.subtitleClearTimeout);
-      this.subtitleClearTimeout = null;
-    }
-
-    this.liveSubtitle.classList.remove('user', 'bot');
-    this.liveSubtitle.classList.add('bot');
-
-    if (isFirstWord || this.subtitleClearOnNextSentence) {
-      this.liveSubtitleText.innerHTML = '';
-      this.subtitleClearOnNextSentence = false;
-    }
-
-    const wordSpan = document.createElement('span');
-    wordSpan.className = 'typewriter-word';
-    wordSpan.textContent = word + ' ';
-    this.liveSubtitleText.appendChild(wordSpan);
-
-    this.liveSubtitle.classList.add('visible');
-
-    // Only set fallback timer if bot is not currently speaking
-    // (BotStoppedSpeaking will handle the hide with dynamic delay)
-    if (!this.botIsSpeaking) {
-      this.subtitleClearTimeout = setTimeout(() => {
-        this.liveSubtitle?.classList.remove('visible');
-      }, 4000);
-    }
+  private setBotSubtitleFromText(fullText: string): void {
+    if (!fullText.trim()) return;
+    this.updateLiveSubtitle('bot', fullText.trim());
   }
 
   /**
@@ -1192,10 +1273,9 @@ class VoiceScannerApp {
         wordSpan.textContent = word + ' ';
         textSpan.appendChild(wordSpan);
 
-        // Live subtitle: ONLY update if streaming_text is not handling it
-        // Check the flag instead of streamingBubble (which gets set to null after is_final)
+        // Live subtitle: show full text as it comes (no typewriter effect)
         if (!this.streamingTextActiveForSubtitle) {
-          this.appendBotWordToLiveSubtitle(word, isFirstWord);
+          this.setBotSubtitleFromText((textSpan.textContent || '').trim());
         }
 
         // Scroll to bottom
@@ -1207,25 +1287,6 @@ class VoiceScannerApp {
 
     // Schedule next word
     setTimeout(() => this.processTypewriterQueue(), this.typewriterSpeed);
-  }
-
-  /**
-   * Process the subtitle word queue with typewriter effect for streaming_text
-   */
-  private processSubtitleWordQueue(): void {
-    if (this.subtitleWordQueue.length === 0) {
-      this.isProcessingSubtitleQueue = false;
-      return;
-    }
-
-    this.isProcessingSubtitleQueue = true;
-    const {word, isFirstWord} = this.subtitleWordQueue.shift()!;
-
-    // Update live subtitle with the word
-    this.appendBotWordToLiveSubtitle(word, isFirstWord);
-
-    // Schedule next word
-    setTimeout(() => this.processSubtitleWordQueue(), this.subtitleQueueSpeed);
   }
 
   /**
@@ -1250,10 +1311,6 @@ class VoiceScannerApp {
     this.currentBotBubble = null;
     this.typewriterQueue = [];
     this.isTypewriting = false;
-
-    // Also clear subtitle queue when user interrupts
-    this.subtitleWordQueue = [];
-    this.isProcessingSubtitleQueue = false;
   }
 
   // Store last user query and accumulated bot answer for graph highlighting
@@ -2597,10 +2654,11 @@ class VoiceScannerApp {
 
     // Reset streaming state and clear subtitle for new utterance
     this.streamingWords = [];
-    this.subtitleWordQueue = [];  // Clear subtitle queue
-    this.isProcessingSubtitleQueue = false;  // Reset queue processor
+    for (const t of this.subtitleRevealTimeouts) clearTimeout(t);
+    this.subtitleRevealTimeouts = [];
+    this.lastScheduledSubtitleLines = [];
     if (this.liveSubtitleText) {
-      this.liveSubtitleText.innerHTML = '';
+      this.liveSubtitleText.textContent = '';
     }
 
     this.streamingBubble = document.createElement('div');
@@ -2635,16 +2693,10 @@ class VoiceScannerApp {
     wordSpan.style.animationDelay = `${(sequenceId % 10) * 30}ms`; // Stagger animation
 
     textContainer.appendChild(wordSpan);
-    const isFirstWord = this.streamingWords.length === 0;
     this.streamingWords.push(word);
 
-    // Queue word for subtitle with typewriter effect
-    this.subtitleWordQueue.push({word, isFirstWord});
-
-    // Start processing queue if not already running
-    if (!this.isProcessingSubtitleQueue) {
-      this.processSubtitleWordQueue();
-    }
+    // Update subtitle immediately with full text so far (no typewriter / no delay)
+    this.setBotSubtitleFromText(this.streamingWords.join(' '));
 
     // Auto-scroll
     if (this.transcriptList) {

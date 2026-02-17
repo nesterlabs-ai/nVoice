@@ -1824,7 +1824,7 @@ body.a2ui-panel-visible .live-subtitle {
   inset: -12px -20px;
 }
 
-/* Multi-line block: full utterance */
+/* Multi-line block: 42 chars per line */
 .live-subtitle-text {
   font-size: 24px;
   line-height: 1.45;
@@ -1832,6 +1832,15 @@ body.a2ui-panel-visible .live-subtitle {
   overflow-wrap: break-word;
   overflow-y: auto;
   font-family: var(--font-mono);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.live-subtitle-text .subtitle-line {
+  display: block;
+  text-align: center;
 }
 
 /* User subtitle text */
