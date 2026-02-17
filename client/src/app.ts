@@ -148,7 +148,7 @@ class VoiceScannerApp {
   // Subtitle word queue for typewriter effect with streaming_text
   private subtitleWordQueue: Array<{word: string, isFirstWord: boolean}> = [];
   private isProcessingSubtitleQueue: boolean = false;
-  private subtitleQueueSpeed: number = 300; // ms per word (synced with TTS audio duration ~200-270ms per word)
+  private subtitleQueueSpeed: number = 350; // ms per word (synced with TTS audio duration ~200-270ms per word)
 
   // Live subtitle: 2 lines × 42 words per line = 84 words max; when exceeded, remove first line (42 words)
   private static readonly SUBTITLE_WORDS_PER_LINE = 42;
