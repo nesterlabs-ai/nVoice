@@ -1824,23 +1824,27 @@ body.a2ui-panel-visible .live-subtitle {
   inset: -12px -20px;
 }
 
-/* Multi-line block: 42 chars per line */
+/* Multi-line block: 42 chars per line. Scroll viewport (2 lines visible, scroll for more). */
 .live-subtitle-text {
   font-size: 24px;
   line-height: 1.45;
   white-space: normal;
   overflow-wrap: break-word;
-  overflow-y: auto;
   font-family: var(--font-mono);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  /* Scroll viewport: show 2 lines, new lines scroll up from bottom, first line scrolls out */
+  max-height: calc(2 * (1.45em + 2px));
+  overflow-y: hidden;
+  scroll-behavior: smooth;
 }
 
 .live-subtitle-text .subtitle-line {
   display: block;
   text-align: center;
+  flex-shrink: 0;
 }
 
 /* User subtitle text */

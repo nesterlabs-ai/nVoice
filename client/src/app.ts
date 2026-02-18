@@ -151,6 +151,8 @@ class VoiceScannerApp {
   private static readonly SUBTITLE_LINE_REVEAL_DELAY_MS = 2000;
   /** Max subtitle lines visible at once; when a new line appears, the oldest is hidden. */
   private static readonly MAX_SUBTITLE_LINES_VISIBLE = 2;
+  /** Duration in ms for the subtitle scroll-up animation (then first line is removed). */
+  private static readonly SUBTITLE_SCROLL_DURATION_MS = 450;
   /** Timeouts for sequential line reveal; cleared when a new render starts. */
   private subtitleRevealTimeouts: ReturnType<typeof setTimeout>[] = [];
   /** Lines we've already scheduled (so we only append new lines, don't reset on every word). */
@@ -1119,14 +1121,13 @@ class VoiceScannerApp {
         const idx = i;
         const timeout = setTimeout(() => {
           if (!this.liveSubtitleText) return;
-          if (idx >= maxVisible) {
-            const first = this.liveSubtitleText.firstElementChild;
-            if (first) first.remove();
-          }
           const el = document.createElement('span');
           el.className = 'subtitle-line';
           el.textContent = line;
           this.liveSubtitleText.appendChild(el);
+          if (idx >= maxVisible) {
+            this.scrollSubtitleAndRemoveFirst();
+          }
         }, idx * delayMs);
         this.subtitleRevealTimeouts.push(timeout);
       }
@@ -1142,19 +1143,37 @@ class VoiceScannerApp {
         const delayFromNow = (i - start + 1) * delayMs;
         const timeout = setTimeout(() => {
           if (!this.liveSubtitleText) return;
-          if (idx >= maxVisible) {
-            const first = this.liveSubtitleText.firstElementChild;
-            if (first) first.remove();
-          }
           const el = document.createElement('span');
           el.className = 'subtitle-line';
           el.textContent = line;
           this.liveSubtitleText.appendChild(el);
+          if (idx >= maxVisible) {
+            this.scrollSubtitleAndRemoveFirst();
+          }
         }, delayFromNow);
         this.subtitleRevealTimeouts.push(timeout);
       }
       this.lastScheduledSubtitleLines = [...lines];
     }
+  }
+
+  /**
+   * Scrolls the subtitle viewport up by one line (smooth), then removes the first line and resets scroll.
+   * Call after appending a new line when we're at max visible lines (scroll-up-then-remove effect).
+   */
+  private scrollSubtitleAndRemoveFirst(): void {
+    const container = this.liveSubtitleText;
+    if (!container) return;
+    const first = container.firstElementChild as HTMLElement | null;
+    if (!first) return;
+    const gap = 2;
+    const scrollAmount = first.offsetHeight + gap;
+    container.scrollTop = scrollAmount;
+    window.setTimeout(() => {
+      if (!container.firstElementChild) return;
+      container.firstElementChild.remove();
+      container.scrollTop = 0;
+    }, VoiceScannerApp.SUBTITLE_SCROLL_DURATION_MS);
   }
 
   /**
