@@ -100,13 +100,7 @@ export class A2UIRenderer {
         wrapper.appendChild(this.renderFallback(props));
     }
 
-    // Add metadata badge
-    if (doc._metadata) {
-      const badge = document.createElement('div');
-      badge.className = 'a2ui-tier-badge';
-      badge.textContent = doc._metadata.tier_name;
-      wrapper.appendChild(badge);
-    }
+    // Tier badge removed - was showing debug info like "Registry Template" to users
 
     this.container.appendChild(wrapper);
   }
@@ -340,13 +334,24 @@ export class A2UIRenderer {
     const cards = document.createElement('div');
     cards.className = 'a2ui-team-grid';
 
+    // Dynamic column count based on number of members (max 4 columns)
+    const memberCount = props.members?.length || 0;
+    const columnCount = Math.min(memberCount, 4);
+    cards.style.gridTemplateColumns = `repeat(${columnCount}, minmax(0, 1fr))`;
+
     (props.members || []).forEach((member) => {
       const card = document.createElement('div');
       card.className = 'a2ui-team-card';
 
+      // Get initials (first letter of first name + first letter of last name)
+      const nameParts = member.name.trim().split(/\s+/);
+      const initials = nameParts.length >= 2
+        ? (nameParts[0].charAt(0) + nameParts[nameParts.length - 1].charAt(0)).toUpperCase()
+        : member.name.substring(0, 2).toUpperCase();
+
       card.innerHTML = `
         <div class="a2ui-team-front">
-          <div class="a2ui-team-avatar">${member.name.charAt(0)}</div>
+          <div class="a2ui-team-avatar">${initials}</div>
           <h4 class="a2ui-team-name">${this.escapeHtml(member.name)}</h4>
           <span class="a2ui-team-role">${this.escapeHtml(member.role)}</span>
         </div>

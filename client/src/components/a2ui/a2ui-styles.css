@@ -480,13 +480,13 @@
 
 .a2ui-team-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* grid-template-columns set dynamically via JS based on member count */
   gap: 16px;
 }
 
 .a2ui-team-card {
   position: relative;
-  height: 200px;
+  height: 20rem;
   perspective: 1000px;
   cursor: pointer;
 }
@@ -508,12 +508,11 @@
 }
 
 .a2ui-team-front {
-  background: var(--a2ui-bg-card);
   border: 1px solid var(--a2ui-border);
 }
 
 .a2ui-team-back {
-  background: var(--a2ui-accent);
+  border: 1px solid rgb(239,68,68);
   transform: rotateY(180deg);
 }
 
@@ -526,30 +525,32 @@
 }
 
 .a2ui-team-avatar {
-  width: 60px;
-  height: 60px;
-  background: var(--a2ui-accent);
+  width: 96px;
+  height: 96px;
+  background: rgb(39,39,42);
   color: white;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 1.5rem;
   font-weight: 700;
-  margin-bottom: 12px;
+  margin-bottom: 1rem;
+  border: 1px solid rgb(63,63,70);
 }
 
 .a2ui-team-name {
+  font-family: var(--font-mono);
   margin: 0;
-  font-size: 14px;
+  font-size: 1.125rem;
   font-weight: 600;
   color: var(--a2ui-text-primary);
   text-align: center;
 }
 
 .a2ui-team-role {
-  font-size: 11px;
-  color: var(--a2ui-text-muted);
+  font-size: 0.875rem;
+  color: rgb(239,68,68);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-top: 4px;
@@ -557,8 +558,8 @@
 
 .a2ui-team-bio {
   margin: 0;
-  font-size: 12px;
-  color: white;
+  font-size: 0.875rem;
+  color: rgb(156,163,175);
   text-align: center;
   line-height: 1.5;
 }
