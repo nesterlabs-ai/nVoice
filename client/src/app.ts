@@ -130,6 +130,8 @@ class VoiceScannerApp {
   private currentUtteranceId: string | null = null;
   private streamingWords: string[] = [];
   private streamingTextActiveForSubtitle: boolean = false;  // Track if streaming_text is handling subtitle
+  /** Skip the next onBotTranscript add (same content as the streaming bubble we just finalized). */
+  private skipNextBotTranscriptAdd: boolean = false;
 
   // Typewriter effect state for bot transcripts
   private currentBotBubble: HTMLElement | null = null;
@@ -396,6 +398,8 @@ class VoiceScannerApp {
     }
     this.currentBotBubble = null;
     this.streamingBubble = null;
+    this.currentUtteranceId = null;
+    this.skipNextBotTranscriptAdd = false;
     this.typewriterQueue = [];
     this.isTypewriting = false;
     this.accumulatedBotAnswer = '';
@@ -2466,9 +2470,12 @@ class VoiceScannerApp {
           },
           onBotTranscript: (data) => {
             this.log(`Bot: ${data.text}`);
-            // Use typewriter effect for bot transcript
-            this.addBotTranscriptWithTypewriter(data.text);
-            // Accumulate bot answer chunks
+            // Avoid duplicate transcript line: skip adding when we show this via streaming_text
+            if (!this.streamingBubble && !this.skipNextBotTranscriptAdd) {
+              this.addBotTranscriptWithTypewriter(data.text);
+            }
+            if (this.skipNextBotTranscriptAdd) this.skipNextBotTranscriptAdd = false;
+            // Accumulate bot answer chunks (for graph highlight)
             this.accumulatedBotAnswer += ' ' + data.text;
             // Debounce highlight call - wait 500ms after last chunk
             if (this.graphHighlightTimeout) {
@@ -2749,6 +2756,7 @@ class VoiceScannerApp {
     this.streamingBubble = null;
     this.currentUtteranceId = null;
     this.streamingWords = [];
+    this.skipNextBotTranscriptAdd = true; // next onBotTranscript is same content, don't add again
   }
 
   // ===== VISUAL CARD METHODS =====
