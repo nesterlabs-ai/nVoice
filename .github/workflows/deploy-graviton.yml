@@ -189,6 +189,10 @@ jobs:
             # Clean up
             rm -rf /tmp/deploy
 
+            # Remove old Docker images, containers, and volumes to free disk space
+            echo "=== Cleaning up old Docker resources ==="
+            docker system prune -a -f --volumes || true
+
             # Refresh environment (best-effort, don't fail deploy if this errors)
             ./deploy.sh || echo "WARNING: deploy.sh had errors, continuing with explicit pull/restart"
 
