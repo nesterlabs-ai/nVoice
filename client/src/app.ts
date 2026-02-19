@@ -147,8 +147,12 @@ class VoiceScannerApp {
   private subtitleWordCount: number = 0;
   private subtitleClearOnNextSentence: boolean = false;
 
-  /** Max characters per subtitle line (wrap at word boundary). */
+  /** Max characters per subtitle line (wrap at word boundary). Desktop. */
   private static readonly MAX_SUBTITLE_LINE_CHARS = 42;
+  /** Max characters per subtitle line on mobile (viewport width ≤ 640px). */
+  private static readonly MAX_SUBTITLE_LINE_CHARS_MOBILE = 35;
+  /** Viewport width below which mobile subtitle line length is used (match CSS breakpoint). */
+  private static readonly SUBTITLE_MOBILE_BREAKPOINT_PX = 640;
   /** Delay in ms between revealing each subtitle line. */
   private static readonly SUBTITLE_LINE_REVEAL_DELAY_MS = 2000;
   /** Max subtitle lines visible at once; when a new line appears, the oldest is hidden. */
@@ -1240,8 +1244,10 @@ class VoiceScannerApp {
     // User speech: prefix with "- " so we can identify user vs bot at a glance
     const displayText = role === 'user' ? `- ${text}` : text;
 
-    // Wrap to 42 chars per line and render line by line
-    const lines = this.textToLines(displayText, VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS);
+    const maxChars = window.innerWidth <= VoiceScannerApp.SUBTITLE_MOBILE_BREAKPOINT_PX
+      ? VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS_MOBILE
+      : VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS;
+    const lines = this.textToLines(displayText, maxChars);
     this.renderSubtitleLines(lines);
 
     // Show the subtitle
