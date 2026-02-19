@@ -1484,10 +1484,12 @@ class VoiceScannerApp {
       // Returning to home — restore A2UI panel if it has content
       if (this.a2uiHasContent && this.a2uiPanel) {
         this.a2uiPanel.classList.add('visible');
+        this.syncA2UIPanelBodyClass();
       }
     } else {
       // Switching to dashboard — hide A2UI panel (keep content flag)
       this.a2uiPanel?.classList.remove('visible');
+      this.syncA2UIPanelBodyClass();
       // Force widget refresh after dashboard cards become visible (ResizeObserver needs layout)
       setTimeout(() => this.refreshSynchronizedAnalysis(), 100);
     }
@@ -3566,6 +3568,7 @@ class VoiceScannerApp {
     const isHomeScreen = this.mainLayout?.classList.contains('panels-hidden') ?? true;
     if (this.a2uiPanel && isHomeScreen) {
       this.a2uiPanel.classList.add('visible');
+      this.syncA2UIPanelBodyClass();
     }
 
     try {
@@ -3611,6 +3614,7 @@ class VoiceScannerApp {
     if (this.a2uiPanel) {
       this.a2uiPanel.classList.remove('visible');
     }
+    document.body.classList.remove('a2ui-panel-visible');
   }
 
   /**
@@ -3619,6 +3623,7 @@ class VoiceScannerApp {
   private showA2UIPanel(): void {
     if (this.a2uiPanel) {
       this.a2uiPanel.classList.add('visible');
+      document.body.classList.add('a2ui-panel-visible');
     }
   }
 
