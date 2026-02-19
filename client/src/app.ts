@@ -153,8 +153,10 @@ class VoiceScannerApp {
   private static readonly MAX_SUBTITLE_LINE_CHARS_MOBILE = 35;
   /** Viewport width below which mobile subtitle line length is used (match CSS breakpoint). */
   private static readonly SUBTITLE_MOBILE_BREAKPOINT_PX = 640;
-  /** Delay in ms between revealing each subtitle line. */
+  /** Delay in ms between revealing each subtitle line. Desktop. */
   private static readonly SUBTITLE_LINE_REVEAL_DELAY_MS = 2000;
+  /** Delay in ms between revealing each subtitle line on mobile (viewport ≤ SUBTITLE_MOBILE_BREAKPOINT_PX). */
+  private static readonly SUBTITLE_LINE_REVEAL_DELAY_MS_MOBILE = 1500;
   /** Max subtitle lines visible at once; when a new line appears, the oldest is hidden. */
   private static readonly MAX_SUBTITLE_LINES_VISIBLE = 2;
   /** Duration in ms for the subtitle scroll-up animation (then first line is removed). Match container enter/exit (500ms ease-in-out). */
@@ -1103,7 +1105,10 @@ class VoiceScannerApp {
   private renderSubtitleLines(lines: string[]): void {
     if (!this.liveSubtitleText) return;
 
-    const delayMs = VoiceScannerApp.SUBTITLE_LINE_REVEAL_DELAY_MS;
+    const isMobile = window.innerWidth <= VoiceScannerApp.SUBTITLE_MOBILE_BREAKPOINT_PX;
+    const delayMs = isMobile
+      ? VoiceScannerApp.SUBTITLE_LINE_REVEAL_DELAY_MS_MOBILE
+      : VoiceScannerApp.SUBTITLE_LINE_REVEAL_DELAY_MS;
     const maxVisible = VoiceScannerApp.MAX_SUBTITLE_LINES_VISIBLE;
 
     const shouldReset =
