@@ -1799,6 +1799,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  /* Fixed width so position doesn’t jump when first line is added (no 0→content-width reflow). */
+  width: min(85%, 672px);
   max-width: min(85%, 672px);
   opacity: 0;
   transition: opacity 500ms ease-in-out, transform 500ms ease-in-out;
