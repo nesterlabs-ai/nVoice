@@ -76,7 +76,7 @@
 }
 
 .sync-legend-dot.orange {
-  background: #f97316;
+  background: #eab308; /* Match topic flow chart yellow (AI boxes + circles) */
 }
 
 .sync-legend-dot.purple {

@@ -270,10 +270,14 @@ body {
   display: inline-block;
   line-height: 0;
   cursor: pointer;
+  width: 71px;
+  height: 18px;
 }
 
 .main-layout-logo {
   display: block;
+  width: 71px;
+  height: 18px;
 }
 
 @media (max-width: 640px) {
@@ -288,11 +292,11 @@ body {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-columns: 42.2% 28% 28%;
+  grid-template-columns: 28% 42.2% 28%;
   grid-template-rows: repeat(2, 1fr);
   row-gap: 16px;
   column-gap: 16px;
-  padding-top: 70px;
+  padding-top: 74px;
   padding-bottom: 188px;
   /* Space for floating control bar */
   padding-left: 40px;
@@ -1786,11 +1790,12 @@ body {
 }
 
 /* ===== LIVE SUBTITLE (vertically and horizontally centered) ===== */
+/* Enter/exit: 500ms ease-in-out (match design “Smart animate” feel) */
 .live-subtitle {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, calc(-50% + 10px));
   z-index: 5;
   pointer-events: none;
   display: flex;
@@ -1798,14 +1803,17 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  /* Fixed width so position doesn’t jump when first line is added (no 0→content-width reflow). */
+  width: min(85%, 672px);
   max-width: min(85%, 672px);
   opacity: 0;
-  transition: opacity 0.35s ease;
+  transition: opacity 500ms ease-in-out, transform 500ms ease-in-out;
   text-align: center;
 }
 
 .live-subtitle.visible {
   opacity: 1;
+  transform: translate(-50%, -50%);
 }
 
 /* When A2UI panel is open: move subtitle below the panel so it stays visible */
@@ -1813,8 +1821,12 @@ body.a2ui-panel-visible .live-subtitle {
   top: auto;
   bottom: 116px;
   left: 50%;
-  transform: translateX(-50%);
-  transition: top 0.25s ease, bottom 0.25s ease, left 0.25s ease, transform 0.25s ease, opacity 0.35s ease;
+  transform: translateX(-50%) translateY(10px);
+  transition: top 0.25s ease, bottom 0.25s ease, left 0.25s ease, transform 500ms ease-in-out, opacity 500ms ease-in-out;
+}
+
+body.a2ui-panel-visible .live-subtitle.visible {
+  transform: translateX(-50%) translateY(0);
 }
 
 /* Subtle card background */
@@ -1824,14 +1836,38 @@ body.a2ui-panel-visible .live-subtitle {
   inset: -12px -20px;
 }
 
-/* Multi-line block: full utterance */
+/* Multi-line block: 42 chars per line. Scroll viewport (2 lines visible, scroll for more). */
 .live-subtitle-text {
   font-size: 24px;
   line-height: 1.45;
   white-space: normal;
   overflow-wrap: break-word;
-  overflow-y: auto;
   font-family: var(--font-mono);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  /* Scroll viewport: show 2 lines, new lines scroll up from bottom, first line scrolls out */
+  max-height: calc(2 * (1.45em + 2px));
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+}
+
+.live-subtitle-text .subtitle-line {
+  display: block;
+  text-align: center;
+  flex-shrink: 0;
+  transition: opacity 500ms ease-in-out;
+}
+
+/* Any line that is not the first (top) has 30% opacity; first line stays full. */
+.live-subtitle-text .subtitle-line:not(:first-child) {
+  opacity: 0.3;
+}
+
+/* When second line scrolls up: opacity driven by JS between 50ms–400ms (no CSS transition) */
+.live-subtitle-text .subtitle-line.subtitle-line-promoted {
+  opacity: 1;
 }
 
 /* User subtitle text */

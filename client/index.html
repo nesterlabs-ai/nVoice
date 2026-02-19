@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/Nester-Logo.svg">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <!-- Critical CSS: prevent FOUC – show loader and hide status/mic until main CSS loads -->
+  <!-- Critical CSS: prevent FOUC – show loader, hide dashboard cards until main CSS loads -->
   <style>
     .loading-overlay {
       position: fixed;
@@ -22,6 +22,23 @@
     }
     .hidden {
       display: none !important;
+    }
+    /* Hide dashboard grid until main CSS loads – prevents cards flashing on refresh */
+    .main-layout .dashboard-grid {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    /* Start left/right panels off-screen so they don't slide on load (avoids slide glitch) */
+    .main-layout .left-panel {
+      transform: translateX(calc(-100% - 24px));
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .main-layout .right-panel {
+      transform: translateX(calc(100% + 24px));
+      visibility: hidden;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -56,24 +73,9 @@
       <img src="/Logo White.svg" alt="Nester" class="main-layout-logo" aria-hidden="true" />
     </a>
     <!-- 6-Card Dashboard Grid (visible when Peek/dashboard mode) -->
+    <!-- Column order: 1 = Visitor Intent + Transcript, 2 = Conversation + Emotion, 3 = Knowledge Graph + Tone -->
     <div class="dashboard-grid" id="dashboard-grid" aria-hidden="true">
-      <!-- Row 1 -->
-      <div class="dashboard-card" id="dashboard-card-1">
-        <div class="dashboard-card-header">
-          <span class="dashboard-card-label">CONVERSATION ANALYSIS</span>
-        </div>
-        <div class="dashboard-card-body">
-          <div id="synchronized-analysis-root" class="dashboard-card-inner"></div>
-        </div>
-      </div>
-      <div class="dashboard-card" id="dashboard-card-2">
-        <div class="dashboard-card-header">
-          <span class="dashboard-card-label">KNOWLEDGE GRAPH</span>
-        </div>
-        <div class="dashboard-card-body">
-          <div id="knowledge-graph-root" class="dashboard-card-inner"></div>
-        </div>
-      </div>
+      <!-- Column 1: Visitor Intent (top), Transcript (bottom) -->
       <div class="dashboard-card visitor-intent-card" id="dashboard-card-3">
         <div class="dashboard-card-header">
           <span class="dashboard-card-label">VISITOR INTENT</span>
@@ -111,7 +113,35 @@
           </div>
         </div>
       </div>
-      <!-- Row 2 -->
+      <div class="dashboard-card" id="dashboard-card-1">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">CONVERSATION ANALYSIS</span>
+        </div>
+        <div class="dashboard-card-body">
+          <div id="synchronized-analysis-root" class="dashboard-card-inner"></div>
+        </div>
+      </div>
+      <div class="dashboard-card" id="dashboard-card-2">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">KNOWLEDGE GRAPH</span>
+        </div>
+        <div class="dashboard-card-body">
+          <div id="knowledge-graph-root" class="dashboard-card-inner"></div>
+        </div>
+      </div>
+      <!-- Column 2: Emotion Analysis (below Conversation Analysis) -->
+      <div class="dashboard-card" id="dashboard-card-6">
+        <div class="dashboard-card-header transcript-header">
+          <span class="status-dot active" id="transcript-status-dot"></span>
+          <span class="dashboard-card-label">Transcript</span>
+          <span id="transcript-status" class="hidden">READY</span>
+        </div>
+        <div class="dashboard-card-body transcript-log-body" id="transcript-list">
+          <div class="welcome-message transcript-welcome" id="welcome-message">
+            <span class="transcript-welcome-text">Messages will appear here</span>
+          </div>
+        </div>
+      </div>
       <div class="dashboard-card" id="dashboard-card-4">
         <div class="dashboard-card-header">
           <span class="dashboard-card-label">EMOTION ANALYSIS</span>
@@ -141,18 +171,6 @@
         </div>
         <div class="dashboard-card-body">
           <div id="tone-modulator-root" class="dashboard-card-inner"></div>
-        </div>
-      </div>
-      <div class="dashboard-card" id="dashboard-card-6">
-        <div class="dashboard-card-header transcript-header">
-          <span class="status-dot active" id="transcript-status-dot"></span>
-          <span class="dashboard-card-label">Transcript</span>
-          <span id="transcript-status" class="hidden">READY</span>
-        </div>
-        <div class="dashboard-card-body transcript-log-body" id="transcript-list">
-          <div class="welcome-message transcript-welcome" id="welcome-message">
-            <span class="transcript-welcome-text">Messages will appear here</span>
-          </div>
         </div>
       </div>
     </div>
