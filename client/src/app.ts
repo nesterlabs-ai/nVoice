@@ -153,8 +153,8 @@ class VoiceScannerApp {
   private static readonly SUBTITLE_LINE_REVEAL_DELAY_MS = 2000;
   /** Max subtitle lines visible at once; when a new line appears, the oldest is hidden. */
   private static readonly MAX_SUBTITLE_LINES_VISIBLE = 2;
-  /** Duration in ms for the subtitle scroll-up animation (then first line is removed). */
-  private static readonly SUBTITLE_SCROLL_DURATION_MS = 450;
+  /** Duration in ms for the subtitle scroll-up animation (then first line is removed). Match container enter/exit (500ms ease-in-out). */
+  private static readonly SUBTITLE_SCROLL_DURATION_MS = 500;
   /** Timeouts for sequential line reveal; cleared when a new render starts. */
   private subtitleRevealTimeouts: ReturnType<typeof setTimeout>[] = [];
   /** Lines we've already scheduled (so we only append new lines, don't reset on every word). */
@@ -1125,6 +1125,7 @@ class VoiceScannerApp {
         const idx = i;
         const timeout = setTimeout(() => {
           if (!this.liveSubtitleText) return;
+          this.clearSubtitleLinePromoted();
           const el = document.createElement('span');
           el.className = 'subtitle-line';
           el.textContent = line;
@@ -1147,6 +1148,7 @@ class VoiceScannerApp {
         const delayFromNow = (i - start + 1) * delayMs;
         const timeout = setTimeout(() => {
           if (!this.liveSubtitleText) return;
+          this.clearSubtitleLinePromoted();
           const el = document.createElement('span');
           el.className = 'subtitle-line';
           el.textContent = line;
@@ -1161,6 +1163,13 @@ class VoiceScannerApp {
     }
   }
 
+  /** Remove promoted class from all subtitle lines so nth-child(2) correctly gets 30% opacity. */
+  private clearSubtitleLinePromoted(): void {
+    this.liveSubtitleText?.querySelectorAll('.subtitle-line-promoted').forEach((el) => {
+      el.classList.remove('subtitle-line-promoted');
+    });
+  }
+
   /**
    * Scrolls the subtitle viewport up by one line (smooth), then removes the first line and resets scroll.
    * Call after appending a new line when we're at max visible lines (scroll-up-then-remove effect).
@@ -1169,15 +1178,46 @@ class VoiceScannerApp {
     const container = this.liveSubtitleText;
     if (!container) return;
     const first = container.firstElementChild as HTMLElement | null;
+    const second = first?.nextElementSibling as HTMLElement | null;
     if (!first) return;
     const gap = 2;
     const scrollAmount = first.offsetHeight + gap;
-    container.scrollTop = scrollAmount;
-    window.setTimeout(() => {
-      if (!container.firstElementChild) return;
-      container.firstElementChild.remove();
-      container.scrollTop = 0;
-    }, VoiceScannerApp.SUBTITLE_SCROLL_DURATION_MS);
+    const durationMs = VoiceScannerApp.SUBTITLE_SCROLL_DURATION_MS;
+    const startTop = container.scrollTop;
+    const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const opacityStartMs = 50;
+    const opacityEndMs = 250;
+    let startTime: number | null = null;
+    const tick = (now: number) => {
+      if (startTime === null) {
+        startTime = now;
+        if (second) second.classList.add('subtitle-line-promoted');
+      }
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / durationMs, 1);
+      container.scrollTop = startTop + (scrollAmount - startTop) * easeInOutCubic(t);
+      if (second) {
+        if (elapsed < opacityStartMs) {
+          second.style.opacity = '0.3';
+        } else if (elapsed >= opacityEndMs) {
+          second.style.opacity = '1';
+        } else {
+          const u = (elapsed - opacityStartMs) / (opacityEndMs - opacityStartMs);
+          const e = easeInOutCubic(u);
+          second.style.opacity = String(0.3 + 0.7 * e);
+        }
+      }
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        if (second) second.style.removeProperty('opacity');
+        if (container.firstElementChild) {
+          container.firstElementChild.remove();
+          container.scrollTop = 0;
+        }
+      }
+    };
+    requestAnimationFrame(tick);
   }
 
   /**

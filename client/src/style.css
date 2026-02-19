@@ -1786,11 +1786,12 @@ body {
 }
 
 /* ===== LIVE SUBTITLE (vertically and horizontally centered) ===== */
+/* Enter/exit: 500ms ease-in-out (match design “Smart animate” feel) */
 .live-subtitle {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, calc(-50% + 10px));
   z-index: 5;
   pointer-events: none;
   display: flex;
@@ -1800,12 +1801,13 @@ body {
   gap: 6px;
   max-width: min(85%, 672px);
   opacity: 0;
-  transition: opacity 0.35s ease;
+  transition: opacity 500ms ease-in-out, transform 500ms ease-in-out;
   text-align: center;
 }
 
 .live-subtitle.visible {
   opacity: 1;
+  transform: translate(-50%, -50%);
 }
 
 /* When A2UI panel is open: move subtitle below the panel so it stays visible */
@@ -1813,8 +1815,12 @@ body.a2ui-panel-visible .live-subtitle {
   top: auto;
   bottom: 116px;
   left: 50%;
-  transform: translateX(-50%);
-  transition: top 0.25s ease, bottom 0.25s ease, left 0.25s ease, transform 0.25s ease, opacity 0.35s ease;
+  transform: translateX(-50%) translateY(10px);
+  transition: top 0.25s ease, bottom 0.25s ease, left 0.25s ease, transform 500ms ease-in-out, opacity 500ms ease-in-out;
+}
+
+body.a2ui-panel-visible .live-subtitle.visible {
+  transform: translateX(-50%) translateY(0);
 }
 
 /* Subtle card background */
@@ -1845,6 +1851,17 @@ body.a2ui-panel-visible .live-subtitle {
   display: block;
   text-align: center;
   flex-shrink: 0;
+  transition: opacity 500ms ease-in-out;
+}
+
+/* Any line that is not the first (top) has 30% opacity; first line stays full. */
+.live-subtitle-text .subtitle-line:not(:first-child) {
+  opacity: 0.3;
+}
+
+/* When second line scrolls up: opacity driven by JS between 50ms–400ms (no CSS transition) */
+.live-subtitle-text .subtitle-line.subtitle-line-promoted {
+  opacity: 1;
 }
 
 /* User subtitle text */
