@@ -1142,6 +1142,16 @@ class VoiceScannerApp {
           if (idx >= maxVisible) {
             this.scrollSubtitleAndRemoveFirst();
           }
+          // When this is the last line and we have 2+ lines, after one reveal-delay promote 2nd to 1st (no new line coming).
+          if (idx === lines.length - 1 && lines.length >= 2) {
+            const promoteTimeout = setTimeout(() => {
+              if (!this.liveSubtitleText) return;
+              if (this.liveSubtitleText.children.length >= 2) {
+                this.scrollSubtitleAndRemoveFirst();
+              }
+            }, delayMs);
+            this.subtitleRevealTimeouts.push(promoteTimeout);
+          }
         }, idx * delayMs);
         this.subtitleRevealTimeouts.push(timeout);
       }
@@ -1164,6 +1174,16 @@ class VoiceScannerApp {
           this.liveSubtitleText.appendChild(el);
           if (idx >= maxVisible) {
             this.scrollSubtitleAndRemoveFirst();
+          }
+          // When this is the last line and we have 2+ lines, after one reveal-delay promote 2nd to 1st (no new line coming).
+          if (idx === lines.length - 1 && lines.length >= 2) {
+            const promoteTimeout = setTimeout(() => {
+              if (!this.liveSubtitleText) return;
+              if (this.liveSubtitleText.children.length >= 2) {
+                this.scrollSubtitleAndRemoveFirst();
+              }
+            }, delayMs);
+            this.subtitleRevealTimeouts.push(promoteTimeout);
           }
         }, delayFromNow);
         this.subtitleRevealTimeouts.push(timeout);
