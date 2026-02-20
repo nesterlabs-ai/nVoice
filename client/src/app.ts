@@ -327,6 +327,7 @@ class VoiceScannerApp {
     document.getElementById('control-peak')?.addEventListener('click', () => this.toggleSidePanels());
     document.getElementById('control-close')?.addEventListener('click', () => {
       this.hideA2UIPanel();
+      this.showCloseOptions(); // Switch bar to Restart | Peek so user can restart or peek
       this.handleDisconnect();
     });
     document.getElementById('control-speaker')?.addEventListener('click', () => this.toggleSpeakerIcon());
@@ -2510,7 +2511,8 @@ class VoiceScannerApp {
             this.setCloseButtonEnabled(true);
             this.log('Disconnected');
             this.setVoiceState('idle');
-            this.hideCloseOptions(); // Always clear close-mode so connect button re-appears
+            // Do not clear close-mode here: when user clicked Close we keep Restart | Peek visible.
+            // When server/error disconnects, we're not in close-mode so updateConnectionUI(false) will show connect area.
             this.updateConnectionUI(false);
             this.stopAudioVisualization();
             this.startIdleBlobAnimation(); // Keep wave animating in idle state
