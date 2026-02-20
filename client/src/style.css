@@ -1510,6 +1510,8 @@ body {
   align-items: center;
   justify-content: center;
   position: relative;
+  z-index: 6;
+  /* Above dashboard-grid (z-index: 5) so media bar / control-btn-close stay clickable in peek mode */
   padding: var(--panel-gap);
   padding-bottom: 300px;
   /* Space for larger wave */
