@@ -17,8 +17,13 @@ TIER 2: Semantic/Keyword Intent Understanding
    - Keyword: Falls back to pattern matching if semantic unavailable
    - Examples: "how can I contact you" → contact-card
 
-TIER 3: Fallback to Simple Card
-   - No pattern matches, use simple text card
+TIER 2a: Critical Pattern Override
+   - Strong pattern matches that bypass semantic/keyword priority
+   - "what is X" / "who is X" → magazine-hero (for single-subject queries)
+   - Contact patterns with multiple keywords → contact-card
+
+TIER 3: Fallback to Magazine Hero
+   - No pattern matches, use magazine-style content
 """
 
 from typing import Optional, Dict, Any
@@ -135,11 +140,13 @@ class A2UIOrchestrator:
     """
     A2UI Orchestrator for template selection based on user queries.
 
-    Provides 3-tier template selection:
+    Provides multi-tier template selection (matching a2ui-chatbot-service):
     1a. Custom template (API parameter)
-    1b. Explicit template requests
-    2. Semantic/keyword-based detection
-    3. Fallback to simple card
+    1b. Explicit template requests (user mentions template name)
+    2a. Critical pattern overrides (contact, "what is" queries)
+    2b. Semantic intent understanding (sentence embeddings)
+    2c. Keyword pattern matching (fallback)
+    3. Fallback to magazine-hero
     """
 
     def __init__(self, use_semantic: bool = True):
@@ -241,14 +248,92 @@ def detect_tier(
                 }
     logger.debug("   No explicit template keywords found")
 
-    # ==================== TIER 2: SEMANTIC + KEYWORD DETECTION ====================
-    logger.debug("🔍 Checking TIER 2: Semantic + Keyword detection...")
+    # ==================== TIER 2a: CRITICAL PATTERN OVERRIDES ====================
+    # These patterns bypass semantic/keyword priority matching
+    # Only catch queries where semantic model consistently fails or priority would be wrong
+    logger.debug("🔍 Checking TIER 2a: Critical pattern overrides...")
 
-    # First, collect keyword matches (we'll use them as fallback)
+    # Check for contact information queries (contact-card)
+    contact_patterns = ["how to contact", "how can i contact", "contact information", "reach out", "get in touch"]
+    contact_keywords = ["contact", "email", "phone", "address", "location", "office", "reach"]
+
+    # Strong signal: query starts with contact pattern OR has multiple contact keywords
+    starts_with_contact_pattern = any(query_lower.startswith(pattern) for pattern in contact_patterns)
+    contact_keyword_count = sum(1 for kw in contact_keywords if kw in query_lower)
+
+    if starts_with_contact_pattern or contact_keyword_count >= 2:
+        logger.info(f"🎯 TIER 2a: Critical pattern override → contact-card")
+        logger.info("   (Bypassing semantic/keyword for clear contact information request)")
+        return {
+            "tier": "tier2a_critical",
+            "tier_name": "Critical Pattern Override",
+            "template_type": "contact-card",
+            "mode": "pattern_override",
+            "description": "Query pattern indicates contact information request",
+            "matched_pattern": "contact information",
+            "selection_method": "critical_pattern"
+        }
+
+    # Check for "what is" / "who is" pattern (magazine-hero)
+    # These single-subject overview queries should use magazine-hero
+    if query_lower.startswith("what is") or query_lower.startswith("who is"):
+        # Avoid false positives for specific content-type queries
+        content_keywords = ["service", "team", "contact", "history", "difference", "project", "product"]
+        has_specific_content = any(keyword in query_lower for keyword in content_keywords)
+
+        if not has_specific_content:
+            logger.info(f"🎯 TIER 2a: Critical pattern override → magazine-hero")
+            logger.info("   (Bypassing semantic/keyword for single-subject overview query)")
+            return {
+                "tier": "tier2a_critical",
+                "tier_name": "Critical Pattern Override",
+                "template_type": "magazine-hero",
+                "mode": "pattern_override",
+                "description": "Question pattern indicates single-subject overview",
+                "matched_pattern": "what is / who is",
+                "selection_method": "critical_pattern"
+            }
+
+    logger.debug("   No critical pattern overrides matched")
+
+    # ==================== TIER 2b: SEMANTIC MATCHING ====================
+    # Use semantic understanding if available
+    if use_semantic and semantic_selector:
+        logger.debug("🔍 Checking TIER 2b: Semantic intent understanding...")
+        try:
+            # Use semantic selection directly (like reference service)
+            template_type, confidence = semantic_selector.select_template(
+                query=query,
+                threshold=0.3  # Moderate threshold for quality template matching
+            )
+
+            if template_type and confidence >= 0.3:
+                logger.info(f"🏆 TIER 2b MATCH (Semantic): Template selected!")
+                logger.info(f"   Template: {template_type}")
+                logger.info(f"   Confidence: {confidence:.3f}")
+                return {
+                    "tier": "tier2b_semantic",
+                    "tier_name": "Semantic Template Selection",
+                    "template_type": template_type,
+                    "mode": "semantic",
+                    "description": f"Semantic intent understanding (confidence: {confidence:.3f})",
+                    "confidence": confidence,
+                    "selection_method": "semantic"
+                }
+            else:
+                logger.debug(f"   Semantic confidence too low ({confidence:.3f}), falling through...")
+        except Exception as e:
+            logger.warning(f"⚠️ Semantic selection failed: {e}")
+            logger.warning("   Falling back to keyword matching")
+
+    # ==================== TIER 2c: KEYWORD FALLBACK ====================
+    # Fall back to keyword matching if semantic unavailable or low confidence
+    logger.debug("🔍 Checking TIER 2c: Keyword pattern matching...")
+
     keyword_result = None
     keyword_match_info = None
-    logger.debug("   Collecting keyword pattern matches...")
     all_matches = []
+
     for pattern_name, pattern_config in TEMPLATE_PATTERNS.items():
         keywords = pattern_config["keywords"]
         priority = pattern_config.get("priority", 50)
@@ -270,80 +355,32 @@ def detect_tier(
         best_match = all_matches[0]
         keyword_result = best_match["template"]
         keyword_match_info = best_match
-        logger.debug(f"   Best keyword match: '{best_match['keyword']}' → {keyword_result}")
 
-    # Now try semantic matching if available (with hybrid fallback)
-    if use_semantic and semantic_selector:
-        logger.debug("   Trying semantic matching with hybrid fallback...")
-        try:
-            # Use the hybrid method that considers keyword results
-            template_type, confidence, method = semantic_selector.select_template_with_fallback(
-                query=query,
-                keyword_result=keyword_result,
-                semantic_threshold=0.15,
-                confidence_threshold=0.5
-            )
-
-            if method == "semantic":
-                logger.info(f"🏆 TIER 2 MATCH (Semantic): Template selected!")
-                logger.info(f"   Template: {template_type}")
-                logger.info(f"   Confidence: {confidence:.3f}")
-                return {
-                    "tier": "tier2_semantic",
-                    "tier_name": "Semantic Template Selection",
-                    "template_type": template_type,
-                    "mode": "semantic",
-                    "description": f"Semantic matching (confidence: {confidence:.3f})",
-                    "confidence": confidence
-                }
-            elif method == "keyword_fallback" and keyword_match_info:
-                logger.info(f"🏆 TIER 2 MATCH (Keyword via Semantic Fallback): Pattern detected!")
-                logger.info(f"   Template: {template_type}")
-                logger.info(f"   Semantic confidence was: {confidence:.3f} (below threshold)")
-                logger.info(f"   Using keyword match: '{keyword_match_info['keyword']}'")
-                return {
-                    "tier": "tier2_registry",
-                    "tier_name": "Registry Template (Semantic Fallback)",
-                    "pattern": keyword_match_info["pattern"],
-                    "template_type": template_type,
-                    "mode": "registry_semantic_fallback",
-                    "description": keyword_match_info["description"],
-                    "matched_keyword": keyword_match_info["keyword"],
-                    "semantic_confidence": confidence
-                }
-            elif method == "default":
-                # No match from semantic, fall through to keyword-only or Tier 3
-                logger.debug(f"   Semantic returned default, checking keyword matches...")
-        except Exception as e:
-            logger.warning(f"⚠️ Semantic selection failed: {e}")
-            logger.warning("   Falling back to keyword-only matching")
-
-    # If semantic not available or failed, use keyword result directly
-    if keyword_match_info:
-        logger.info(f"🏆 TIER 2 MATCH (Keyword): Pattern detected!")
+        logger.info(f"🏆 TIER 2c MATCH (Keyword): Pattern detected!")
         logger.info(f"   Pattern: {keyword_match_info['pattern']}")
         logger.info(f"   Template: {keyword_match_info['template']}")
         logger.info(f"   Matched keyword: '{keyword_match_info['keyword']}'")
         logger.info(f"   Total matches found: {len(all_matches)}")
         return {
-            "tier": "tier2_registry",
-            "tier_name": "Registry Template",
+            "tier": "tier2c_keyword",
+            "tier_name": "Keyword Pattern Match",
             "pattern": keyword_match_info["pattern"],
             "template_type": keyword_match_info["template"],
-            "mode": "registry",
+            "mode": "keyword",
             "description": keyword_match_info["description"],
-            "matched_keyword": keyword_match_info["keyword"]
+            "matched_keyword": keyword_match_info["keyword"],
+            "selection_method": "keyword"
         }
 
-    # ==================== TIER 3: FALLBACK TO SIMPLE CARD ====================
-    logger.info("📋 TIER 3: No pattern match - using simple card fallback")
+    # ==================== TIER 3: FALLBACK TO MAGAZINE HERO ====================
+    logger.info("📋 TIER 3: No pattern match - using magazine hero fallback")
     logger.info("   This is normal for general questions without specific visual needs")
     return {
         "tier": "tier3_fallback",
-        "tier_name": "Simple Card Fallback",
-        "template_type": "simple-card",
+        "tier_name": "Magazine Hero Fallback",
+        "template_type": "magazine-hero",
         "mode": "fallback",
-        "description": "No specific template matched, using simple card"
+        "description": "No specific template matched, using magazine hero"
     }
 
 
@@ -369,21 +406,44 @@ def get_tier_metadata(tier_info: Dict[str, Any]) -> Dict[str, Any]:
 # Test function
 if __name__ == "__main__":
     test_queries = [
-        "What are your products?",
-        "Tell me about the company history",
-        "How can I contact you?",
-        "What is Nester AI?",
-        "Show me a comparison chart of plans",
-        "Who are the team members?",
-        "What services do you offer?",
+        # Tier 2a: Critical Pattern Overrides
+        ("What is Nester AI?", "magazine-hero"),  # "what is" → magazine-hero
+        ("What is NesterLabs?", "magazine-hero"),  # "what is" → magazine-hero
+        ("Who is the CEO?", "magazine-hero"),  # "who is" → magazine-hero
+        ("How can I contact you?", "contact-card"),  # contact pattern → contact-card
+        ("What is your email and phone?", "contact-card"),  # multiple contact keywords → contact-card
+
+        # Tier 2a exceptions (specific content keywords should NOT trigger override)
+        ("What is your service?", "service-hover-reveal"),  # "service" → NOT magazine-hero
+        ("What is your team?", "team-flip-cards"),  # "team" → NOT magazine-hero
+
+        # Tier 2b/2c: Semantic/Keyword matching
+        ("What are your products?", "template-grid"),
+        ("Tell me about the company history", "timeline"),
+        ("Show me a comparison chart of plans", "comparison-chart"),
+        ("Who are the team members?", "team-flip-cards"),
+        ("What services do you offer?", "service-hover-reveal"),
+        ("Show me your projects", "template-grid"),
     ]
 
     print("\n" + "=" * 60)
     print("A2UI ORCHESTRATOR - TIER DETECTION EXAMPLES")
     print("=" * 60)
 
-    for query in test_queries:
-        print(f"\nQuery: \"{query}\"")
-        tier_info = detect_tier(query)
-        print(f"  → {tier_info['tier_name']}: {tier_info['template_type']}")
-        print(f"  → {tier_info['description']}")
+    correct = 0
+    for query, expected in test_queries:
+        tier_info = detect_tier(query, use_semantic=False)  # Test without semantic for consistency
+        template = tier_info['template_type']
+        is_correct = template == expected
+        if is_correct:
+            correct += 1
+
+        status = "✅" if is_correct else "❌"
+        print(f"\n{status} Query: \"{query}\"")
+        print(f"   Expected: {expected}, Got: {template}")
+        print(f"   Tier: {tier_info['tier_name']}")
+
+    accuracy = (correct / len(test_queries)) * 100
+    print("\n" + "=" * 60)
+    print(f"ACCURACY: {correct}/{len(test_queries)} ({accuracy:.1f}%)")
+    print("=" * 60)
