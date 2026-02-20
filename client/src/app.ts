@@ -328,7 +328,6 @@ class VoiceScannerApp {
     document.getElementById('control-close')?.addEventListener('click', () => {
       this.hideA2UIPanel();
       this.handleDisconnect();
-      this.showCloseOptions();
     });
     document.getElementById('control-speaker')?.addEventListener('click', () => this.toggleSpeakerIcon());
     document.getElementById('control-mic')?.addEventListener('click', () => this.toggleMicIcon());
@@ -2511,6 +2510,7 @@ class VoiceScannerApp {
             this.setCloseButtonEnabled(true);
             this.log('Disconnected');
             this.setVoiceState('idle');
+            this.hideCloseOptions(); // Always clear close-mode so connect button re-appears
             this.updateConnectionUI(false);
             this.stopAudioVisualization();
             this.startIdleBlobAnimation(); // Keep wave animating in idle state
