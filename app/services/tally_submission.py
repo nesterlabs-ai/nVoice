@@ -1,12 +1,13 @@
 """
 Tally.so form submission service for appointment booking.
 
-This service handles submission of appointment bookings to Tally.so forms
-using their widget API endpoint.
+Uses the public widget endpoint (same as browser/embed):
+  POST https://tally.so/api/forms/{formId}/respond
+No API key required — identical to how the embedded form on nesterlabs.com submits.
 """
 
+import uuid
 import httpx
-import os
 from loguru import logger
 from typing import Optional, Dict, Any
 
@@ -15,37 +16,21 @@ class TallySubmissionService:
     """Service for submitting appointment bookings to Tally.so"""
 
     def __init__(self):
-        """Initialize Tally.so submission service"""
-        # Tally form details
         self.form_id = "eqe11o"
-        self.workspace_id = "nGLP0e"
+        # Public embed endpoint — no auth needed
+        self.submission_endpoint = f"https://tally.so/api/forms/{self.form_id}/respond"
 
-        # Tally API key (required for authenticated submissions)
-        self.api_key = os.getenv("TALLY_API_KEY", "")
-
-        # Use authenticated API endpoint
-        self.submission_endpoint = f"https://api.tally.so/forms/{self.form_id}/responses"
-
-        # Field UUIDs from Tally form inspection
+        # groupUuid values (NOT block uuids) — these are the correct response keys
         self.field_ids = {
-            "first_name": "9f9ccc37-aaab-4aa4-8818-16cf23bd0201",
-            "last_name": "38ac8997-ef4a-4dce-b160-5a7ff5b925e6",
-            "email": "07a7e484-e5d8-46fb-b636-dec371b35115",
-            "submitted_by": "40cbe6a4-0722-45c9-b9db-3f022fa505d2"
+            "first_name":   "f9fdb3ab-8281-48e2-85aa-19b9a251af54",
+            "last_name":    "5bcb2e18-3723-4221-b8d3-1d35afceb363",
+            "email":        "a4d47c9e-7b51-4f53-96aa-28e34c3edfa1",
+            "submitted_by": "22ace3dc-fa1b-4630-8747-3075d26a58f1",
         }
 
         self._client: Optional[httpx.AsyncClient] = None
 
-        if not self.api_key:
-            logger.warning("⚠️ TALLY_API_KEY not set - appointment submissions will fail")
-
     async def _get_client(self) -> httpx.AsyncClient:
-        """
-        Get or create shared HTTP client with connection pooling.
-
-        Returns:
-            Configured httpx.AsyncClient instance
-        """
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(10.0, connect=5.0),
@@ -60,55 +45,26 @@ class TallySubmissionService:
         last_name: str,
         email: str
     ) -> Dict[str, Any]:
-        """
-        Submit appointment booking to Tally.so.
-
-        Args:
-            first_name: User's first name
-            last_name: User's last name
-            email: User's email address
-
-        Returns:
-            Dictionary with:
-                - success (bool): Whether submission was successful
-                - message (str): Success message (if success=True)
-                - error (str): Error message (if success=False)
-
-        Example:
-            >>> service = TallySubmissionService()
-            >>> result = await service.submit_appointment(
-            ...     first_name="John",
-            ...     last_name="Smith",
-            ...     email="john.smith@example.com"
-            ... )
-            >>> print(result)
-            {'success': True, 'message': "Great! I've scheduled your appointment..."}
-        """
+        """Submit appointment booking via Tally's public embed endpoint."""
         try:
-            if not self.api_key:
-                logger.error("TALLY_API_KEY not configured")
-                return {
-                    "success": False,
-                    "error": "Appointment system not configured. Please contact us at contact@nesterlabs.com"
-                }
-
             client = await self._get_client()
 
-            # Tally API v1 submission format
-            # See: https://tally.so/help/api
+            # Payload mirrors what the Tally embed widget sends in the browser
             payload = {
-                "fields": [
-                    {"field_id": self.field_ids["first_name"], "value": first_name},
-                    {"field_id": self.field_ids["last_name"], "value": last_name},
-                    {"field_id": self.field_ids["email"], "value": email},
-                    {"field_id": self.field_ids["submitted_by"], "value": "Nester AI"}
-                ]
+                "sessionUuid":   str(uuid.uuid4()),
+                "respondentUuid": str(uuid.uuid4()),
+                "responses": {
+                    self.field_ids["first_name"]:   first_name,
+                    self.field_ids["last_name"]:    last_name,
+                    self.field_ids["email"]:        email,
+                    self.field_ids["submitted_by"]: "Nester AI",
+                },
+                "isCompleted": True,
+                "captchas": {},
+                "password": None,
             }
 
-            logger.info(
-                f"Submitting appointment to Tally.so for {first_name} {last_name} ({email})"
-            )
-            logger.debug(f"Tally.so payload: {payload}")
+            logger.info(f"Submitting appointment to Tally.so for {first_name} {last_name} ({email})")
 
             response = await client.post(
                 self.submission_endpoint,
@@ -116,19 +72,19 @@ class TallySubmissionService:
                 headers={
                     "Content-Type": "application/json",
                     "Accept": "application/json",
-                    "Authorization": f"Bearer {self.api_key}"
+                    "Origin": "https://tally.so",
+                    "Referer": f"https://tally.so/r/{self.form_id}",
                 }
             )
 
             response.raise_for_status()
 
-            logger.info(
-                f"Tally.so submission successful: {response.status_code} for {email}"
-            )
+            data = response.json()
+            logger.info(f"Tally.so submission successful: submissionId={data.get('submissionId')} for {email}")
 
             return {
                 "success": True,
-                "message": f"Great! I've scheduled your appointment. You'll receive a confirmation at {email}."
+                "message": "We've received your request! Someone from our team will reach out to you shortly."
             }
 
         except httpx.TimeoutException:
@@ -139,9 +95,7 @@ class TallySubmissionService:
             }
 
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Tally.so HTTP error: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"Tally.so HTTP error: {e.response.status_code} - {e.response.text[:200]}")
             return {
                 "success": False,
                 "error": "Something went wrong with the booking. Let me try that again."
@@ -155,7 +109,5 @@ class TallySubmissionService:
             }
 
     async def close(self):
-        """Close HTTP client and clean up resources"""
         if self._client and not self._client.is_closed:
-            logger.debug("Closing Tally.so HTTP client")
             await self._client.aclose()

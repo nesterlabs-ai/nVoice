@@ -198,10 +198,17 @@ export interface MagazineHeroProps {
   title: string;
   subtitle?: string;
   content: string;
+  image?: string;
   metadata?: {
     author?: string;
     date?: string;
   };
+  projectInfo?: {
+    year?: string;
+    team?: string;
+    duration?: string;
+  };
+  services?: string[];
   tags?: string[];
   pullQuote?: string;
 }
@@ -230,7 +237,9 @@ export interface BlogPost {
   category?: string;
   author?: string;
   date?: string;
+  readTime?: string;
   image?: string;
+  featured?: boolean;
 }
 
 export interface ImageGalleryProps {
@@ -331,7 +340,7 @@ export function isVisualHint(msg: any): msg is VisualHintMessage {
  * Get template type from A2UI document
  */
 export function getTemplateType(doc: A2UIDocument): A2UITemplateType {
-  return doc?.root?.type || 'simple-card';
+  return doc?.root?.type || 'magazine-hero';
 }
 
 /**

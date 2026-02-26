@@ -8,18 +8,20 @@
 import type {
   A2UIDocument,
   A2UITemplateType,
-  SimpleCardProps,
   TemplateGridProps,
   TimelineProps,
   ContactCardProps,
   ComparisonChartProps,
   StatsFlowLayoutProps,
+  StatsChartProps,
   TeamFlipCardsProps,
   ServiceHoverRevealProps,
   MagazineHeroProps,
   FAQAccordionProps,
+  BlogMagazineProps,
   ImageGalleryProps,
   VideoGalleryProps,
+  SalesDashboardProps,
 } from '../../types/a2ui';
 
 /**
@@ -60,9 +62,6 @@ export class A2UIRenderer {
 
     // Route to appropriate renderer
     switch (templateType) {
-      case 'simple-card':
-        wrapper.appendChild(this.renderSimpleCard(props as SimpleCardProps));
-        break;
       case 'template-grid':
         wrapper.appendChild(this.renderTemplateGrid(props as TemplateGridProps));
         break;
@@ -96,17 +95,20 @@ export class A2UIRenderer {
       case 'video-gallery':
         wrapper.appendChild(this.renderVideoGallery(props as VideoGalleryProps));
         break;
+      case 'stats-chart':
+        wrapper.appendChild(this.renderStatsChart(props as StatsChartProps));
+        break;
+      case 'blog-magazine':
+        wrapper.appendChild(this.renderBlogMagazine(props as BlogMagazineProps));
+        break;
+      case 'sales-dashboard':
+        wrapper.appendChild(this.renderSalesDashboard(props as SalesDashboardProps));
+        break;
       default:
         wrapper.appendChild(this.renderFallback(props));
     }
 
-    // Add metadata badge
-    if (doc._metadata) {
-      const badge = document.createElement('div');
-      badge.className = 'a2ui-tier-badge';
-      badge.textContent = doc._metadata.tier_name;
-      wrapper.appendChild(badge);
-    }
+    // Tier badge removed - was showing debug info like "Registry Template" to users
 
     this.container.appendChild(wrapper);
   }
@@ -119,23 +121,6 @@ export class A2UIRenderer {
   }
 
   // ==================== Template Renderers ====================
-
-  private renderSimpleCard(props: SimpleCardProps): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'a2ui-simple-card';
-
-    card.innerHTML = `
-      <div class="a2ui-card-header">
-        ${props.icon ? `<span class="a2ui-icon">${this.getIcon(props.icon)}</span>` : ''}
-        <h3 class="a2ui-card-title">${this.escapeHtml(props.title)}</h3>
-      </div>
-      <div class="a2ui-card-content">
-        <p>${this.escapeHtml(props.content)}</p>
-      </div>
-    `;
-
-    return card;
-  }
 
   private renderTemplateGrid(props: TemplateGridProps): HTMLElement {
     const grid = document.createElement('div');
@@ -340,13 +325,24 @@ export class A2UIRenderer {
     const cards = document.createElement('div');
     cards.className = 'a2ui-team-grid';
 
+    // Dynamic column count based on number of members (max 4 columns)
+    const memberCount = props.members?.length || 0;
+    const columnCount = Math.min(memberCount, 4);
+    cards.style.gridTemplateColumns = `repeat(${columnCount}, minmax(0, 1fr))`;
+
     (props.members || []).forEach((member) => {
       const card = document.createElement('div');
       card.className = 'a2ui-team-card';
 
+      // Get initials (first letter of first name + first letter of last name)
+      const nameParts = member.name.trim().split(/\s+/);
+      const initials = nameParts.length >= 2
+        ? (nameParts[0].charAt(0) + nameParts[nameParts.length - 1].charAt(0)).toUpperCase()
+        : member.name.substring(0, 2).toUpperCase();
+
       card.innerHTML = `
         <div class="a2ui-team-front">
-          <div class="a2ui-team-avatar">${member.name.charAt(0)}</div>
+          <div class="a2ui-team-avatar">${initials}</div>
           <h4 class="a2ui-team-name">${this.escapeHtml(member.name)}</h4>
           <span class="a2ui-team-role">${this.escapeHtml(member.role)}</span>
         </div>
@@ -379,16 +375,19 @@ export class A2UIRenderer {
     const list = document.createElement('div');
     list.className = 'a2ui-services-list';
 
-    (props.services || []).forEach((service) => {
+    (props.services || []).forEach((service, idx) => {
       const item = document.createElement('div');
       item.className = 'a2ui-service-item';
 
       item.innerHTML = `
         <div class="a2ui-service-header">
+          <span class="a2ui-service-number">${String(idx + 1).padStart(2, '0')}</span>
           <h4 class="a2ui-service-name">${this.escapeHtml(service.name)}</h4>
+          <span class="a2ui-service-arrow">→</span>
         </div>
         <div class="a2ui-service-reveal">
           <p>${this.escapeHtml(service.description)}</p>
+          ${service.fullDescription ? `<p class="a2ui-service-full">${this.escapeHtml(service.fullDescription)}</p>` : ''}
         </div>
       `;
 
@@ -403,15 +402,48 @@ export class A2UIRenderer {
     const hero = document.createElement('div');
     hero.className = 'a2ui-magazine-hero';
 
+    const hasInfoCards = props.projectInfo || props.services?.length;
+
     hero.innerHTML = `
       <div class="a2ui-hero-header">
         <h2 class="a2ui-hero-title">${this.escapeHtml(props.title)}</h2>
-        ${props.subtitle ? `<p class="a2ui-hero-subtitle">${this.escapeHtml(props.subtitle)}</p>` : ''}
+        <p class="a2ui-hero-description">${this.escapeHtml(props.content)}</p>
       </div>
+
+      ${hasInfoCards ? `
+        <div class="a2ui-hero-layout">
+          <div class="a2ui-hero-media">
+            ${props.image ? `<img src="${this.escapeHtml(props.image)}" alt="" class="a2ui-hero-image" />` : ''}
+          </div>
+          <div class="a2ui-hero-info-cards">
+            ${props.projectInfo ? `
+              <div class="a2ui-hero-info-card">
+                <h4 class="a2ui-hero-info-title">Project Info</h4>
+                <div class="a2ui-hero-info-list">
+                  ${props.projectInfo.year ? `<div class="a2ui-hero-info-item">Year: ${this.escapeHtml(props.projectInfo.year)}</div>` : ''}
+                  ${props.projectInfo.team ? `<div class="a2ui-hero-info-item">${this.escapeHtml(props.projectInfo.team)}</div>` : ''}
+                  ${props.projectInfo.duration ? `<div class="a2ui-hero-info-item">${this.escapeHtml(props.projectInfo.duration)}</div>` : ''}
+                </div>
+              </div>
+            ` : ''}
+            ${props.services?.length ? `
+              <div class="a2ui-hero-info-card">
+                <h4 class="a2ui-hero-info-title">Services</h4>
+                <div class="a2ui-hero-info-list">
+                  ${props.services.map(service => `<div class="a2ui-hero-info-item">${this.escapeHtml(service)}</div>`).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      ` : `
+        <div class="a2ui-hero-content">
+          ${props.subtitle ? `<p class="a2ui-hero-subtitle">${this.escapeHtml(props.subtitle)}</p>` : ''}
+        </div>
+      `}
+
       ${props.pullQuote ? `<blockquote class="a2ui-hero-quote">"${this.escapeHtml(props.pullQuote)}"</blockquote>` : ''}
-      <div class="a2ui-hero-content">
-        <p>${this.escapeHtml(props.content)}</p>
-      </div>
+
       ${props.tags?.length ? `
         <div class="a2ui-hero-tags">
           ${props.tags.map(tag => `<span class="a2ui-tag">${this.escapeHtml(tag)}</span>`).join('')}
@@ -533,21 +565,323 @@ export class A2UIRenderer {
     return gallery;
   }
 
-  private renderFallback(props: any): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'a2ui-simple-card a2ui-fallback';
+  private renderStatsChart(props: StatsChartProps): HTMLElement {
+    const container = document.createElement('div');
+    container.className = 'a2ui-stats-chart';
 
-    card.innerHTML = `
-      <div class="a2ui-card-header">
-        <span class="a2ui-icon">${this.getIcon('info')}</span>
-        <h3 class="a2ui-card-title">${this.escapeHtml(props.title || 'Information')}</h3>
-      </div>
-      <div class="a2ui-card-content">
-        <p>${this.escapeHtml(JSON.stringify(props, null, 2))}</p>
+    // Title
+    if (props.title) {
+      const header = document.createElement('div');
+      header.className = 'a2ui-stats-chart-header';
+      header.innerHTML = `
+        <span class="a2ui-stats-chart-icon">📊</span>
+        <h2 class="a2ui-stats-chart-title">${this.escapeHtml(props.title)}</h2>
+      `;
+      container.appendChild(header);
+    }
+
+    // Metrics as horizontal bars
+    const metrics = (props as any).metrics || props.stats || [];
+    if (Array.isArray(metrics) && metrics.length > 0) {
+      const metricsContainer = document.createElement('div');
+      metricsContainer.className = 'a2ui-stats-chart-metrics';
+
+      // Calculate max value for bar visualization
+      const numericMetrics = metrics.filter((m: any) => !isNaN(parseFloat(m.value)));
+      const maxValue = numericMetrics.length > 0
+        ? Math.max(...numericMetrics.map((m: any) => parseFloat(m.value)))
+        : 100;
+
+      metrics.forEach((metric: any) => {
+        const value = metric.value;
+        const numericValue = parseFloat(value);
+        const isNumeric = !isNaN(numericValue);
+        const percentage = isNumeric ? (numericValue / maxValue) * 100 : 0;
+
+        const metricEl = document.createElement('div');
+        metricEl.className = 'a2ui-stats-chart-metric';
+
+        metricEl.innerHTML = `
+          <div class="a2ui-stats-chart-metric-header">
+            <div class="a2ui-stats-chart-metric-label">${this.escapeHtml(metric.label || metric.name || 'Metric')}</div>
+            <div class="a2ui-stats-chart-metric-value">${this.escapeHtml(String(value))}</div>
+          </div>
+          ${isNumeric ? `
+            <div class="a2ui-stats-chart-bar-container">
+              <div class="a2ui-stats-chart-bar" style="width: ${Math.min(percentage, 100)}%"></div>
+            </div>
+          ` : ''}
+        `;
+
+        metricsContainer.appendChild(metricEl);
+      });
+
+      container.appendChild(metricsContainer);
+    }
+
+    return container;
+  }
+
+  private renderBlogMagazine(props: BlogMagazineProps): HTMLElement {
+    const container = document.createElement('div');
+    container.className = 'a2ui-blog-magazine';
+
+    // Title with red accent
+    if (props.title) {
+      const header = document.createElement('div');
+      header.className = 'a2ui-blog-magazine-header';
+      header.innerHTML = `
+        <div class="a2ui-blog-magazine-accent"></div>
+        <h2 class="a2ui-blog-magazine-title">${this.escapeHtml(props.title)}</h2>
+      `;
+      container.appendChild(header);
+    }
+
+    const posts = props.posts || [];
+    if (posts.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'a2ui-blog-magazine-empty';
+      empty.textContent = 'No blog posts available.';
+      container.appendChild(empty);
+      return container;
+    }
+
+    // Magazine layout with sidebar
+    const layout = document.createElement('div');
+    layout.className = 'a2ui-blog-magazine-layout';
+
+    // Main content area
+    const mainContent = document.createElement('div');
+    mainContent.className = 'a2ui-blog-magazine-main';
+
+    // Featured post (first post with featured flag or first post)
+    const featuredPost = posts.find((p: any) => p.featured) || posts[0];
+    const otherPosts = posts.filter((p: any) => p !== featuredPost);
+
+    if (featuredPost) {
+      const featured = document.createElement('div');
+      featured.className = 'a2ui-blog-magazine-featured';
+      featured.innerHTML = `
+        <div class="a2ui-blog-magazine-featured-content">
+          <div class="a2ui-blog-magazine-featured-image">
+            <span class="a2ui-blog-magazine-featured-number">01</span>
+          </div>
+          <div class="a2ui-blog-magazine-featured-info">
+            <span class="a2ui-blog-magazine-category">${this.escapeHtml(featuredPost.category || 'General')}</span>
+            <h3 class="a2ui-blog-magazine-featured-title">${this.escapeHtml(featuredPost.title)}</h3>
+            <p class="a2ui-blog-magazine-excerpt">${this.escapeHtml(featuredPost.excerpt || '')}</p>
+            <div class="a2ui-blog-magazine-meta">
+              ${featuredPost.author ? `<span class="a2ui-blog-magazine-author">👤 ${this.escapeHtml(featuredPost.author)}</span>` : ''}
+              ${featuredPost.date ? `<span class="a2ui-blog-magazine-date">📅 ${this.escapeHtml(featuredPost.date)}</span>` : ''}
+              ${featuredPost.readTime ? `<span class="a2ui-blog-magazine-read-time">⏱️ ${this.escapeHtml(featuredPost.readTime)}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+      mainContent.appendChild(featured);
+    }
+
+    // Other posts
+    otherPosts.forEach((post: any, index: number) => {
+      const article = document.createElement('article');
+      article.className = 'a2ui-blog-magazine-post';
+      article.innerHTML = `
+        <div class="a2ui-blog-magazine-post-number">
+          <span>0${index + 2}</span>
+        </div>
+        <div class="a2ui-blog-magazine-post-content">
+          <span class="a2ui-blog-magazine-category">${this.escapeHtml(post.category || 'General')}</span>
+          <h3 class="a2ui-blog-magazine-post-title">${this.escapeHtml(post.title)}</h3>
+          <p class="a2ui-blog-magazine-excerpt">${this.escapeHtml(post.excerpt || '')}</p>
+          <div class="a2ui-blog-magazine-meta">
+            ${post.author ? `<span class="a2ui-blog-magazine-author">👤 ${this.escapeHtml(post.author)}</span>` : ''}
+            ${post.date ? `<span class="a2ui-blog-magazine-date">${this.escapeHtml(post.date)}</span>` : ''}
+          </div>
+        </div>
+      `;
+      mainContent.appendChild(article);
+    });
+
+    layout.appendChild(mainContent);
+
+    // Sidebar
+    const sidebar = document.createElement('aside');
+    sidebar.className = 'a2ui-blog-magazine-sidebar';
+
+    // Categories
+    const categories = ['All', ...new Set(posts.map((p: any) => p.category || 'General'))];
+    const categoriesBox = document.createElement('div');
+    categoriesBox.className = 'a2ui-blog-magazine-categories';
+    categoriesBox.innerHTML = `
+      <h3 class="a2ui-blog-magazine-sidebar-title">Categories</h3>
+      <div class="a2ui-blog-magazine-category-list">
+        ${categories.map(cat => `<button class="a2ui-blog-magazine-category-btn">${this.escapeHtml(String(cat))}</button>`).join('')}
       </div>
     `;
+    sidebar.appendChild(categoriesBox);
 
-    return card;
+    // Newsletter CTA
+    const newsletter = document.createElement('div');
+    newsletter.className = 'a2ui-blog-magazine-newsletter';
+    newsletter.innerHTML = `
+      <h3 class="a2ui-blog-magazine-newsletter-title">Newsletter</h3>
+      <p class="a2ui-blog-magazine-newsletter-text">Get the latest articles delivered to your inbox.</p>
+      <input type="email" placeholder="your@email.com" class="a2ui-blog-magazine-newsletter-input" />
+      <button class="a2ui-blog-magazine-newsletter-btn">Subscribe</button>
+    `;
+    sidebar.appendChild(newsletter);
+
+    layout.appendChild(sidebar);
+    container.appendChild(layout);
+
+    return container;
+  }
+
+  private renderSalesDashboard(props: SalesDashboardProps): HTMLElement {
+    const container = document.createElement('div');
+    container.className = 'a2ui-sales-dashboard';
+
+    // Header
+    if (props.title) {
+      const header = document.createElement('div');
+      header.className = 'a2ui-sales-dashboard-header';
+      header.innerHTML = `
+        <h2 class="a2ui-sales-dashboard-title">${this.escapeHtml(props.title)}</h2>
+        ${props.subtitle ? `<p class="a2ui-sales-dashboard-subtitle">${this.escapeHtml(props.subtitle)}</p>` : ''}
+      `;
+      container.appendChild(header);
+    }
+
+    // KPI Cards
+    const kpiCards = props.kpiCards || [];
+    if (kpiCards.length > 0) {
+      const kpiGrid = document.createElement('div');
+      kpiGrid.className = 'a2ui-sales-dashboard-kpi-grid';
+
+      kpiCards.forEach((kpi: any) => {
+        const card = document.createElement('div');
+        card.className = `a2ui-sales-dashboard-kpi-card ${kpi.variant ? `a2ui-kpi-${kpi.variant}` : ''}`;
+
+        const trendHtml = kpi.trend ? `
+          <div class="a2ui-sales-dashboard-kpi-trend ${kpi.trend.isPositive ? 'positive' : 'negative'}">
+            ${kpi.trend.isPositive ? '↑' : '↓'} ${kpi.trend.value}%
+          </div>
+        ` : '';
+
+        card.innerHTML = `
+          <div class="a2ui-sales-dashboard-kpi-header">
+            ${kpi.icon ? `<span class="a2ui-sales-dashboard-kpi-icon">${this.escapeHtml(kpi.icon)}</span>` : ''}
+            ${trendHtml}
+          </div>
+          <div class="a2ui-sales-dashboard-kpi-value">${this.escapeHtml(kpi.value)}</div>
+          <div class="a2ui-sales-dashboard-kpi-title">${this.escapeHtml(kpi.title)}</div>
+          ${kpi.subtitle ? `<div class="a2ui-sales-dashboard-kpi-subtitle">${this.escapeHtml(kpi.subtitle)}</div>` : ''}
+        `;
+
+        kpiGrid.appendChild(card);
+      });
+
+      container.appendChild(kpiGrid);
+    }
+
+    // Charts
+    const charts = props.charts || [];
+    if (charts.length > 0) {
+      const chartsGrid = document.createElement('div');
+      chartsGrid.className = 'a2ui-sales-dashboard-charts-grid';
+
+      charts.forEach((chart: any) => {
+        const chartCard = document.createElement('div');
+        chartCard.className = 'a2ui-sales-dashboard-chart-card';
+
+        let chartContent = '';
+        const data = Array.isArray(chart.data) ? chart.data : [];
+
+        if (chart.type === 'bar' || chart.type === 'line') {
+          // Simple bar visualization
+          const maxValue = data.length > 0 ? Math.max(...data.map((d: any) => d.value || 0)) : 100;
+          chartContent = `
+            <div class="a2ui-sales-dashboard-chart-bars">
+              ${data.map((d: any) => `
+                <div class="a2ui-sales-dashboard-chart-bar-item">
+                  <div class="a2ui-sales-dashboard-chart-bar" style="height: ${((d.value || 0) / maxValue) * 100}%"></div>
+                  <span class="a2ui-sales-dashboard-chart-bar-label">${this.escapeHtml(d.name || '')}</span>
+                </div>
+              `).join('')}
+            </div>
+          `;
+        } else if (chart.type === 'pie') {
+          // Simple pie representation as list
+          const total = data.reduce((sum: number, d: any) => sum + (d.value || 0), 0);
+          chartContent = `
+            <div class="a2ui-sales-dashboard-chart-pie-list">
+              ${data.map((d: any) => `
+                <div class="a2ui-sales-dashboard-chart-pie-item">
+                  <span class="a2ui-sales-dashboard-chart-pie-name">${this.escapeHtml(d.name || '')}</span>
+                  <span class="a2ui-sales-dashboard-chart-pie-value">${total > 0 ? Math.round(((d.value || 0) / total) * 100) : 0}%</span>
+                </div>
+              `).join('')}
+            </div>
+          `;
+        } else {
+          // Table fallback
+          chartContent = `
+            <div class="a2ui-sales-dashboard-chart-table">
+              ${data.map((d: any) => `
+                <div class="a2ui-sales-dashboard-chart-table-row">
+                  <span>${this.escapeHtml(d.name || '')}</span>
+                  <span>${this.escapeHtml(String(d.value || ''))}</span>
+                </div>
+              `).join('')}
+            </div>
+          `;
+        }
+
+        chartCard.innerHTML = `
+          <div class="a2ui-sales-dashboard-chart-header">
+            <h3 class="a2ui-sales-dashboard-chart-title">${this.escapeHtml(chart.title)}</h3>
+            ${chart.subtitle ? `<p class="a2ui-sales-dashboard-chart-subtitle">${this.escapeHtml(chart.subtitle)}</p>` : ''}
+          </div>
+          ${chartContent}
+        `;
+
+        chartsGrid.appendChild(chartCard);
+      });
+
+      container.appendChild(chartsGrid);
+    }
+
+    return container;
+  }
+
+  private renderFallback(props: any): HTMLElement {
+    // Use magazine-hero style as fallback
+    const hero = document.createElement('div');
+    hero.className = 'a2ui-magazine-hero a2ui-fallback';
+
+    const title = props.title || 'Information';
+    const content = props.content || props.description || (typeof props === 'string' ? props : '');
+    const subtitle = props.subtitle || '';
+
+    hero.innerHTML = `
+      <div class="a2ui-hero-header">
+        <div class="a2ui-hero-accent"></div>
+        <h2 class="a2ui-hero-title">${this.escapeHtml(title)}</h2>
+        ${subtitle ? `<p class="a2ui-hero-subtitle">${this.escapeHtml(subtitle)}</p>` : ''}
+      </div>
+      ${content ? `
+        <div class="a2ui-hero-content">
+          <p>${this.escapeHtml(content)}</p>
+        </div>
+      ` : ''}
+      ${props.tags?.length ? `
+        <div class="a2ui-hero-tags">
+          ${props.tags.map((tag: string) => `<span class="a2ui-tag">${this.escapeHtml(tag)}</span>`).join('')}
+        </div>
+      ` : ''}
+    `;
+
+    return hero;
   }
 
   // ==================== Helper Methods ====================

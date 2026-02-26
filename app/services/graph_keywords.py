@@ -8,6 +8,7 @@ Model: Gemini 2.0 Flash via Google AI API
 Latency: 100-300ms
 """
 
+import asyncio
 import os
 import re
 from typing import Dict, List, Optional, Set
@@ -120,7 +121,7 @@ class GraphKeywordExtractor:
             logger.error(f"[GraphKeywords] Failed to fetch graph nodes: {e}")
             return self._cached_node_ids  # Return cached if fetch fails
 
-    def select_nodes_from_graph(self, query: str, answer: str = "") -> List[str]:
+    async def select_nodes_from_graph(self, query: str, answer: str = "") -> List[str]:
         """Use LLM to select relevant nodes from the actual graph node list.
 
         Args:
@@ -172,7 +173,8 @@ Rules:
 
 Selected nodes (4-5, ordered by relevance):"""
 
-            response = self.client.generate_content(
+            response = await asyncio.to_thread(
+                self.client.generate_content,
                 prompt.format(nodes=nodes_list, context=context),
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.1,  # Very low for precise selection
@@ -221,7 +223,7 @@ Selected nodes (4-5, ordered by relevance):"""
             logger.error(f"[GraphKeywords] Node selection failed: {e}")
             return []
 
-    def extract_topic_and_type(
+    async def extract_topic_and_type(
         self, query: str, answer: str = "", previous_topics: List[str] = None
     ) -> Dict[str, str]:
         """Extract conversation topic and determine its relationship to previous topics.
@@ -269,7 +271,8 @@ TOPIC: <topic>
 TYPE: <new|continuation|branch>
 PARENT: <parent topic or none>"""
 
-            response = self.client.generate_content(
+            response = await asyncio.to_thread(
+                self.client.generate_content,
                 prompt.format(
                     query=query,
                     answer=answer[:200] if answer else "N/A",
@@ -348,9 +351,9 @@ PARENT: <parent topic or none>"""
 
         return topic
 
-    def extract_keywords_llm(self, query: str) -> List[str]:
+    async def extract_keywords_llm(self, query: str) -> List[str]:
         """Legacy method - now uses select_nodes_from_graph."""
-        return self.select_nodes_from_graph(query)
+        return await self.select_nodes_from_graph(query)
 
     def _fallback_extract(self, query: str) -> List[str]:
         """Simple fallback keyword extraction without LLM."""
@@ -432,14 +435,14 @@ PARENT: <parent topic or none>"""
                 - parentTopic: Parent topic if branching
         """
         # Extract topic using LLM (doesn't need LightRAG)
-        topic_info = self.extract_topic_and_type(query, answer, previous_topics)
+        topic_info = await self.extract_topic_and_type(query, answer, previous_topics)
 
         # Try to fetch graph nodes and select matching ones (optional - needs LightRAG)
         matched = []
         try:
             await self.fetch_graph_nodes()
             if self._cached_node_ids:
-                matched = self.select_nodes_from_graph(query, answer)
+                matched = await self.select_nodes_from_graph(query, answer)
         except Exception as e:
             logger.warning(f"[GraphKeywords] Graph node selection skipped: {e}")
 

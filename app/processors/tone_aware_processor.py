@@ -300,11 +300,10 @@ class ToneAwareProcessor(FrameProcessor):
             # Clear stale audio buffer — no point detecting emotion on leftover mic audio
             self._audio_buffer = b""
             self._audio_buffer_duration_ms = 0
-            # Cancel any running MSP inference to prevent GIL contention during bot speech
-            for task in list(self._background_tasks):
-                if not task.done():
-                    task.cancel()
-                    logger.debug("Cancelled running MSP task to protect bot audio output")
+            # NOTE: Do NOT cancel background MSP tasks here. Voice switching is already
+            # guarded by _bot_is_speaking in _switch_voice_now(), which defers any voice
+            # change until bot finishes speaking. Cancelling the task would prevent the
+            # hybrid emotion event from being emitted to the frontend entirely.
             logger.debug("Bot started speaking - voice switches deferred")
 
         elif isinstance(frame, BotStoppedSpeakingFrame):
