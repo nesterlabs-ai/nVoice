@@ -102,7 +102,6 @@
 
 /* ==================== Template Grid ==================== */
 .a2ui-template-grid {
-  background: var(--a2ui-bg-secondary);
   border-radius: var(--a2ui-radius);
   padding: 20px;
 }
@@ -1516,8 +1515,32 @@
     min-width: 100%;
   }
 
+  /* Override inline JS styles with !important for mobile */
   .a2ui-team-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Reduce card height on mobile for better fit */
+  .a2ui-team-card {
+    height: 14rem;
+  }
+
+  .a2ui-team-avatar {
+    width: 64px;
+    height: 64px;
+    font-size: 1.125rem;
+  }
+
+  .a2ui-team-name {
+    font-size: 0.875rem;
+  }
+
+  .a2ui-team-role {
+    font-size: 0.75rem;
+  }
+
+  .a2ui-team-bio {
+    font-size: 0.75rem;
   }
 
   .a2ui-hero-title {
@@ -1570,6 +1593,27 @@
   }
 
   .a2ui-sales-dashboard-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Extra small screens (phones in portrait) */
+@media (max-width: 480px) {
+  /* Single column for team cards on very small screens */
+  .a2ui-team-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .a2ui-team-card {
+    height: 12rem;
+  }
+
+  .a2ui-team-front,
+  .a2ui-team-back {
+    padding: 16px;
+  }
+
+  .a2ui-sales-dashboard-kpi-grid {
     grid-template-columns: 1fr;
   }
 }
