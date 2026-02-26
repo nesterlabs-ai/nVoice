@@ -95,10 +95,16 @@ class VoiceAssistantServer:
 
         # Create transport parameters
         # Note: host and port must be passed directly to WebsocketServerTransport
+        # Get TTS sample rate from config (Resemble=24kHz, ElevenLabs=24kHz, default=16kHz)
+        tts_config = self.config.get("tts", {}).get("config", {})
+        audio_out_sample_rate = tts_config.get("sample_rate", 16000)
+        logger.info(f"Transport audio_out_sample_rate={audio_out_sample_rate}")
+
         transport_params = WebsocketServerParams(
             serializer=ProtobufFrameSerializer(),
             audio_in_enabled=audio_in_enabled,
             audio_out_enabled=audio_out_enabled,
+            audio_out_sample_rate=audio_out_sample_rate,
             add_wav_header=add_wav_header,
             vad_analyzer=vad_analyzer,
             session_timeout=session_timeout,

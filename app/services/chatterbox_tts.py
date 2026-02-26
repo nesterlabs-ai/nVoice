@@ -26,14 +26,14 @@ from pipecat.services.tts_service import TTSService
 # Exaggeration: 0.25-2.0 (higher = more emotional)
 # CFG Weight: 0.0-1.0 (lower = faster, more expressive)
 EMOTION_TO_PARAMS = {
-    "neutral": {"exaggeration": 0.4, "cfg_weight": 0.5},
-    "sad": {"exaggeration": 0.6, "cfg_weight": 0.4},        # Softer, empathetic
-    "frustrated": {"exaggeration": 0.5, "cfg_weight": 0.5}, # Calm, patient
-    "excited": {"exaggeration": 0.9, "cfg_weight": 0.3},    # Energetic, fast
-    "happy": {"exaggeration": 0.8, "cfg_weight": 0.35},     # Warm, upbeat
-    "angry": {"exaggeration": 0.7, "cfg_weight": 0.4},      # Controlled intensity
-    "fear": {"exaggeration": 0.5, "cfg_weight": 0.45},      # Gentle, calming
-    "content": {"exaggeration": 0.4, "cfg_weight": 0.5},    # Relaxed, neutral
+    "neutral": {"exaggeration": 0.3, "cfg_weight": 0.6},     # Calm, steady baseline
+    "sad": {"exaggeration": 0.8, "cfg_weight": 0.3},         # Softer, slower, empathetic
+    "frustrated": {"exaggeration": 0.7, "cfg_weight": 0.35}, # Firm, slightly tense
+    "excited": {"exaggeration": 1.2, "cfg_weight": 0.2},     # High energy, fast, expressive
+    "happy": {"exaggeration": 1.0, "cfg_weight": 0.25},      # Warm, upbeat, bright
+    "angry": {"exaggeration": 0.9, "cfg_weight": 0.3},       # Controlled intensity
+    "fear": {"exaggeration": 0.6, "cfg_weight": 0.4},        # Gentle, calming
+    "content": {"exaggeration": 0.35, "cfg_weight": 0.55},   # Relaxed, near neutral
 }
 
 # Voice name to emotion mapping (for compatibility with existing voice switching)
@@ -191,71 +191,62 @@ class ChatterboxTTSService(TTSService):
             )
 
             session = await self._get_session()
-            start_time = time.time()
 
-            # Try streaming endpoint first (lower latency)
-            async with session.post(self._stream_url, json=payload) as response:
-                latency_ms = (time.time() - start_time) * 1000
+            # Try streaming first, fall back to synthesis on failure
+            for url in [self._stream_url, self._synthesis_url]:
+                start_time = time.time()
+                async with session.post(url, json=payload) as response:
+                    ttfb_ms = (time.time() - start_time) * 1000
 
-                # If streaming fails with 500, try non-streaming synthesis endpoint
-                if response.status == 500:
-                    error_text = await response.text()
-                    logger.warning(
-                        f"🔊 Chatterbox stream endpoint failed (500), trying synthesis endpoint... "
-                        f"error={error_text[:100]}"
-                    )
+                    if response.status == 500 and url == self._stream_url:
+                        error_text = await response.text()
+                        logger.warning(
+                            f"🔊 Stream endpoint failed (500), trying synthesis... "
+                            f"error={error_text[:100]}"
+                        )
+                        continue  # Try synthesis endpoint
 
-                    # Retry with non-streaming synthesis endpoint
-                    start_time_retry = time.time()
-                    async with session.post(self._synthesis_url, json=payload) as retry_response:
-                        latency_ms = (time.time() - start_time_retry) * 1000
-                        response = retry_response  # Use retry response for the rest of the code
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(
+                            f"🔊 Chatterbox TTS FAILED: status={response.status} "
+                            f"latency={ttfb_ms:.0f}ms error={error_text[:200]}"
+                        )
+                        yield ErrorFrame(f"Chatterbox TTS failed: {response.status}")
+                        break
 
-                if response.status == 200:
-                    logger.info(f"🔊 Chatterbox TTS: streaming started (ttfb={latency_ms:.0f}ms)")
+                    logger.info(f"🔊 Chatterbox TTS: started (ttfb={ttfb_ms:.0f}ms)")
 
-                    # Stream audio chunks as they arrive (word-by-word playback)
                     header_stripped = False
                     header_buffer = b''
                     chunks_sent = 0
                     total_bytes = 0
-                    first_chunk_time = None
 
-                    async for chunk in response.content.iter_chunked(4096):
+                    # 16KB chunks — fewer HTTP reads, smoother playback
+                    async for chunk in response.content.iter_chunked(16384):
                         if not chunk:
                             continue
 
-                        if first_chunk_time is None:
-                            first_chunk_time = time.time()
-
                         total_bytes += len(chunk)
 
-                        # Strip WAV header from first chunk(s) only
+                        # Strip WAV header from first chunk(s)
                         if not header_stripped:
                             header_buffer += chunk
-
-                            # Check if we have enough data to detect and strip WAV header
                             if len(header_buffer) >= 44:
                                 if header_buffer[:4] == b'RIFF':
-                                    # Find 'data' chunk marker
                                     data_index = header_buffer.find(b'data')
                                     if data_index != -1:
-                                        # Skip 'data' + 4 bytes for chunk size
                                         header_size = data_index + 8
                                         chunk = header_buffer[header_size:]
-                                        header_buffer = b''
                                         header_stripped = True
                                         logger.debug(f"🔊 Stripped WAV header ({header_size} bytes)")
                                     else:
-                                        # Haven't found 'data' marker yet, keep buffering
                                         continue
                                 else:
-                                    # No WAV header (already PCM)
                                     chunk = header_buffer
-                                    header_buffer = b''
                                     header_stripped = True
+                                header_buffer = b''
 
-                        # Yield audio chunk immediately for streaming playback
                         if chunk:
                             yield TTSAudioRawFrame(
                                 audio=chunk,
@@ -271,13 +262,7 @@ class ChatterboxTTSService(TTSService):
                         f"audio={total_bytes} bytes ({audio_duration_secs:.1f}s) "
                         f"chunks={chunks_sent}"
                     )
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"🔊 Chatterbox TTS FAILED: status={response.status} "
-                        f"latency={latency_ms:.0f}ms error={error_text[:200]}"
-                    )
-                    yield ErrorFrame(f"Chatterbox TTS failed: {response.status}")
+                    break  # Success, don't try next URL
 
             # Signal TTS stopped
             yield TTSStoppedFrame()
