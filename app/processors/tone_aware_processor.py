@@ -619,37 +619,18 @@ class ToneAwareProcessor(FrameProcessor):
     async def _check_voice_switch(self, tone: str, confidence: float) -> None:
         """Check if voice should be switched based on detected tone.
 
+        Voice switching is DISABLED to reduce latency — emotion is still detected
+        and emitted to frontend, but TTS always uses default/neutral voice params.
+
         Args:
             tone: Detected tone
             confidence: Confidence score
         """
-        current_tone = self._get_current_tone()
-
+        # Voice switching disabled — emotion detection still runs for analytics/frontend
         logger.debug(
-            f"_check_voice_switch: tone={tone}, current={current_tone}, "
-            f"tts_service={self.tts_service is not None}"
+            f"_check_voice_switch: tone={tone} ({confidence:.0%}) — voice switching disabled"
         )
-
-        # Only switch if tone is different
-        if tone != current_tone:
-            is_stable = self._is_tone_stable(tone, confidence)
-            has_tts = self.tts_service is not None
-
-            logger.info(
-                f"VOICE SWITCH CHECK: tone={tone}, stable={is_stable}, "
-                f"tts_connected={has_tts}, current={current_tone}"
-            )
-
-            if is_stable and has_tts:
-                voice = TONE_TO_VOICE.get(tone, DEFAULT_VOICE)
-                self._record_switch(tone)
-                logger.info(f"INITIATING VOICE SWITCH: {current_tone} -> {tone} (voice: {voice})")
-                await self._switch_voice_now(voice, tone)
-            else:
-                logger.debug(
-                    f"Tone: {tone} ({confidence:.0%}) - "
-                    f"waiting [{self._stability_counter}/{self._stability_frames_required}]"
-                )
+        return
 
     async def _switch_voice_now(self, new_voice: str, tone: str) -> None:
         """Request voice switch - defers if bot is speaking.

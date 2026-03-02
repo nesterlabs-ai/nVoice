@@ -38,14 +38,18 @@ stt:
     # Format: pattern (regex, case-insensitive) → replacement
     # To add new corrections: just add entries here, no code changes needed.
     corrections:
-      - pattern: '\bnestle\s*labs?\b'
+      - pattern: '\bnestle\s+labs?\b'
         replacement: "Nesterlabs"
+      - pattern: '\bnestle\b'
+        replacement: "Nester"
       - pattern: '\bnester\s+labs?\b'
         replacement: "Nesterlabs"
       - pattern: '\bnestler\s*labs?\b'
         replacement: "Nesterlabs"
       - pattern: '\bnest\s+her\s+labs?\b'
         replacement: "Nesterlabs"
+      - pattern: '\bnest\s*her\b'
+        replacement: "Nester"
       - pattern: '\bcahuna\b'
         replacement: "Kahuna"
       - pattern: '\bbase\s*pair\b'
@@ -159,8 +163,9 @@ conversation:
     - Open source: NesterConversationalBot on GitHub
 
     SPEECH RECOGNITION NOTE:
-    - The company name is "Nesterlabs". Speech recognition may transcribe it as "Nestle labs", "Nester labs", etc.
-    - ALWAYS interpret these as "Nesterlabs". NEVER correct the user about the company name — they said it right, the transcription was inaccurate.
+    - The company name is "Nesterlabs". Speech recognition may transcribe it as "Nestle", "Nestle labs", "Nester labs", "nest her", etc.
+    - ALWAYS silently interpret these as "Nesterlabs". NEVER say "it's Nester not Nestle" or correct the user's pronunciation in any way — they said it right, the transcription was inaccurate.
+    - Just continue the conversation naturally using "Nesterlabs". Do NOT acknowledge or draw attention to name misrecognitions.
 
     RESPONSE RULES:
     1. Keep responses to 2-3 short sentences: brief answer + a follow-up question to keep the conversation engaging.
