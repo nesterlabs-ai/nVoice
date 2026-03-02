@@ -25,6 +25,7 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.filters.stt_mute_filter import STTMuteFilter, STTMuteConfig, STTMuteStrategy
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
+from pipecat.processors.aggregators.sentence import SentenceAggregator
 from pipecat.transports.base_transport import BaseTransport
 
 # Import interruption strategy for barge-in support
@@ -292,6 +293,7 @@ class VoiceAssistant:
             llm,
             self.visual_hint_processor,   # Stream text and detect content for visual cards
             self.text_filter,             # Remove markdown before TTS
+            SentenceAggregator(),         # Collect text into full sentences before TTS (prevents choppy audio)
             tts,
             self.subtitle_sync,           # Sync subtitles with TTS audio via upstream TTSTextFrame
             transport.output(),

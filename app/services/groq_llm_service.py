@@ -104,16 +104,26 @@ class GroqLLMService(OpenAILLMService):
         implementation and, on that specific error, retry the same context
         with tool_choice="none" so the model falls back to a plain text
         response.
+
+        Also handles Llama's 'null' tool call bug — after receiving a tool
+        result, Llama sometimes generates a tool call with function name 'null'
+        instead of responding with text.
         """
         try:
             await super()._process_context(context)
-        except APIError as e:
-            if "Failed to call a function" not in str(e):
-                raise  # Re-raise unrelated API errors
+        except (APIError, Exception) as e:
+            error_str = str(e)
+            retryable_errors = [
+                "Failed to call a function",
+                "attempted to call tool 'null'",
+                "tool 'null' which was not in request.tools",
+            ]
+            if not any(err in error_str for err in retryable_errors):
+                raise  # Re-raise unrelated errors
 
             logger.warning(
-                "GroqLLMService: Groq function-call error during stream "
-                "iteration — retrying with tool_choice=none"
+                f"GroqLLMService: Groq/Llama function-call error during stream "
+                f"iteration — retrying with tool_choice=none (error: {error_str[:100]})"
             )
             # Temporarily force tool_choice to "none" for the retry.
             # OpenAILLMContext.tool_choice is a read-only property; use
