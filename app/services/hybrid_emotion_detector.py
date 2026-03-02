@@ -279,31 +279,51 @@ class HybridEmotionDetector:
     ) -> str:
         """Map dimensional scores to categorical emotion.
 
+        Maps to emotions supported by Chatterbox TTS:
+        neutral, sad, frustrated, excited, happy, angry, fear, content
+
         Args:
             arousal: Energy level (0-1)
             valence: Positive/negative (0-1)
             dominance: Control/confidence (0-1)
 
         Returns:
-            Categorical emotion: frustrated/excited/sad/neutral
+            Categorical emotion matching Chatterbox EMOTION_TO_PARAMS
         """
-        # High arousal emotions
+        # High arousal emotions (arousal > 0.6)
         if arousal > 0.6:
-            if valence < 0.4:
-                return "frustrated"  # High arousal + negative valence
-            elif valence > 0.6:
-                return "excited"  # High arousal + positive valence
+            if valence < 0.35:
+                if dominance > 0.6:
+                    return "angry"       # High arousal + negative + dominant
+                return "frustrated"      # High arousal + negative + not dominant
+            elif valence > 0.65:
+                return "excited"         # High arousal + very positive
+            elif valence > 0.5:
+                return "happy"           # High arousal + moderately positive
             else:
-                return "neutral"  # High arousal + neutral valence
+                return "neutral"         # High arousal + neutral valence
 
-        # Low arousal emotions
-        else:
-            if valence < 0.4:
-                return "sad"  # Low arousal + negative valence
+        # Medium arousal (0.4-0.6)
+        elif arousal > 0.4:
+            if valence < 0.35:
+                return "sad"             # Medium arousal + negative
             elif valence > 0.6:
-                return "excited"  # Low arousal + positive valence (calm excitement)
+                return "happy"           # Medium arousal + positive
+            elif valence > 0.45:
+                return "content"         # Medium arousal + slightly positive
             else:
-                return "neutral"  # Low arousal + neutral valence
+                return "neutral"
+
+        # Low arousal (< 0.4)
+        else:
+            if valence < 0.35:
+                if dominance < 0.4:
+                    return "fear"        # Low arousal + negative + submissive
+                return "sad"             # Low arousal + negative
+            elif valence > 0.6:
+                return "content"         # Low arousal + positive = content/relaxed
+            else:
+                return "neutral"
 
     def _detect_mismatch(
         self,

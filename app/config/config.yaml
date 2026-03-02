@@ -291,10 +291,10 @@ server:
   # Higher values = stricter (less sensitive to noise, but may miss quiet speech)
   # Lower values = more sensitive (catches quiet speech, but may pick up noise)
   vad:
-    confidence: 0.8        # BALANCED - trigger on clear speech but allow interruptions
+    confidence: 0.7        # Trigger on clear speech (matches smooth branch)
     start_secs: 0.2        # FASTER - 200ms to detect interruptions quickly
     stop_secs: 0.8         # Wait 0.8s of silence before ending utterance
-    min_volume: 0.8        # BALANCED - catch normal speech volume
+    min_volume: 0.5        # Catch normal and quiet speech (matches smooth branch)
 
   # Barge-in (interruption) settings
   # MinWordsInterruptionStrategy prevents false interruptions from:
@@ -303,7 +303,7 @@ server:
   # With endpointing=300ms, transcriptions arrive fast so min_words must be higher
   interruption:
     enabled: true          # Enable barge-in support
-    min_words: 1           # DEFERRED: require 1 transcribed word before interrupting (prevents false interruptions from late STT deliveries)
+    min_words: 0           # IMMEDIATE: any speech stops TTS instantly (matches smooth branch)
 
   # Smart interruption - Context-aware validation
   # Prevents false interruptions from background conversations/TV/music

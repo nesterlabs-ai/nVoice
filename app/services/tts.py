@@ -133,6 +133,7 @@ class TextToSpeechService:
             synthesis_url = self.config.get("synthesis_url", "https://f.cluster.resemble.ai/synthesize")
             stream_url = self.config.get("stream_url", "https://f.cluster.resemble.ai/stream")
             sample_rate = self.config.get("sample_rate", 24000)
+            model = self.config.get("model", "chatterbox-turbo")
             voice = self.config.get("voice", "neutral")
 
             self.tts_service = ChatterboxTTSService(
@@ -141,9 +142,10 @@ class TextToSpeechService:
                 synthesis_url=synthesis_url,
                 stream_url=stream_url,
                 sample_rate=sample_rate,
+                model=model,
                 voice=voice,
             )
-            logger.info(f"Using Chatterbox TTS with emotion control (voice_uuid={voice_uuid}, sample_rate={sample_rate}Hz)")
+            logger.info(f"Using Chatterbox TTS model={model} (voice_uuid={voice_uuid}, sample_rate={sample_rate}Hz)")
 
         else:
             raise ValueError(f"Unsupported TTS provider: {self.tts_provider}")

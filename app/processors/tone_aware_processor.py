@@ -314,13 +314,6 @@ class ToneAwareProcessor(FrameProcessor):
                 voice, tone = self._pending_voice_switch
                 self._pending_voice_switch = None
                 await self._apply_voice_switch(voice, tone)
-            # Run ALL deferred emotion detections now that bot audio output is done
-            if self._pending_detections:
-                logger.debug(f"[EMOTION-DIAG] Processing {len(self._pending_detections)} queued emotion detections")
-                for audio_buf, transcript in self._pending_detections:
-                    await self._trigger_emotion_detection(audio_buf, transcript)
-                self._pending_detections.clear()
-                logger.debug("[EMOTION-DIAG] All deferred emotion detections completed")
 
         # Buffer audio frames for MSP-PODCAST (only during user speech, not bot speech or silence)
         if isinstance(frame, AudioRawFrame) and direction == FrameDirection.DOWNSTREAM:
@@ -353,17 +346,18 @@ class ToneAwareProcessor(FrameProcessor):
                 if self._visual_hint_processor is not None:
                     self._visual_hint_processor.set_current_query(text)
 
-            # On final transcription: queue audio + transcript for deferred emotion detection
-            # MSP inference runs AFTER bot stops speaking to avoid GIL contention with audio output
+            # On final transcription: run emotion detection immediately in background
+            # Voice switching is deferred by _switch_voice_now() if bot is speaking,
+            # but detection runs now so result is ready when bot stops
             if isinstance(frame, TranscriptionFrame) and text and text.strip():
                 if self.emotion_detector.is_connected and len(self._audio_buffer) > 0:
-                    # Queue for deferred detection (don't overwrite — analyze ALL utterances)
                     buffer_copy = self._audio_buffer
-                    self._pending_detections.append((buffer_copy, text))
                     self._audio_buffer = b""
                     self._audio_buffer_duration_ms = 0
+                    # Run detection immediately (non-blocking background task)
+                    await self._trigger_emotion_detection(buffer_copy, text)
                     logger.debug(
-                        f"[EMOTION-DIAG] Queued detection #{len(self._pending_detections)}: "
+                        f"[EMOTION-DIAG] Triggered immediate detection: "
                         f"buffer={len(buffer_copy)/32:.0f}ms, "
                         f"transcript='{text[:30]}...'"
                     )
@@ -506,14 +500,8 @@ class ToneAwareProcessor(FrameProcessor):
                     self._latest_confidence = hybrid_result['overall_confidence']
                     self._emotion_timestamp = time.time()  # Track freshness
 
-                    # Map to tone for voice switching
-                    tone_map = {
-                        "frustrated": "frustrated",
-                        "excited": "excited",
-                        "sad": "sad",
-                        "neutral": "neutral"
-                    }
-                    detected_tone = tone_map.get(hybrid_result['primary_emotion'], "neutral")
+                    # Pass emotion directly to voice switching (matches Chatterbox EMOTION_TO_PARAMS)
+                    detected_tone = hybrid_result['primary_emotion']
 
                     # Emit hybrid emotion to frontend
                     await self._emit_hybrid_emotion_event(hybrid_result)
@@ -619,18 +607,37 @@ class ToneAwareProcessor(FrameProcessor):
     async def _check_voice_switch(self, tone: str, confidence: float) -> None:
         """Check if voice should be switched based on detected tone.
 
-        Voice switching is DISABLED to reduce latency — emotion is still detected
-        and emitted to frontend, but TTS always uses default/neutral voice params.
-
         Args:
             tone: Detected tone
             confidence: Confidence score
         """
-        # Voice switching disabled — emotion detection still runs for analytics/frontend
+        current_tone = self._get_current_tone()
+
         logger.debug(
-            f"_check_voice_switch: tone={tone} ({confidence:.0%}) — voice switching disabled"
+            f"_check_voice_switch: tone={tone}, current={current_tone}, "
+            f"tts_service={self.tts_service is not None}"
         )
-        return
+
+        # Only switch if tone is different
+        if tone != current_tone:
+            is_stable = self._is_tone_stable(tone, confidence)
+            has_tts = self.tts_service is not None
+
+            logger.info(
+                f"VOICE SWITCH CHECK: tone={tone}, stable={is_stable}, "
+                f"tts_connected={has_tts}, current={current_tone}"
+            )
+
+            if is_stable and has_tts:
+                voice = TONE_TO_VOICE.get(tone, DEFAULT_VOICE)
+                self._record_switch(tone)
+                logger.info(f"INITIATING VOICE SWITCH: {current_tone} -> {tone} (voice: {voice})")
+                await self._switch_voice_now(voice, tone)
+            else:
+                logger.debug(
+                    f"Tone: {tone} ({confidence:.0%}) - "
+                    f"waiting [{self._stability_counter}/{self._stability_frames_required}]"
+                )
 
     async def _switch_voice_now(self, new_voice: str, tone: str) -> None:
         """Request voice switch - defers if bot is speaking.
