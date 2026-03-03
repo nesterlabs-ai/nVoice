@@ -204,12 +204,27 @@ jobs:
             docker compose pull
 
             echo "=== Restarting services ==="
-            docker compose up -d --force-recreate
+            docker compose up -d --force-recreate || true
 
-            echo "=== Waiting for services to start ==="
-            sleep 30
+            echo "=== Waiting for backend to become healthy (up to 150s) ==="
+            for i in $(seq 1 15); do
+              sleep 10
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' nester-backend 2>/dev/null || echo "missing")
+              echo "[$((i*10))s] backend health: $STATUS"
+              if [ "$STATUS" = "healthy" ]; then
+                echo "Backend is healthy!"
+                break
+              fi
+              if [ "$STATUS" = "unhealthy" ]; then
+                echo "=== BACKEND CRASHED - container logs ==="
+                docker logs --tail 100 nester-backend
+                echo "=== docker inspect health ==="
+                docker inspect nester-backend | python3 -c "import sys,json; h=json.load(sys.stdin)[0]['State']['Health']; [print(l['Output']) for l in h.get('Log',[])]"
+                exit 1
+              fi
+            done
+
             docker compose ps
-
             echo "=== Graviton deployment complete ==="
 
   # Verify deployment
