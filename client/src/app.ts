@@ -2629,6 +2629,9 @@ class VoiceScannerApp {
                 case 'streaming_text':
                   this.handleStreamingText(messageData);
                   break;
+                case 'subtitle_chunk':
+                  this.handleSubtitleChunk(messageData);
+                  break;
                 case 'visual_hint':
                   this.handleVisualHint(messageData);
                   break;
@@ -2804,6 +2807,52 @@ class VoiceScannerApp {
           }
         }, 2000);
       }
+    }
+  }
+
+  /**
+   * Handle subtitle_chunk from Chatterbox TTS — full sentence with exact audio duration.
+   * Words are revealed one-by-one timed to audio_duration / word_count.
+   */
+  private handleSubtitleChunk(data: {
+    text: string;
+    audio_duration: number;
+    timestamp: number;
+  }): void {
+    if (!data.text || !data.text.trim()) return;
+    const words = data.text.trim().split(/\s+/);
+    if (words.length === 0) return;
+
+    const interval = data.audio_duration / words.length;
+
+    // Convert to buffered words with evenly-spaced PTS offsets
+    for (let i = 0; i < words.length; i++) {
+      const ptsOffset = i * interval;
+      if (this.subtitleAudioStartTime > 0) {
+        this.scheduleSubtitleWord(words[i], ptsOffset);
+      } else {
+        this.subtitleWordBuffer.push({ word: words[i], seq: i + 1, ptsOffset });
+      }
+    }
+
+    // Add full text to transcript bubble
+    if (!this.streamingBubble) {
+      this.createStreamingBubble();
+    }
+    for (let i = 0; i < words.length; i++) {
+      this.addWordToTranscriptBubble(words[i], i + 1);
+    }
+
+    // Safety flush if BotStartedSpeaking doesn't fire
+    if (this.subtitleAudioStartTime === 0 && !this.subtitleBufferFlushTimer) {
+      this.subtitleBufferFlushTimer = setTimeout(() => {
+        this.subtitleBufferFlushTimer = null;
+        if (this.subtitleWordBuffer.length > 0 && this.subtitleAudioStartTime === 0) {
+          console.log('[ST] Safety flush: BotStartedSpeaking not received, flushing subtitle_chunk');
+          this.subtitleAudioStartTime = performance.now();
+          this.flushSubtitleWordBuffer();
+        }
+      }, 2000);
     }
   }
 

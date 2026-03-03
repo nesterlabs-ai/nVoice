@@ -14,14 +14,12 @@ from typing import Optional, Dict, Any, AsyncGenerator
 from loguru import logger
 from pipecat.frames.frames import (
     Frame,
-    AggregationType,
     TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
-    TTSTextFrame,
     ErrorFrame,
 )
-from pipecat.utils.time import seconds_to_nanoseconds
+from pipecat.processors.frameworks.rtvi import RTVIServerMessageFrame
 from pipecat.services.tts_service import TTSService
 
 
@@ -180,20 +178,6 @@ class ChatterboxTTSService(TTSService):
             # Signal TTS started
             yield TTSStartedFrame()
 
-            # Emit word-level TTSTextFrames BEFORE audio so frontend can buffer
-            # and schedule subtitle display relative to BotStartedSpeaking.
-            # Estimate ~150 words/min = 0.4s per word for PTS timing.
-            # Add 0.8s base offset to compensate for TTS API latency (TTFB)
-            # so subtitles don't appear before audio starts playing.
-            words = text.split()
-            if words:
-                est_secs_per_word = 0.4
-                ttfb_offset = 0.8
-                for i, word in enumerate(words):
-                    word_frame = TTSTextFrame(word, aggregated_by=AggregationType.WORD)
-                    word_frame.pts = int(seconds_to_nanoseconds(ttfb_offset + i * est_secs_per_word))
-                    yield word_frame
-
             payload = {
                 "voice_uuid": self._voice_uuid,
                 "data": text,
@@ -330,6 +314,15 @@ class ChatterboxTTSService(TTSService):
                         f"audio={total_bytes} bytes ({audio_duration_secs:.1f}s) "
                         f"chunks={chunks_sent} via={'stream' if is_stream else 'synthesis'}"
                     )
+                    # Emit subtitle data with exact audio duration for frontend word reveal
+                    if total_bytes > 0:
+                        yield RTVIServerMessageFrame(data={
+                            "message_type": "subtitle_chunk",
+                            "text": text,
+                            "audio_duration": audio_duration_secs,
+                            "timestamp": time.time(),
+                        })
+
                     break  # Success, don't try next URL
 
             # Signal TTS stopped

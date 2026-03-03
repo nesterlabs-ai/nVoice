@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 from loguru import logger
 from pipecat.frames.frames import TTSSpeakFrame
-from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.cartesia.tts import CartesiaTTSService, GenerationConfig
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 
@@ -120,7 +120,19 @@ class TextToSpeechService:
             else:
                 selected_voice_id = voice_id
 
-            self.tts_service = CartesiaTTSService(api_key=api_key, voice_id=selected_voice_id)
+            model = self.config.get("model", "sonic-3")
+            initial_emotion = self.config.get("emotion", "neutral")
+
+            generation_config = GenerationConfig(emotion=initial_emotion)
+            params = CartesiaTTSService.InputParams(generation_config=generation_config)
+
+            self.tts_service = CartesiaTTSService(
+                api_key=api_key,
+                voice_id=selected_voice_id,
+                model=model,
+                params=params,
+            )
+            logger.info(f"Using Cartesia TTS model={model} voice_id={selected_voice_id} emotion={initial_emotion}")
 
         elif self.tts_provider == "chatterbox":
             api_key = self.config.get("api_key")

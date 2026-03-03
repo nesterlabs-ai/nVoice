@@ -279,8 +279,8 @@ class HybridEmotionDetector:
     ) -> str:
         """Map dimensional scores to categorical emotion.
 
-        Maps to emotions supported by Chatterbox TTS:
-        neutral, sad, frustrated, excited, happy, angry, fear, content
+        Maps to granular Cartesia-compatible emotions so the emotion map in
+        tone_aware_processor.py can apply fine-grained voice control.
 
         Args:
             arousal: Energy level (0-1)
@@ -288,40 +288,48 @@ class HybridEmotionDetector:
             dominance: Control/confidence (0-1)
 
         Returns:
-            Categorical emotion matching Chatterbox EMOTION_TO_PARAMS
+            Categorical emotion string matching CARTESIA_EMOTION_CONFIG keys
         """
-        # High arousal emotions (arousal > 0.6)
+        # High arousal (> 0.6) — energetic states
         if arousal > 0.6:
-            if valence < 0.35:
-                if dominance > 0.6:
-                    return "angry"       # High arousal + negative + dominant
-                return "frustrated"      # High arousal + negative + not dominant
-            elif valence > 0.65:
-                return "excited"         # High arousal + very positive
-            elif valence > 0.5:
-                return "happy"           # High arousal + moderately positive
+            if valence < 0.3:
+                if dominance > 0.65:
+                    return "angry"        # High energy + very negative + dominant
+                return "frustrated"       # High energy + negative + not dominant
+            elif valence < 0.45:
+                return "anxious"          # High energy + slightly negative = tense
+            elif valence > 0.7:
+                return "excited"          # High energy + very positive (→ enthusiastic in Cartesia)
+            elif valence > 0.55:
+                return "happy"            # High energy + moderately positive
             else:
-                return "neutral"         # High arousal + neutral valence
+                return "confident"        # High energy + neutral valence = assertive
 
-        # Medium arousal (0.4-0.6)
+        # Medium arousal (0.4–0.6)
         elif arousal > 0.4:
-            if valence < 0.35:
-                return "sad"             # Medium arousal + negative
-            elif valence > 0.6:
-                return "happy"           # Medium arousal + positive
-            elif valence > 0.45:
-                return "content"         # Medium arousal + slightly positive
+            if valence < 0.3:
+                return "sad"              # Medium energy + negative
+            elif valence < 0.45:
+                return "disappointed"     # Medium energy + mildly negative
+            elif valence > 0.65:
+                return "happy"            # Medium energy + positive
+            elif valence > 0.5:
+                return "content"          # Medium energy + slightly positive = settled
             else:
                 return "neutral"
 
-        # Low arousal (< 0.4)
+        # Low arousal (< 0.4) — subdued states
         else:
-            if valence < 0.35:
-                if dominance < 0.4:
-                    return "fear"        # Low arousal + negative + submissive
-                return "sad"             # Low arousal + negative
+            if valence < 0.25:
+                if dominance < 0.35:
+                    return "fear"         # Low energy + very negative + submissive (→ scared)
+                return "sad"              # Low energy + negative
+            elif valence < 0.4:
+                return "apologetic"       # Low energy + mildly negative = subdued/sorry
             elif valence > 0.6:
-                return "content"         # Low arousal + positive = content/relaxed
+                return "content"          # Low energy + positive = calm/relaxed
+            elif valence > 0.45:
+                return "empathetic"       # Low energy + slightly positive = warm/gentle
             else:
                 return "neutral"
 

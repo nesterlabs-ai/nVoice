@@ -11,6 +11,21 @@ from loguru import logger
 from pipecat.frames.frames import Frame, TextFrame, StartFrame, EndFrame, CancelFrame
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
+# Phrases that signal laughter — bot will inject [laughter] before the next word
+_LAUGHTER_TRIGGERS = re.compile(
+    r'\b('
+    r'ha ha|haha|hehe|he he|lol|lmao|hah|heeh|'
+    r'that\'?s funny|how funny|pretty funny|quite funny|rather funny|'
+    r'that\'?s hilarious|how hilarious|absolutely hilarious|'
+    r'that\'?s amusing|how amusing|'
+    r'can\'?t help (but )?laugh|have to laugh|can\'?t stop laughing|'
+    r'laugh(ing)? at that|burst(ing)? out laughing|'
+    r'tickles? me|that cracks? me up|quite the joke|'
+    r'joke(s|d)?|joking aside|in all seriousness.*just kidding'
+    r')\b',
+    re.IGNORECASE
+)
+
 
 class TextFilterProcessor(FrameProcessor):
     """Processor that filters markdown and unwanted symbols from text before TTS.
@@ -19,20 +34,27 @@ class TextFilterProcessor(FrameProcessor):
     markdown formatting that would otherwise be read aloud as words like
     "star star" or "hashtag".
 
+    When using Cartesia TTS, it also injects [laughter] tags automatically
+    when the bot response contains humorous language.
+
     Attributes:
         enabled: Whether filtering is enabled
+        inject_laughter: Whether to inject [laughter] tags for Cartesia TTS
     """
 
-    def __init__(self, enabled: bool = True):
+    def __init__(self, enabled: bool = True, inject_laughter: bool = False):
         """Initialize the Text Filter Processor.
 
         Args:
             enabled: Whether text filtering is enabled
+            inject_laughter: Inject [laughter] tags when bot says something funny
+                             (Cartesia sonic-3 only — other TTS will read it aloud)
         """
         super().__init__()
         self.enabled = enabled
+        self.inject_laughter = inject_laughter
         self._started = False
-        logger.info(f"TextFilterProcessor initialized (enabled={enabled})")
+        logger.info(f"TextFilterProcessor initialized (enabled={enabled}, inject_laughter={inject_laughter})")
 
     def clean_text_for_speech(self, text: str) -> str:
         """Clean text by removing markdown and unwanted symbols.
@@ -114,7 +136,31 @@ class TextFilterProcessor(FrameProcessor):
         if text != original_text:
             logger.debug(f"Filtered text: '{original_text[:50]}...' → '{text[:50]}...'")
 
+        # Inject [laughter] tag for Cartesia TTS when bot says something funny
+        if self.inject_laughter and text:
+            text = self._inject_laughter_tags(text)
+
         return text
+
+    def _inject_laughter_tags(self, text: str) -> str:
+        """Inject Cartesia [laughter] nonverbalism tag when humorous phrases are detected.
+
+        Inserts [laughter] immediately after the triggering phrase so Cartesia
+        produces a natural laugh at that point in the audio stream.
+
+        Args:
+            text: Cleaned TTS text
+
+        Returns:
+            Text with [laughter] tags injected where appropriate
+        """
+        def _insert_after_match(m: re.Match) -> str:
+            return m.group(0) + " [laughter]"
+
+        result = _LAUGHTER_TRIGGERS.sub(_insert_after_match, text)
+        if result != text:
+            logger.info(f"[LAUGHTER] Injected [laughter] tag: '{text[:60]}...' → '{result[:70]}...'")
+        return result
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process frames and filter TextFrames.

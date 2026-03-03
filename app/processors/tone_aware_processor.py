@@ -38,6 +38,12 @@ from app.services.msp_emotion_detector import (
 from app.services.chatterbox_tts import ChatterboxTTSService
 from app.services.hybrid_emotion_detector import HybridEmotionDetector
 
+try:
+    from pipecat.services.cartesia.tts import CartesiaTTSService, GenerationConfig
+    _CARTESIA_AVAILABLE = True
+except ImportError:
+    _CARTESIA_AVAILABLE = False
+
 
 class ToneAwareProcessor(FrameProcessor):
     """Processor that detects emotional tone and switches TTS voice.
@@ -690,34 +696,68 @@ class ToneAwareProcessor(FrameProcessor):
         try:
             old_tone = self._current_tone
 
-            # Check if using Chatterbox TTS (emotion-based control)
+            # Check if using Chatterbox TTS (emotion-based control via exaggeration/cfg_weight)
             if isinstance(self.tts_service, ChatterboxTTSService):
-                # Chatterbox uses set_emotion() for audible tone changes
-                # This controls exaggeration and cfg_weight parameters
                 logger.info(f"Chatterbox TTS: Setting emotion to '{tone}'")
                 self.tts_service.set_emotion(tone)
-                self.current_voice_model = tone  # Track as tone for Chatterbox
-                logger.info(
-                    f"✅ EMOTION SWITCHED (Chatterbox): {old_tone} -> {tone}"
-                )
-
-                # Emit tone switch event to frontend
+                self.current_voice_model = tone
+                logger.info(f"✅ EMOTION SWITCHED (Chatterbox): {old_tone} -> {tone}")
                 await self._emit_tone_switch_event(old_tone, tone)
+
+            # Cartesia TTS — emotion + speed + volume via generation_config in _settings
+            elif _CARTESIA_AVAILABLE and isinstance(self.tts_service, CartesiaTTSService):
+                # Map our internal emotion names to Cartesia emotion strings + speed/volume tuning.
+                # Speed: 0.6 (slowest) → 1.5 (fastest). Volume: 0.5 (quietest) → 2.0 (loudest).
+                # Primary emotions (best results): neutral, angry, excited, content, sad, scared
+                # Extended: enthusiastic, melancholic, frustrated, agitated, calm, anxious, etc.
+                CARTESIA_EMOTION_CONFIG = {
+                    # user emotion  → (cartesia_emotion,  speed,  volume)
+                    "neutral":       ("neutral",           1.0,    1.0),
+                    "happy":         ("happy",             1.1,    1.1),
+                    "excited":       ("enthusiastic",      1.2,    1.2),   # more energy than plain "excited"
+                    "frustrated":    ("agitated",          1.05,   1.1),   # slightly faster, louder = tense
+                    "angry":         ("angry",             1.1,    1.3),   # loud and direct
+                    "sad":           ("melancholic",       0.85,   0.9),   # slower, quieter = heavy-hearted
+                    "fear":          ("scared",            0.95,   0.85),  # quieter, slightly slower
+                    "content":       ("content",           0.95,   0.95),  # calm and settled
+                    "empathetic":    ("sympathetic",       0.9,    0.95),  # warm and measured
+                    "anxious":       ("anxious",           1.1,    0.9),   # faster but softer
+                    "curious":       ("curious",           1.0,    1.0),
+                    "confident":     ("confident",         1.05,   1.1),
+                    "disappointed":  ("disappointed",      0.9,    0.9),
+                    "apologetic":    ("apologetic",        0.9,    0.9),
+                    "determined":    ("determined",        1.05,   1.1),
+                    "sarcastic":     ("sarcastic",         1.0,    1.0),
+                    "joking":        ("joking/comedic",    1.05,   1.05),
+                }
+                cartesia_emotion, speed, volume = CARTESIA_EMOTION_CONFIG.get(
+                    tone, ("neutral", 1.0, 1.0)
+                )
+                logger.info(
+                    f"Cartesia TTS: emotion='{cartesia_emotion}' speed={speed} volume={volume} "
+                    f"(from internal tone='{tone}')"
+                )
+                self.tts_service._settings["generation_config"] = GenerationConfig(
+                    emotion=cartesia_emotion,
+                    speed=speed,
+                    volume=volume,
+                )
+                self.current_voice_model = tone
+                logger.info(
+                    f"✅ EMOTION SWITCHED (Cartesia): {old_tone} -> {tone} "
+                    f"(cartesia='{cartesia_emotion}', speed={speed}, volume={volume})"
+                )
+                await self._emit_tone_switch_event(old_tone, tone)
+
             else:
-                # Other TTS providers: Use voice switching
+                # Other TTS providers: Use voice ID switching
                 old_voice = self.current_voice_model
                 logger.info(f"Calling tts_service.set_voice('{new_voice}')")
                 self.tts_service.set_voice(new_voice)
                 self.current_voice_model = new_voice
-
-                # Verify the voice was set
                 actual_voice = getattr(self.tts_service, '_voice_id', 'unknown')
                 logger.info(f"TTS service _voice_id is now: {actual_voice}")
-                logger.info(
-                    f"✅ VOICE SWITCHED: {old_voice} -> {new_voice} (tone: {tone})"
-                )
-
-                # Emit tone switch event to frontend
+                logger.info(f"✅ VOICE SWITCHED: {old_voice} -> {new_voice} (tone: {tone})")
                 await self._emit_tone_switch_event(old_voice, new_voice)
 
         except Exception as e:

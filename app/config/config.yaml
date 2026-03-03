@@ -69,14 +69,12 @@ stt:
 
 
 tts:
-  provider: "chatterbox"  # Resemble AI Chatterbox with emotion control
+  provider: "cartesia"  # Cartesia Sonic-3 — word timestamps + emotion via generation_config
   config:
-    api_key: "${RESEMBLE_API_KEY}"
-    voice_uuid: "${RESEMBLE_VOICE_UUID}"
-    synthesis_url: "https://f.cluster.resemble.ai/synthesize"
-    stream_url: "https://f.cluster.resemble.ai/stream"
-    sample_rate: 24000
-    voice: "neutral"  # Initial emotion (neutral, happy, excited, sad, etc.)
+    api_key: "${CARTESIA_API_KEY}"
+    voice_id: "${CARTESIA_VOICE_ID}"
+    model: "sonic-3"
+    emotion: "neutral"  # Initial emotion
 
 input_analyzer:
   custom_patterns:
@@ -287,14 +285,12 @@ server:
   # Uses MSP-PODCAST wav2vec2 + Google Gemini for hybrid audio+text sentiment
   emotion_detection_enabled: true
 
-  # VAD settings - STRICTER to prevent false barge-ins from background noise
-  # Higher values = stricter (less sensitive to noise, but may miss quiet speech)
-  # Lower values = more sensitive (catches quiet speech, but may pick up noise)
+  # VAD settings - OFFICE MODE: high confidence + volume to ignore background chatter/AC/keyboard
   vad:
-    confidence: 0.7        # Trigger on clear speech (matches smooth branch)
-    start_secs: 0.2        # FASTER - 200ms to detect interruptions quickly
-    stop_secs: 0.8         # Wait 0.8s of silence before ending utterance
-    min_volume: 0.5        # Catch normal and quiet speech (matches smooth branch)
+    confidence: 0.92        # Very high — only clear direct speech triggers (ignores background office talk)
+    start_secs: 0.3        # 300ms — slight delay to avoid reacting to brief noise bursts
+    stop_secs: 1.0         # 1s silence before ending utterance (office noise can mask pauses)
+    min_volume: 0.80       # High volume floor — user must speak directly/clearly into mic
 
   # Barge-in (interruption) settings
   # MinWordsInterruptionStrategy prevents false interruptions from:

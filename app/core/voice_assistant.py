@@ -116,8 +116,13 @@ class VoiceAssistant:
             groq_api_key=google_api_key,  # Pass Google API key for LLM text sentiment (Gemini)
         )
 
-        # Text filter processor to remove markdown before TTS
-        self.text_filter = TextFilterProcessor(enabled=True)
+        # Text filter processor to remove markdown before TTS.
+        # inject_laughter=True only for Cartesia — it understands [laughter] tags natively.
+        tts_provider_for_filter = self.config.get("tts", {}).get("provider", "elevenlabs")
+        self.text_filter = TextFilterProcessor(
+            enabled=True,
+            inject_laughter=(tts_provider_for_filter == "cartesia"),
+        )
 
         # Visual hint processor - now minimal, A2UI is handled via RAG calls only
         # A2UI (Agent-to-UI) is triggered ONLY when call_rag_system is invoked
