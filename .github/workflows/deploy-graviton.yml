@@ -14,7 +14,7 @@ name: Deploy to AWS Graviton
 
 on:
   push:
-    branches: [graviton-test]
+    branches: [feat/resemble-tts]
     paths:
       - 'app/**'
       - 'client/**'
@@ -207,7 +207,7 @@ jobs:
             docker compose up -d --force-recreate
 
             echo "=== Waiting for services to start ==="
-            sleep 10
+            sleep 30
             docker compose ps
 
             echo "=== Graviton deployment complete ==="
