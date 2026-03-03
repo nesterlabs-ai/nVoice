@@ -46,6 +46,7 @@ from app.processors.tone_aware_processor import ToneAwareProcessor
 from app.processors.text_filter_processor import TextFilterProcessor
 from app.processors.visual_hint_processor import VisualHintProcessor
 from app.processors.smart_interruption_processor import SmartInterruptionProcessor
+from app.processors.subtitle_sync_processor import SubtitleSyncProcessor
 
 
 class VoiceAssistant:
@@ -126,10 +127,14 @@ class VoiceAssistant:
         logger.info(f"🎨 A2UI system enabled (RAG-triggered only): {a2ui_enabled}")
         self.visual_hint_processor = VisualHintProcessor(
             enabled=True,
-            stream_words=True,  # Word-by-word streaming for smooth subtitle updates
+            stream_words=False,  # Disabled: SubtitleSyncProcessor handles subtitle timing via upstream TTSTextFrame
             detect_content=False,  # Legacy visual hints disabled
             use_a2ui=False,  # A2UI now handled via RAG calls in ConversationManager
         )
+
+        # Subtitle sync processor - emits subtitles synced with TTS audio playback
+        # Intercepts upstream TTSTextFrame (timed by transport) for perfect audio-text sync
+        self.subtitle_sync = SubtitleSyncProcessor()
 
         # Smart interruption processor - validates interruptions to prevent false barge-ins
         smart_int_config = server_config.get("smart_interruption", {})
@@ -290,6 +295,7 @@ class VoiceAssistant:
             self.text_filter,             # Remove markdown before TTS
             SentenceAggregator(),         # Collect text into full sentences before TTS (prevents choppy audio)
             tts,
+            self.subtitle_sync,           # Sync subtitles with TTS audio via upstream TTSTextFrame
             transport.output(),
             context_aggregator.assistant(),
         ])

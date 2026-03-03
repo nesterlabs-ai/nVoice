@@ -133,6 +133,13 @@ class VoiceScannerApp {
   /** Skip the next onBotTranscript add (same content as the streaming bubble we just finalized). */
   private skipNextBotTranscriptAdd: boolean = false;
 
+  // Subtitle timing: buffer words and release them synced with audio playback
+  private subtitleWordBuffer: Array<{ word: string; seq: number; ptsOffset: number }> = [];
+  private subtitleAudioStartTime: number = 0;  // performance.now() when BotStartedSpeaking fires
+  private subtitleDisplayTimers: ReturnType<typeof setTimeout>[] = [];
+  private subtitleDisplayedWords: string[] = [];  // words currently shown in subtitle
+  private subtitleBufferFlushTimer: ReturnType<typeof setTimeout> | null = null;  // safety flush
+
   // Typewriter effect state for bot transcripts
   private currentBotBubble: HTMLElement | null = null;
   private typewriterQueue: string[] = [];
@@ -2395,13 +2402,24 @@ class VoiceScannerApp {
         this.subtitleClearTimeout = null;
       }
       this.setVoiceState('speaking');
+
+      // Audio is now playing — schedule buffered subtitle words based on PTS timing
+      this.subtitleAudioStartTime = performance.now();
+      if (this.subtitleBufferFlushTimer) {
+        clearTimeout(this.subtitleBufferFlushTimer);
+        this.subtitleBufferFlushTimer = null;
+      }
+      this.flushSubtitleWordBuffer();
     });
 
     this.rtviClient.on(RTVIEvent.BotStoppedSpeaking, () => {
       this.log('Bot stopped speaking');
       this.botIsSpeaking = false;
-      // Schedule subtitle hide with dynamic delay based on word count
-      const hideDelay = Math.min(Math.max(this.subtitleWordCount * 80, 1500), 4000);
+      // If subtitle display timers are still running, don't hide yet —
+      // schedule hide after remaining timers would have completed.
+      // Use a generous delay to ensure all PTS-timed words have been shown.
+      const pendingTimers = this.subtitleDisplayTimers.length > 0;
+      const hideDelay = pendingTimers ? 5000 : Math.min(Math.max(this.subtitleWordCount * 80, 1500), 4000);
       this.subtitleWordCount = 0;
       if (this.subtitleClearTimeout) {
         clearTimeout(this.subtitleClearTimeout);
@@ -2511,6 +2529,16 @@ class VoiceScannerApp {
             this.setCloseButtonEnabled(true);
             this.log('Disconnected');
             this.setVoiceState('idle');
+            // Stop all subtitle activity
+            this.clearSubtitleDisplayTimers();
+            this.subtitleWordBuffer = [];
+            this.subtitleDisplayedWords = [];
+            this.subtitleAudioStartTime = 0;
+            if (this.subtitleClearTimeout) {
+              clearTimeout(this.subtitleClearTimeout);
+              this.subtitleClearTimeout = null;
+            }
+            this.liveSubtitle?.classList.remove('visible');
             // Do not clear close-mode here: when user clicked Close we keep Restart | Peek visible.
             // When server/error disconnects, we're not in close-mode so updateConnectionUI(false) will show connect area.
             this.updateConnectionUI(false);
@@ -2545,11 +2573,12 @@ class VoiceScannerApp {
           },
           onBotTranscript: (data) => {
             this.log(`Bot: ${data.text}`);
-            // Avoid duplicate transcript line: skip adding when we show this via streaming_text
-            if (!this.streamingBubble && !this.skipNextBotTranscriptAdd) {
-              this.addBotTranscriptWithTypewriter(data.text);
-            }
-            if (this.skipNextBotTranscriptAdd) this.skipNextBotTranscriptAdd = false;
+            // [SUBTITLE-SYNC] Disabled: subtitle & transcript now driven by streaming_text
+            // from SubtitleSyncProcessor for audio-synced subtitles.
+            // if (!this.streamingBubble && !this.skipNextBotTranscriptAdd) {
+            //   this.addBotTranscriptWithTypewriter(data.text);
+            // }
+            // if (this.skipNextBotTranscriptAdd) this.skipNextBotTranscriptAdd = false;
             // Accumulate bot answer chunks (for graph highlight)
             this.accumulatedBotAnswer += ' ' + data.text;
             // Debounce highlight call - wait 500ms after last chunk
@@ -2708,52 +2737,183 @@ class VoiceScannerApp {
   // ===== STREAMING TRANSCRIPT METHODS =====
 
   /**
-   * Handle streaming text events for word-by-word display.
-   * This handles greeting messages that arrive as streaming_text before LLM responses.
+   * Handle streaming text events — buffer words with PTS timing, display synced with audio.
+   *
+   * Words arrive from SubtitleSyncProcessor as a burst BEFORE audio plays.
+   * Each word includes pts_offset (seconds from first word in utterance).
+   * Words are buffered and released when BotStartedSpeaking fires.
    */
   private handleStreamingText(data: {
     text: string;
     is_final: boolean;
     sequence_id: number;
     utterance_id: string;
+    pts_offset?: number;
     timestamp: number;
   }): void {
-
-    // Handle final marker - finalize the current streaming bubble
+    // Handle final marker
     if (data.is_final) {
       this.finalizeCurrentStreamingBubble();
       return;
     }
 
-    // New utterance - create a new streaming bubble
+    // New utterance — reset state
     if (data.utterance_id !== this.currentUtteranceId) {
-      // Finalize previous bubble if exists
       if (this.streamingBubble) {
         this.finalizeCurrentStreamingBubble();
       }
-
-      // Start new bubble
       this.currentUtteranceId = data.utterance_id;
-      this.streamingTextActiveForSubtitle = true;  // streaming_text is now handling subtitle
+      this.streamingTextActiveForSubtitle = true;
       this.createStreamingBubble();
+
+      // Reset subtitle timing state
+      this.clearSubtitleDisplayTimers();
+      this.subtitleWordBuffer = [];
+      this.subtitleDisplayedWords = [];
+      // If bot is already speaking (BotStartedSpeaking fired before first streaming_text),
+      // keep audio start time so words schedule immediately instead of buffering forever.
+      if (this.botIsSpeaking) {
+        this.subtitleAudioStartTime = performance.now();
+      } else {
+        this.subtitleAudioStartTime = 0;
+      }
     }
 
-    // Add the word to the streaming bubble
-    if (data.text && data.text.trim()) {
-      this.addStreamingWord(data.text.trim(), data.sequence_id);
+    if (!data.text || !data.text.trim()) return;
+    const word = data.text.trim();
+    const ptsOffset = data.pts_offset ?? 0;
+
+    // Add word to transcript bubble immediately (transcript is a log, no timing needed)
+    this.addWordToTranscriptBubble(word, data.sequence_id);
+
+    // Buffer word for timed subtitle display
+    if (this.subtitleAudioStartTime > 0) {
+      // Audio already playing — schedule this word immediately
+      this.scheduleSubtitleWord(word, ptsOffset);
+    } else {
+      // Audio not yet playing — buffer for later
+      this.subtitleWordBuffer.push({ word, seq: data.sequence_id, ptsOffset });
+      // Safety: if BotStartedSpeaking never fires (e.g. event lost), flush after 2s
+      if (!this.subtitleBufferFlushTimer) {
+        this.subtitleBufferFlushTimer = setTimeout(() => {
+          this.subtitleBufferFlushTimer = null;
+          if (this.subtitleWordBuffer.length > 0 && this.subtitleAudioStartTime === 0) {
+            console.log('[ST] Safety flush: BotStartedSpeaking not received, flushing buffered words');
+            this.subtitleAudioStartTime = performance.now();
+            this.flushSubtitleWordBuffer();
+          }
+        }, 2000);
+      }
     }
   }
 
   /**
-   * Create a new streaming transcript bubble
+   * Flush buffered subtitle words — called when BotStartedSpeaking fires.
+   * Schedules each word's display at its PTS offset from now.
+   */
+  private flushSubtitleWordBuffer(): void {
+    for (const entry of this.subtitleWordBuffer) {
+      this.scheduleSubtitleWord(entry.word, entry.ptsOffset);
+    }
+    this.subtitleWordBuffer = [];
+  }
+
+  /**
+   * Schedule a single word to appear in the subtitle at its PTS time.
+   */
+  private scheduleSubtitleWord(word: string, ptsOffset: number): void {
+    const elapsed = (performance.now() - this.subtitleAudioStartTime) / 1000;
+    const delay = Math.max(0, ptsOffset - elapsed);
+
+    if (delay < 0.05) {
+      // Show immediately
+      this.displaySubtitleWord(word);
+    } else {
+      const timer = setTimeout(() => {
+        this.displaySubtitleWord(word);
+      }, delay * 1000);
+      this.subtitleDisplayTimers.push(timer);
+    }
+  }
+
+  /**
+   * Display a word in the live subtitle (append to rolling text).
+   */
+  private displaySubtitleWord(word: string): void {
+    this.subtitleDisplayedWords.push(word);
+
+    if (this.liveSubtitle && this.liveSubtitleText) {
+      const fullText = this.subtitleDisplayedWords.join(' ');
+      const maxChars = window.innerWidth <= VoiceScannerApp.SUBTITLE_MOBILE_BREAKPOINT_PX
+        ? VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS_MOBILE
+        : VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS;
+      const lines = this.textToLines(fullText, maxChars);
+      const maxVisible = VoiceScannerApp.MAX_SUBTITLE_LINES_VISIBLE;
+      const visibleLines = lines.slice(-maxVisible);
+
+      // Render each line with individual word spans; latest word gets glow
+      this.liveSubtitleText.innerHTML = '';
+      const totalWordCount = this.subtitleDisplayedWords.length;
+      let wordIndex = 0;
+      // Calculate how many words are in lines before the visible ones
+      const allLines = this.textToLines(fullText, maxChars);
+      const hiddenLines = allLines.slice(0, allLines.length - visibleLines.length);
+      let hiddenWordCount = 0;
+      for (const hl of hiddenLines) {
+        hiddenWordCount += hl.split(/\s+/).filter(Boolean).length;
+      }
+      wordIndex = hiddenWordCount;
+
+      for (const line of visibleLines) {
+        const lineEl = document.createElement('span');
+        lineEl.className = 'subtitle-line';
+        const words = line.split(/\s+/).filter(Boolean);
+        for (let i = 0; i < words.length; i++) {
+          if (i > 0) lineEl.appendChild(document.createTextNode(' '));
+          const wordSpan = document.createElement('span');
+          wordSpan.className = 'subtitle-word';
+          wordSpan.textContent = words[i];
+          wordIndex++;
+          if (wordIndex === totalWordCount) {
+            // This is the latest word — give it the active glow
+            wordSpan.classList.add('subtitle-word-active');
+          }
+          lineEl.appendChild(wordSpan);
+        }
+        this.liveSubtitleText.appendChild(lineEl);
+      }
+
+      this.liveSubtitle.classList.remove('user');
+      this.liveSubtitle.classList.add('bot', 'visible');
+
+      // Clear any pending hide timer while words are still being displayed
+      if (this.subtitleClearTimeout) {
+        clearTimeout(this.subtitleClearTimeout);
+        this.subtitleClearTimeout = null;
+      }
+    }
+  }
+
+  /**
+   * Clear all pending subtitle display timers.
+   */
+  private clearSubtitleDisplayTimers(): void {
+    for (const t of this.subtitleDisplayTimers) clearTimeout(t);
+    this.subtitleDisplayTimers = [];
+    if (this.subtitleBufferFlushTimer) {
+      clearTimeout(this.subtitleBufferFlushTimer);
+      this.subtitleBufferFlushTimer = null;
+    }
+  }
+
+  /**
+   * Create a new streaming transcript bubble (log-style, no timing).
    */
   private createStreamingBubble(): void {
     if (!this.transcriptList) return;
 
-    // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
-    // Reset streaming state and clear subtitle for new utterance
     this.streamingWords = [];
     for (const t of this.subtitleRevealTimeouts) clearTimeout(t);
     this.subtitleRevealTimeouts = [];
@@ -2779,49 +2939,38 @@ class VoiceScannerApp {
   }
 
   /**
-   * Add a word to the streaming bubble with animation
+   * Add a word to the transcript bubble (immediate, no timing).
    */
-  private addStreamingWord(word: string, sequenceId: number): void {
+  private addWordToTranscriptBubble(word: string, sequenceId: number): void {
     if (!this.streamingBubble) return;
 
     const textContainer = this.streamingBubble.querySelector('.transcript-message.streaming-text');
     if (!textContainer) return;
 
-    // Create word span with animation
     const wordSpan = document.createElement('span');
     wordSpan.className = 'streaming-word';
     wordSpan.textContent = word + ' ';
-    wordSpan.style.animationDelay = `${(sequenceId % 10) * 30}ms`; // Stagger animation
+    wordSpan.style.animationDelay = `${(sequenceId % 10) * 30}ms`;
 
     textContainer.appendChild(wordSpan);
     this.streamingWords.push(word);
 
-    // Update subtitle immediately with full text so far (no typewriter / no delay)
-    this.setBotSubtitleFromText(this.streamingWords.join(' '));
-
-    // Auto-scroll
     if (this.transcriptList) {
       this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
     }
   }
 
   /**
-   * Finalize the current streaming bubble
+   * Finalize the current streaming bubble.
+   * Note: does NOT clear subtitle display timers — words may still be scheduled
+   * for display (is_final arrives when TTS finishes generating, before audio ends).
+   * Timers are only cleared when a new utterance starts.
    */
   private finalizeCurrentStreamingBubble(): void {
     if (this.streamingBubble) {
-      // Subtitle already has words appended; just reset hide timer
-      if (this.liveSubtitle && this.liveSubtitle.classList.contains('visible')) {
-        if (this.subtitleClearTimeout) clearTimeout(this.subtitleClearTimeout);
-        this.subtitleClearTimeout = setTimeout(() => {
-          this.liveSubtitle?.classList.remove('visible');
-        }, 4000);
-      }
-
       this.streamingBubble.classList.remove('streaming');
       this.streamingBubble.classList.add('finalized');
 
-      // Convert streaming words to static text for better performance
       const textContainer = this.streamingBubble.querySelector('.transcript-message.streaming-text');
       if (textContainer && this.streamingWords.length > 0) {
         textContainer.innerHTML = '';
@@ -2831,7 +2980,9 @@ class VoiceScannerApp {
     this.streamingBubble = null;
     this.currentUtteranceId = null;
     this.streamingWords = [];
-    this.skipNextBotTranscriptAdd = true; // next onBotTranscript is same content, don't add again
+    this.subtitleWordBuffer = [];
+    // Don't clear subtitleDisplayedWords or timers — words are still being displayed
+    this.skipNextBotTranscriptAdd = true;
   }
 
   // ===== VISUAL CARD METHODS =====

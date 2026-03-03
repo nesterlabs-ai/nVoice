@@ -1862,14 +1862,21 @@ body.a2ui-panel-visible .live-subtitle.visible {
   transition: opacity 500ms ease-in-out;
 }
 
-/* Any line that is not the first (top) has 30% opacity; first line stays full. */
-.live-subtitle-text .subtitle-line:not(:first-child) {
-  opacity: 0.3;
+/* Second line fades slightly */
+.live-subtitle-text .subtitle-line:not(:last-child) {
+  opacity: 0.45;
 }
 
-/* When second line scrolls up: opacity driven by JS between 50ms–400ms (no CSS transition) */
-.live-subtitle-text .subtitle-line.subtitle-line-promoted {
-  opacity: 1;
+/* Individual word styling — settled state */
+.live-subtitle-text .subtitle-word {
+  display: inline;
+  transition: color 0.3s ease, text-shadow 0.3s ease, opacity 0.3s ease;
+}
+
+/* Active (latest) word: bright glow */
+.live-subtitle-text .subtitle-word-active {
+  color: #fff;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.9), 0 0 20px rgba(255, 255, 255, 0.4);
 }
 
 /* User subtitle text */
