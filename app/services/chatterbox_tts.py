@@ -14,11 +14,14 @@ from typing import Optional, Dict, Any, AsyncGenerator
 from loguru import logger
 from pipecat.frames.frames import (
     Frame,
+    AggregationType,
     TTSAudioRawFrame,
     TTSStartedFrame,
     TTSStoppedFrame,
+    TTSTextFrame,
     ErrorFrame,
 )
+from pipecat.utils.time import seconds_to_nanoseconds
 from pipecat.services.tts_service import TTSService
 
 
@@ -85,7 +88,7 @@ class ChatterboxTTSService(TTSService):
             voice: Initial voice/emotion (default "neutral")
             **kwargs: Additional arguments for parent class
         """
-        super().__init__(sample_rate=sample_rate, **kwargs)
+        super().__init__(sample_rate=sample_rate, push_text_frames=False, **kwargs)
 
         self._api_key = api_key
         self._voice_uuid = voice_uuid
@@ -176,6 +179,20 @@ class ChatterboxTTSService(TTSService):
         try:
             # Signal TTS started
             yield TTSStartedFrame()
+
+            # Emit word-level TTSTextFrames BEFORE audio so frontend can buffer
+            # and schedule subtitle display relative to BotStartedSpeaking.
+            # Estimate ~150 words/min = 0.4s per word for PTS timing.
+            # Add 0.8s base offset to compensate for TTS API latency (TTFB)
+            # so subtitles don't appear before audio starts playing.
+            words = text.split()
+            if words:
+                est_secs_per_word = 0.4
+                ttfb_offset = 0.8
+                for i, word in enumerate(words):
+                    word_frame = TTSTextFrame(word, aggregated_by=AggregationType.WORD)
+                    word_frame.pts = int(seconds_to_nanoseconds(ttfb_offset + i * est_secs_per_word))
+                    yield word_frame
 
             payload = {
                 "voice_uuid": self._voice_uuid,
