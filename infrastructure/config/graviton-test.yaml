@@ -12,10 +12,10 @@ aws:
 # EC2 Graviton Instance Configuration
 ec2:
   instance:
-    instance_type: "t4g.medium"  # 4GB RAM needed for wav2vec2 emotion detection
+    instance_type: "t4g.large"  # 8GB RAM for wav2vec2 emotion detection + headroom
     ami_type: "amazon_linux_2023_arm64"
     key_pair_name: "nester-graviton-test"
-    volume_size_gb: 20  # gp3 EBS
+    volume_size_gb: 30  # gp3 EBS
     availability_zone_suffix: "a"
 
   elastic_ip:
