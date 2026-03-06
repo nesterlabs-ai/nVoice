@@ -17,6 +17,8 @@ from utils.config_loader import NesterConfig
 from components import (
     NesterSecrets,
     NesterECR,
+    NesterCloudWatchLogs,
+    NesterSSMConfig,
 )
 from components.ecr_credentials import EcrCredentials
 from components.lightsail_custom import LightsailCustomResource
@@ -65,7 +67,14 @@ class LightsailStack(Stack):
             config=config,
         )
 
-        # 3. Create IAM user and credentials for ECR access
+        # 3. Create CloudWatch Log Group for container logs
+        self.cloudwatch_logs = NesterCloudWatchLogs(
+            self,
+            "CloudWatchLogs",
+            config=config,
+        )
+
+        # 4. Create IAM user and credentials for ECR access
         # (Lightsail doesn't support IAM instance roles, so we use stored credentials)
         self.ecr_credentials = EcrCredentials(
             self,
@@ -73,9 +82,27 @@ class LightsailStack(Stack):
             config=config,
             backend_repo_arn=self.ecr.backend_repo.repository_arn,
             frontend_repo_arn=self.ecr.frontend_repo.repository_arn,
+            log_group_arn=self.cloudwatch_logs.log_group_arn,
         )
 
-        # 4. Create Lightsail instance with Static IP using Custom Resource
+        # 5. Create SSM Parameter Store with server config
+        self.ssm_config = NesterSSMConfig(
+            self,
+            "SSMConfig",
+            config=config,
+        )
+
+        # Grant SSM read permission to the ECR credentials user
+        # (Lightsail instances use this IAM user for all AWS API calls)
+        self.ecr_credentials.ecr_user.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["ssm:GetParameter"],
+                resources=[self.ssm_config.parameter_arn],
+            )
+        )
+
+        # 6. Create Lightsail instance with Static IP using Custom Resource
         # (Uses SDK calls to bypass CloudFormation Lightsail limitations)
         self.lightsail = LightsailCustomResource(
             self,
@@ -83,6 +110,7 @@ class LightsailStack(Stack):
             config=config,
             api_keys_secret_arn=self.secrets.secret_arn,
             ecr_credentials_secret_arn=self.ecr_credentials.secret_arn,
+            ssm_parameter_name=self.ssm_config.parameter_name,
             backend_image_uri=self.ecr.backend_image_uri(config.image_tag),
             frontend_image_uri=self.ecr.frontend_image_uri(config.image_tag),
         )
@@ -162,4 +190,20 @@ class LightsailStack(Stack):
             "EcrLoginCommand",
             value=f"aws ecr get-login-password --region {config.aws.region} | docker login --username AWS --password-stdin {self.ecr.backend_repo_uri.split('/')[0]}",
             description="Command to authenticate Docker with ECR",
+        )
+
+        # CloudWatch Logs outputs
+        CfnOutput(
+            self,
+            "CloudWatchLogGroup",
+            value=self.cloudwatch_logs.log_group_name,
+            description="CloudWatch Log Group for container logs",
+            export_name=f"{config.resource_prefix}-log-group",
+        )
+
+        CfnOutput(
+            self,
+            "CloudWatchLogsUrl",
+            value=f"https://{config.aws.region}.console.aws.amazon.com/cloudwatch/home?region={config.aws.region}#logsV2:log-groups/log-group/{self.cloudwatch_logs.log_group_name.replace('/', '$252F')}",
+            description="URL to view logs in CloudWatch Console",
         )
