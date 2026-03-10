@@ -25,11 +25,22 @@ function getDefaultEmotionTopics(): EmotionTopicNode[] {
 }
 
 let root: Root | null = null;
+let expandedRoot: Root | null = null;
 let currentTopics: EmotionTopicNode[] = [];
 
 function renderWidget(): void {
   if (!root) return;
   root.render(
+    <EmotionAnalysis
+      topics={currentTopics}
+      hideTitle={true}
+    />
+  );
+}
+
+function renderExpandedWidget(): void {
+  if (!expandedRoot) return;
+  expandedRoot.render(
     <EmotionAnalysis
       topics={currentTopics}
       hideTitle={true}
@@ -63,6 +74,7 @@ export function mountEmotionAnalysis(containerId: string = 'emotion-analysis-roo
 export function updateEmotionAnalysisTopics(topics: EmotionTopicNode[]): void {
   currentTopics = topics;
   renderWidget();
+  renderExpandedWidget();
 }
 
 /**
@@ -74,6 +86,34 @@ export function unmountEmotionAnalysis(): void {
     root = null;
     currentTopics = [];
   }
+  if (expandedRoot) {
+    expandedRoot.unmount();
+    expandedRoot = null;
+  }
+}
+
+/**
+ * Show the expanded emotion analysis modal (mount if needed, then render with current data)
+ */
+export function showExpandedEmotionAnalysis(): void {
+  const container = document.getElementById('emotion-analysis-expanded-root');
+  if (!container) return;
+
+  if (!expandedRoot) {
+    expandedRoot = createRoot(container);
+  }
+  renderExpandedWidget();
+
+  const overlay = document.getElementById('emotion-expanded-overlay');
+  overlay?.classList.add('visible');
+}
+
+/**
+ * Hide the expanded emotion analysis modal
+ */
+export function hideExpandedEmotionAnalysis(): void {
+  const overlay = document.getElementById('emotion-expanded-overlay');
+  overlay?.classList.remove('visible');
 }
 
 declare global {
@@ -82,6 +122,8 @@ declare global {
       mount: typeof mountEmotionAnalysis;
       unmount: typeof unmountEmotionAnalysis;
       updateTopics: typeof updateEmotionAnalysisTopics;
+      showExpanded: typeof showExpandedEmotionAnalysis;
+      hideExpanded: typeof hideExpandedEmotionAnalysis;
     };
   }
 }
@@ -90,6 +132,8 @@ window.EmotionAnalysis = {
   mount: mountEmotionAnalysis,
   unmount: unmountEmotionAnalysis,
   updateTopics: updateEmotionAnalysisTopics,
+  showExpanded: showExpandedEmotionAnalysis,
+  hideExpanded: hideExpandedEmotionAnalysis,
 };
 
 if (document.readyState === 'loading') {

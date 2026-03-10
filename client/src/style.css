@@ -315,6 +315,16 @@ body {
   pointer-events: auto;
 }
 
+/* When cards showing: let clicks pass through center-section to dashboard cards */
+.main-layout:not(.panels-hidden) .center-section {
+  pointer-events: none;
+}
+
+/* But keep the media bar clickable */
+.main-layout:not(.panels-hidden) .center-section .media-control-bar {
+  pointer-events: auto;
+}
+
 /* When cards showing: hide live-subtitle */
 .main-layout:not(.panels-hidden) .live-subtitle {
   opacity: 0 !important;
@@ -2432,4 +2442,201 @@ body.a2ui-panel-visible .live-subtitle.visible {
     top: 61px;
     height: calc(100vh - 95px - 184px);
   }
+}
+
+/* ======================================
+   Expanded Emotion Analysis Modal
+   Premium white theme, centered overlay
+   ====================================== */
+
+.emotion-expanded-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.emotion-expanded-overlay.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.emotion-expanded-modal {
+  width: 74vw;
+  max-width: 1080px;
+  height: 65vh;
+  max-height: 650px;
+  background: linear-gradient(165deg, #ffffff 0%, #fafbfc 50%, #f5f6f8 100%);
+  border-radius: 24px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 20px 50px rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: scale(0.92) translateY(10px);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.emotion-expanded-overlay.visible .emotion-expanded-modal {
+  transform: scale(1) translateY(0);
+}
+
+.emotion-expanded-header {
+  padding: 28px 36px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.emotion-expanded-title {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #2a2a2a;
+}
+
+.emotion-expanded-legend {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+
+.emotion-expanded-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: #888;
+  letter-spacing: 0.03em;
+}
+
+.emotion-expanded-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--dot-glow, transparent);
+}
+
+.emotion-expanded-dot.cyan {
+  background: #0ea5e9;
+  --dot-glow: rgba(14, 165, 233, 0.4);
+}
+.emotion-expanded-dot.orange {
+  background: #f97316;
+  --dot-glow: rgba(249, 115, 22, 0.4);
+}
+.emotion-expanded-dot.purple {
+  background: #8b5cf6;
+  --dot-glow: rgba(139, 92, 246, 0.4);
+}
+
+.emotion-expanded-body {
+  flex: 1;
+  min-height: 0;
+  padding: 20px 36px 28px;
+}
+
+#emotion-analysis-expanded-root {
+  height: 100%;
+  min-height: 0;
+}
+
+/* ---- Premium white theme overrides for expanded chart ---- */
+#emotion-analysis-expanded-root .emotion-analysis-card {
+  --emotion-grid-line-color: rgba(0, 0, 0, 0.05);
+  --emotion-grid-line-color-vertical: rgba(0, 0, 0, 0.04);
+  --emotion-x-axis-label-font-size: 10px;
+  --emotion-x-axis-label-color: #aaa;
+  background: transparent;
+  border-radius: 0;
+}
+
+#emotion-analysis-expanded-root .emotion-analysis-body {
+  background: transparent;
+}
+
+#emotion-analysis-expanded-root .emotion-analysis-sticky-y {
+  background: linear-gradient(165deg, #ffffff 0%, #fafbfc 50%, #f5f6f8 100%);
+}
+
+#emotion-analysis-expanded-root .emotion-analysis-sticky-x {
+  background: linear-gradient(165deg, #ffffff 0%, #fafbfc 50%, #f5f6f8 100%);
+}
+
+#emotion-analysis-expanded-root .emotion-analysis-legend {
+  display: none;
+}
+
+/* Y-axis & time labels in muted gray */
+#emotion-analysis-expanded-root svg text {
+  fill: #b0b0b0 !important;
+}
+
+/* Thicker lines with soft glow for premium feel */
+#emotion-analysis-expanded-root svg path[stroke="#f97316"] {
+  stroke: #f97316;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 6px rgba(249, 115, 22, 0.3));
+}
+
+#emotion-analysis-expanded-root svg path[stroke="#06b6d4"] {
+  stroke: #0ea5e9;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 6px rgba(14, 165, 233, 0.3));
+}
+
+#emotion-analysis-expanded-root svg path[stroke="#a855f7"] {
+  stroke: #8b5cf6;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.3));
+}
+
+/* Sentiment labels (Excited, Calm, etc.) in darker text for readability */
+#emotion-analysis-expanded-root svg text[fill="#7D7D7D"] {
+  fill: #555 !important;
+}
+
+/* Scroll-to-latest button styled for white theme */
+#emotion-analysis-expanded-root .emotion-scroll-to-latest {
+  border-color: #d1d5db;
+  background: rgba(255, 255, 255, 0.95);
+  color: #666;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+#emotion-analysis-expanded-root .emotion-scroll-to-latest:hover {
+  background: #f0f0f0;
+  border-color: #999;
+}
+
+/* Hover trigger on emotion card in dashboard */
+#dashboard-card-4 {
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#dashboard-card-4:hover {
+  border-color: rgba(249, 115, 22, 0.4);
+  box-shadow: 0 0 20px rgba(249, 115, 22, 0.1);
 }

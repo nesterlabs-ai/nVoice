@@ -343,6 +343,34 @@ class VoiceScannerApp {
     document.getElementById('close-option-restart')?.addEventListener('click', () => this.onRestartOption());
     document.getElementById('close-option-peak')?.addEventListener('click', () => this.onPeakOption());
 
+    // Expanded Emotion Analysis: click card to show modal, click backdrop or press Esc to close
+    const emotionCard = document.getElementById('dashboard-card-4');
+    const emotionOverlay = document.getElementById('emotion-expanded-overlay');
+    console.log('[EmotionExpanded] emotionCard:', emotionCard, 'overlay:', emotionOverlay);
+    emotionCard?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      console.log('[EmotionExpanded] Card clicked, showExpanded:', typeof (window as any).EmotionAnalysis?.showExpanded);
+      const overlay = document.getElementById('emotion-expanded-overlay');
+      if (overlay) {
+        // Direct DOM approach as fallback
+        overlay.classList.add('visible');
+      }
+      (window as any).EmotionAnalysis?.showExpanded?.();
+    });
+    emotionOverlay?.addEventListener('click', (e) => {
+      // Close when clicking the backdrop (not the modal itself)
+      if (e.target === emotionOverlay) {
+        emotionOverlay.classList.remove('visible');
+        (window as any).EmotionAnalysis?.hideExpanded?.();
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      const overlay = document.getElementById('emotion-expanded-overlay');
+      if (e.key === 'Escape' && overlay?.classList.contains('visible')) {
+        overlay.classList.remove('visible');
+      }
+    });
+
     document.getElementById('a2ui-close')?.addEventListener('click', () => this.hideA2UIPanel());
 
     this.updatePeakButtonState();
@@ -1051,7 +1079,10 @@ class VoiceScannerApp {
       this.refreshSynchronizedAnalysis();
     }
 
-    this.updateLiveSubtitle(isUser ? 'user' : 'bot', text);
+    // Only show bot text in live subtitle, not user speech
+    if (!isUser) {
+      this.updateLiveSubtitle('bot', text);
+    }
 
     const line = document.createElement('div');
     line.className = `transcript-line ${isUser ? 'transcript-line-user' : 'transcript-line-bot'}`;
@@ -2437,6 +2468,19 @@ class VoiceScannerApp {
       this.log('User started speaking');
       this.setVoiceState('listening');
       this.showNotification('VOICE DETECTED');
+
+      // Stop bot subtitle words from continuing to appear after interruption
+      this.clearSubtitleDisplayTimers();
+      this.subtitleWordBuffer = [];
+      this.subtitleDisplayedWords = [];
+      this.subtitleAudioStartTime = 0;
+
+      // Hide bot subtitle so user transcript can take over
+      this.liveSubtitle?.classList.remove('visible');
+      if (this.subtitleClearTimeout) {
+        clearTimeout(this.subtitleClearTimeout);
+        this.subtitleClearTimeout = null;
+      }
     });
 
     this.rtviClient.on(RTVIEvent.UserStoppedSpeaking, () => {
