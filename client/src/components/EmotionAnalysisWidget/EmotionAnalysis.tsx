@@ -1,31 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import type { EmotionTopicNode } from './types';
 import './EmotionAnalysis.css';
 
-const DEFAULT_CHART_HEIGHT = 300;
-const MIN_CHART_HEIGHT = 160;
-
-/** Axis label font sizes (px). Change these to adjust readability. */
-const Y_AXIS_LABEL_FONT_SIZE = 10;
-const SENTIMENT_LABEL_FONT_SIZE = 10;
-const SENTIMENT_EMOJI_FONT_SIZE = 14;
-
 export interface EmotionAnalysisProps {
   topics: EmotionTopicNode[];
-  /** Optional: hide the header when embedded in another card */
   hideTitle?: boolean;
 }
 
-const sentimentToEmoji: { [key: string]: string } = {
-  'Excited': '😄',
-  'Positive': '🙂',
-  'Neutral': '😐',
-  'Calm': '😌',
-  'Concerned': '😟',
+/* ── Emotion → visual mapping ── */
+const EMOTION_MAP: Record<string, { emoji: string; color: string; label: string }> = {
+  Excited:   { emoji: '😄', color: '#f59e0b', label: 'Excited' },
+  Positive:  { emoji: '🙂', color: '#10b981', label: 'Positive' },
+  Neutral:   { emoji: '😐', color: '#8b8b8b', label: 'Neutral' },
+  Calm:      { emoji: '😌', color: '#06b6d4', label: 'Calm' },
+  Concerned: { emoji: '😟', color: '#ef4444', label: 'Frustrated' },
 };
 
-function calculateEmotionMetrics(topic: EmotionTopicNode) {
+const AXIS_COLORS = {
+  valence:    '#06b6d4',
+  arousal:    '#f97316',
+  dominance:  '#a855f7',
+  engagement: '#22c55e',
+  stability:  '#3b82f6',
+};
+
+/* ── Metric calculation from topic data ── */
+function calculateMetrics(topic: EmotionTopicNode) {
   let valence = 0.5;
   if (topic.sentiment === 'positive') valence = 0.2 + topic.intensity * 0.6;
   if (topic.sentiment === 'negative') valence = 0.2 - topic.intensity * 0.2;
@@ -34,278 +34,204 @@ function calculateEmotionMetrics(topic: EmotionTopicNode) {
   if (topic.sentimentLabel === 'Excited') dominance = 0.7;
   if (topic.sentimentLabel === 'Positive') dominance = 0.6;
   if (topic.sentimentLabel === 'Concerned') dominance = 0.3;
-  return { valence, arousal, dominance };
+  // Derived metrics
+  const engagement = Math.min(1, (arousal + valence) / 2 + 0.1);
+  const stability = Math.max(0, 1 - Math.abs(arousal - 0.5) * 2);
+  return { valence, arousal, dominance, engagement, stability };
 }
 
-export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollLeft, setScrollLeft] = useState(0);
-  const [chartHeight, setChartHeight] = useState(DEFAULT_CHART_HEIGHT);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [isManuallyControlled, setIsManuallyControlled] = useState(false);
-  const programmaticScrollRef = useRef(false);
+/* ── Pentagon geometry helpers ── */
+const CX = 100, CY = 100;
+const AXES = ['valence', 'arousal', 'dominance', 'engagement', 'stability'] as const;
+const AXIS_LABELS = ['VALENCE', 'AROUSAL', 'DOM', 'ENG', 'STAB'];
 
+function pentagonPoint(axisIndex: number, radius: number): [number, number] {
+  // Start from top (–90°), go clockwise
+  const angle = (Math.PI * 2 * axisIndex) / 5 - Math.PI / 2;
+  return [CX + Math.cos(angle) * radius, CY + Math.sin(angle) * radius];
+}
+
+function pentagonPath(radius: number): string {
+  return Array.from({ length: 5 }, (_, i) => pentagonPoint(i, radius))
+    .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x},${y}`)
+    .join(' ') + ' Z';
+}
+
+function dataPolygonPoints(values: number[], maxRadius: number): string {
+  return Array.from({ length: 5 }, (_, i) => {
+    const r = values[i] * maxRadius;
+    const [x, y] = pentagonPoint(i, r);
+    return `${x},${y}`;
+  }).join(' ');
+}
+
+/* ── Component ── */
+export function EmotionAnalysis({ topics, hideTitle }: EmotionAnalysisProps) {
+  const radarRef = useRef<SVGSVGElement>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const [frame, setFrame] = useState(0);
+
+  // Animate radar morph
   useEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setContainerWidth(Math.round(width));
-      setChartHeight(Math.max(MIN_CHART_HEIGHT, Math.round(height)));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
+    let raf: number;
+    const tick = () => { setFrame(f => f + 1); raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, []);
 
-  const isAtRightEdge = () => {
-    if (!scrollRef.current) return true;
-    const { scrollLeft: sl, scrollWidth, clientWidth } = scrollRef.current;
-    return scrollWidth - sl - clientWidth < 30;
-  };
-
-  const handleScrollInternal = () => {
-    if (scrollRef.current) {
-      setScrollLeft(scrollRef.current.scrollLeft);
-      if (!programmaticScrollRef.current) {
-        if (!isAtRightEdge()) {
-          setIsManuallyControlled(true);
-        } else {
-          setIsManuallyControlled(false);
-        }
-      }
-      programmaticScrollRef.current = false;
-    }
-  };
-
-  // Depend on length + last topic id so we run when new items are pushed to the same array
-  // (widget is updated via root.render() with same array reference from app)
-  const lastTopicId = topics.length > 0 ? topics[topics.length - 1].id : null;
-
-  // Auto-scroll to rightmost position when new topics arrive (instant scroll so
-  // we don't get intermediate scroll events that would set isManuallyControlled)
+  // Auto-scroll timeline
   useEffect(() => {
-    if (!isManuallyControlled && scrollRef.current && topics.length > 0) {
-      // Wait for DOM/layout so scrollWidth reflects new content
-      const id = setTimeout(() => {
-        requestAnimationFrame(() => {
-          if (!scrollRef.current) return;
-          const scrollLeftTarget = Math.max(0, scrollRef.current.scrollWidth - scrollRef.current.clientWidth);
-          if (scrollLeftTarget > 0) {
-            programmaticScrollRef.current = true;
-            scrollRef.current.scrollTo({ left: scrollLeftTarget, behavior: 'auto' });
-          }
-        });
-      }, 0);
-      return () => clearTimeout(id);
+    if (timelineRef.current) {
+      timelineRef.current.scrollLeft = timelineRef.current.scrollWidth;
     }
-  }, [topics.length, lastTopicId, isManuallyControlled]);
+  }, [topics.length]);
 
-  const scrollToLatest = () => {
-    if (!scrollRef.current) return;
-    programmaticScrollRef.current = true;
-    setIsManuallyControlled(false);
-    const scrollLeftTarget = Math.max(0, scrollRef.current.scrollWidth - scrollRef.current.clientWidth);
-    scrollRef.current.scrollTo({ left: scrollLeftTarget, behavior: 'smooth' });
-  };
+  // Current emotion state (latest topic)
+  const latest = topics.length > 0 ? topics[topics.length - 1] : null;
+  const emotionInfo = latest ? (EMOTION_MAP[latest.sentimentLabel] || EMOTION_MAP.Neutral) : EMOTION_MAP.Neutral;
+  const metrics = latest ? calculateMetrics(latest) : { valence: 0.5, arousal: 0.3, dominance: 0.5, engagement: 0.4, stability: 0.7 };
+  const confidence = latest ? Math.round(latest.intensity * 100) : 0;
 
-  /** Align with narrow y-axis strip (24px); small gap between axis and first grid line. */
-  const leftPadding = 28;
-  const rightPadding = 10;
-  const topPadding = 60;
-  /** Matches sticky-x axis line (20px from top of 56px strip) so 0.00 grid line sits on x-axis. */
-  const bottomPadding = 36;
-  const pixelsPerSecond = 17;
-  /** Total time range in seconds (from data or default). */
-  const totalSeconds =
-    topics.length >= 2
-      ? Math.max(Math.ceil((topics[topics.length - 1].timestamp.getTime() - topics[0].timestamp.getTime()) / 1000) + 10, 30)
-      : 30;
-  /** Plot width: at least fill container (responsive), or wider for horizontal scroll when timeline is long. */
-  const containerPlotWidth = containerWidth > 0 ? containerWidth - leftPadding - rightPadding : 400;
-  const timeBasedChartWidth = totalSeconds * pixelsPerSecond;
-  const chartWidth = Math.max(containerPlotWidth, timeBasedChartWidth);
-  const totalWidth = leftPadding + chartWidth + rightPadding;
+  // Confidence ring dashoffset (circumference = 2πr ≈ 213 for r=34)
+  const ringCircumference = 213;
+  const ringOffset = ringCircumference - (ringCircumference * confidence) / 100;
 
-  const getTimeBasedPositions = () => {
-    const startTime = topics.length > 0 ? topics[0].timestamp.getTime() : Date.now() - totalSeconds * 1000;
-    const timeMarks: { time: Date; x: number; label: string }[] = [];
-    for (let sec = 0; sec <= totalSeconds; sec += 5) {
-      const markTime = new Date(startTime + sec * 1000);
-      const x = leftPadding + (sec / totalSeconds) * chartWidth;
-      timeMarks.push({
-        time: markTime,
-        x,
-        label: markTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      });
-    }
-    return { startTime, totalSeconds, timeMarks };
-  };
+  // Radar data polygon with subtle morph
+  const morphedValues = useMemo(() => {
+    const t = frame * 0.02;
+    const base = [metrics.valence, metrics.arousal, metrics.dominance, metrics.engagement, metrics.stability];
+    return base.map((v, i) => Math.max(0.05, Math.min(1, v + Math.sin(t + i * 1.3) * 0.015)));
+  }, [frame, metrics.valence, metrics.arousal, metrics.dominance, metrics.engagement, metrics.stability]);
 
-  const { startTime, timeMarks } = getTimeBasedPositions();
-  const getTopicX = (topic: EmotionTopicNode) => {
-    const elapsedSeconds = (topic.timestamp.getTime() - startTime) / 1000;
-    return leftPadding + (elapsedSeconds / totalSeconds) * chartWidth;
-  };
-
-  /** Snap x to nearest vertical grid line so emotion labels align with grid. */
-  const getLabelX = (topicX: number) => {
-    if (timeMarks.length === 0) return topicX;
-    let nearest = timeMarks[0];
-    let minDist = Math.abs(timeMarks[0].x - topicX);
-    for (const mark of timeMarks) {
-      const d = Math.abs(mark.x - topicX);
-      if (d < minDist) {
-        minDist = d;
-        nearest = mark;
-      }
-    }
-    return nearest.x;
-  };
-
-  const getDataPoints = () => {
-    if (topics.length === 0) return { valence: [] as [number, number][], arousal: [] as [number, number][], dominance: [] as [number, number][], xPositions: [] as number[] };
-    const valencePoints: [number, number][] = [];
-    const arousalPoints: [number, number][] = [];
-    const dominancePoints: [number, number][] = [];
-    const xPositions: number[] = [];
-    const chartArea = chartHeight - topPadding - bottomPadding;
-    topics.forEach((topic) => {
-      const x = getTopicX(topic);
-      const snappedX = getLabelX(x);
-      const metrics = calculateEmotionMetrics(topic);
-      xPositions.push(snappedX);
-      valencePoints.push([snappedX, topPadding + (1 - metrics.valence) * chartArea]);
-      arousalPoints.push([snappedX, topPadding + (1 - metrics.arousal) * chartArea]);
-      dominancePoints.push([snappedX, topPadding + (1 - metrics.dominance) * chartArea]);
-    });
-    return { valence: valencePoints, arousal: arousalPoints, dominance: dominancePoints, xPositions };
-  };
-
-  const createPath = (points: [number, number][]) => {
-    if (points.length === 0) return '';
-    let path = `M ${points[0][0]} ${points[0][1]}`;
-    for (let i = 1; i < points.length; i++) path += ` L ${points[i][0]} ${points[i][1]}`;
-    return path;
-  };
-
-  const dataPoints = getDataPoints();
-
-  /** One label per unique snapped x so labels don't overlap when multiple topics share a 5s grid slot. */
-  const labelSlots = (() => {
-    const byX = new Map<number, EmotionTopicNode>();
-    topics.forEach((topic, index) => {
-      const x = dataPoints.xPositions[index];
-      const labelX = getLabelX(x);
-      byX.set(labelX, topic); // last topic at this x wins
-    });
-    return Array.from(byX.entries()).map(([x, topic]) => ({ labelX: x, topic }));
-  })();
-  /** Min offset so first emotion label + emoji are not clipped by left y-axis strip. */
-  const MIN_FIRST_LABEL_OFFSET = 35;
-  const getLabelXDisplay = (labelX: number, index: number) =>
-    index === 0 ? Math.max(labelX, leftPadding + MIN_FIRST_LABEL_OFFSET) : labelX;
+  const maxRadius = 70;
 
   return (
-    <div className="emotion-analysis-card">
-      {!hideTitle && (
-        <div className="emotion-analysis-header">
-          <h2 className="emotion-analysis-title">EMOTION ANALYSIS</h2>
+    <div className="ea-card">
+      {/* ── Top: Current State ── */}
+      <section className="ea-state">
+        <div className="ea-emoji-ring">
+          <div className="ea-particle-glow" style={{ background: `radial-gradient(circle, ${emotionInfo.color}22 0%, transparent 70%)` }} />
+          <div className="ea-emoji-circle" style={{ borderColor: `${emotionInfo.color}80`, boxShadow: `0 0 20px ${emotionInfo.color}44` }}>
+            {emotionInfo.emoji}
+          </div>
+          <svg className="ea-confidence-ring" viewBox="0 0 72 72">
+            <circle cx="36" cy="36" r="34" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="2" />
+            <circle cx="36" cy="36" r="34" fill="none" stroke={emotionInfo.color} strokeWidth="2"
+              strokeDasharray={ringCircumference} strokeDashoffset={ringOffset}
+              strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.8s ease, stroke 0.5s ease' }} />
+          </svg>
         </div>
-      )}
-      <div ref={bodyRef} className="emotion-analysis-body">
-        <div ref={scrollRef} className="emotion-analysis-scroll" onScroll={handleScrollInternal}>
-          <div ref={containerRef} className="emotion-analysis-chart-inner" style={{ height: `${chartHeight}px`, width: `${totalWidth}px` }}>
-            <svg ref={svgRef} width={totalWidth} height={chartHeight}>
-              <g opacity={1}>
-                {[0, 0.2, 0.4, 0.6, 0.8, 1.0].map((value) => {
-                  const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
-                  return (
-                    <line key={`grid-h-${value}`} x1={leftPadding} x2={leftPadding + chartWidth} y1={y} y2={y}
-                      stroke="var(--emotion-grid-line-color)" strokeWidth={1} strokeDasharray="2,3"  opacity={1}/>
-                  );
-                })}
-              </g>
-              {timeMarks.map((mark, index) => (
-                <line key={`grid-v-${index}`} x1={mark.x} y1={topPadding} x2={mark.x} y2={chartHeight - bottomPadding}
-                  stroke="var(--emotion-grid-line-color-vertical, var(--emotion-grid-line-color))" strokeWidth={1} strokeDasharray="2,3" opacity={1} />
-              ))}
-              {topics.length > 0 && (
-                <>
-                  <motion.path d={createPath(dataPoints.arousal)} stroke="#f97316" strokeWidth={2} fill="none"
-                    initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }}
-                    transition={{ duration: 1.5, ease: 'easeInOut' }} />
-                  <motion.path d={createPath(dataPoints.valence)} stroke="#06b6d4" strokeWidth={2} fill="none"
-                    initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }}
-                    transition={{ duration: 1.5, ease: 'easeInOut', delay: 0.2 }} />
-                  <motion.path d={createPath(dataPoints.dominance)} stroke="#a855f7" strokeWidth={2} fill="none"
-                    initial={{ pathLength: 0, opacity: 0 }} animate={{ pathLength: 1, opacity: 1 }}
-                    transition={{ duration: 1.5, ease: 'easeInOut', delay: 0.4 }} />
-                  {labelSlots.map(({ labelX, topic }, index) => {
-                    const xDisplay = getLabelXDisplay(labelX, index);
-                    const emoji = sentimentToEmoji[topic.sentimentLabel] || '😐';
-                    return (
-                      <g key={`emoji-group-${topic.id}-${labelX}`}>
-                        <motion.text x={xDisplay} y={topPadding - 35} textAnchor="middle" fontSize={SENTIMENT_LABEL_FONT_SIZE} fill="#7D7D7D"
-                          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.1 + 0.5, duration: 0.4 }}>
-                          {topic.sentimentLabel}
-                        </motion.text>
-                        <motion.text x={xDisplay} y={topPadding - 15} textAnchor="middle" fontSize={SENTIMENT_EMOJI_FONT_SIZE} fill="#7D7D7D"
-                          initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 + 0.6, duration: 0.4 }}>
-                          {emoji}
-                        </motion.text>
-                      </g>
-                    );
-                  })}
-                </>
-              )}
-            </svg>
+        <div className="ea-state-info">
+          <span className="ea-state-label">CURRENT STATE</span>
+          <span className="ea-state-emotion">{emotionInfo.label}</span>
+          <div className="ea-state-confidence">
+            <span className="ea-confidence-dot" style={{ background: '#22c55e' }} />
+            <span className="ea-confidence-text">CONFIDENCE: {confidence}%</span>
           </div>
         </div>
-        <div className="emotion-analysis-sticky-y" style={{ width: `${leftPadding + 20}px` }}>
-          <svg width="100%" height="100%" viewBox={`0 0 ${leftPadding + 20} ${chartHeight}`} preserveAspectRatio="xMinYMin slice">
-            <g>
-              {[1.0, 0.8, 0.6, 0.4, 0.2, 0.0].map((value) => {
-                const y = topPadding + (1 - value) * (chartHeight - topPadding - bottomPadding);
-                return (
-                  <text key={`y-label-${value}`} x={leftPadding + 14} y={y} textAnchor="end" dominantBaseline="middle"
-                    fontSize={Y_AXIS_LABEL_FONT_SIZE} fill="#7D7D7D" style={{ fontFamily: 'monospace' }}>{value.toFixed(2)}</text>
-                );
-              })}
-            </g>
-          </svg>
-        </div>
-        <div className="emotion-analysis-sticky-x">
-          <svg width="100%" height="56" viewBox={`${scrollLeft} 0 ${scrollRef.current?.clientWidth || 800} 56`} preserveAspectRatio="xMinYMin slice">
-            {timeMarks.map((mark, index) => (
-              <text key={`time-${index}`} x={mark.x + 2} y={10} textAnchor="middle" style={{ fontFamily: 'monospace', fontSize: 'var(--emotion-x-axis-label-font-size)' }} fill="var(--emotion-x-axis-label-color)">
-                {mark.label}
-              </text>
+      </section>
+
+      {/* ── Center: 3D Radar ── */}
+      <section className="ea-radar-section">
+        <div className="ea-radar-container">
+          <svg className="ea-radar-svg" viewBox="0 0 200 200" overflow="visible">
+            <defs>
+              <linearGradient id="eaRadarGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor={`${emotionInfo.color}66`} />
+                <stop offset="100%" stopColor={`${emotionInfo.color}22`} />
+              </linearGradient>
+            </defs>
+
+            {/* Concentric pentagon grid */}
+            {[0.2, 0.4, 0.6, 0.8, 1.0].map(level => (
+              <path key={level} d={pentagonPath(level * maxRadius)} fill="none"
+                stroke="rgba(255,255,255,0.07)" strokeWidth="0.5" />
             ))}
+
+            {/* Axis lines */}
+            {AXES.map((_, i) => {
+              const [ex, ey] = pentagonPoint(i, maxRadius);
+              return <line key={i} x1={CX} y1={CY} x2={ex} y2={ey} stroke="rgba(255,255,255,0.07)" strokeWidth="0.5" />;
+            })}
+
+            {/* Data polygon */}
+            <polygon
+              points={dataPolygonPoints(morphedValues, maxRadius)}
+              fill="url(#eaRadarGrad)"
+              stroke={emotionInfo.color}
+              strokeWidth="1.5"
+              style={{ filter: `drop-shadow(0 0 10px ${emotionInfo.color}55)`, transition: 'fill 0.5s ease, stroke 0.5s ease' }}
+            />
+
+            {/* Axis endpoint dots & labels */}
+            {AXES.map((axis, i) => {
+              const [px, py] = pentagonPoint(i, maxRadius + 4);
+              const [lx, ly] = pentagonPoint(i, maxRadius + 16);
+              const value = morphedValues[i];
+              const color = AXIS_COLORS[axis];
+              // Text anchor based on position
+              const anchor = lx < 80 ? 'end' : lx > 120 ? 'start' : 'middle';
+              const labelY = ly < 50 ? ly - 2 : ly + 6;
+              return (
+                <g key={axis}>
+                  <circle cx={px} cy={py} r="2" fill={color} style={{ filter: `drop-shadow(0 0 4px ${color})` }}>
+                    <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite" />
+                  </circle>
+                  <text x={lx} y={labelY} textAnchor={anchor} fill="rgba(255,255,255,0.45)"
+                    fontSize="6.5" fontFamily="'JetBrains Mono', monospace" fontWeight="500">
+                    {AXIS_LABELS[i]} {value.toFixed(2)}
+                  </text>
+                </g>
+              );
+            })}
           </svg>
         </div>
-        {isManuallyControlled && (
-          <button className="emotion-scroll-to-latest" onClick={scrollToLatest} title="Scroll to latest">
-            →
-          </button>
-        )}
-      </div>
-      <div className="emotion-analysis-legend">
-        <div className="emotion-analysis-legend-item">
-          <div className="emotion-analysis-legend-dot cyan" />
-          <span className="emotion-analysis-legend-text">Valence</span>
+      </section>
+
+      {/* ── Bottom: Timeline Strip ── */}
+      <section className="ea-timeline-section">
+        <div className="ea-timeline-header">
+          <span className="ea-timeline-label">EMOTIONAL DRIFT</span>
+          <button className="ea-timeline-btn" onClick={() => {
+            if (timelineRef.current) timelineRef.current.scrollLeft = timelineRef.current.scrollWidth;
+          }}>→</button>
         </div>
-        <div className="emotion-analysis-legend-item">
-          <div className="emotion-analysis-legend-dot orange" />
-          <span className="emotion-analysis-legend-text">Arousal</span>
+        <div className="ea-timeline-track" ref={timelineRef}>
+          <svg className="ea-timeline-svg" width={Math.max(200, topics.length * 40 + 20)} height="20">
+            {/* Connecting line */}
+            {topics.length > 1 && (
+              <path
+                d={topics.map((_, i) => `${i === 0 ? 'M' : 'L'}${10 + i * 40},10`).join(' ')}
+                fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="1"
+              />
+            )}
+            {/* Dots */}
+            {topics.map((topic, i) => {
+              const info = EMOTION_MAP[topic.sentimentLabel] || EMOTION_MAP.Neutral;
+              const isLast = i === topics.length - 1;
+              return (
+                <circle key={topic.id} cx={10 + i * 40} cy={10} r={isLast ? 4 : 3}
+                  fill={info.color} stroke={isLast ? 'rgba(255,255,255,0.2)' : 'none'} strokeWidth="2">
+                  <title>{topic.sentimentLabel} — {topic.timestamp.toLocaleTimeString()}</title>
+                </circle>
+              );
+            })}
+          </svg>
         </div>
-        <div className="emotion-analysis-legend-item">
-          <div className="emotion-analysis-legend-dot purple" />
-          <span className="emotion-analysis-legend-text">Dominance</span>
-        </div>
-      </div>
+      </section>
+
+      {/* ── Legend Badges ── */}
+      <section className="ea-legend">
+        {AXES.map(axis => (
+          <span key={axis} className="ea-legend-pill" style={{
+            background: `${AXIS_COLORS[axis]}18`,
+            borderColor: `${AXIS_COLORS[axis]}33`,
+            color: AXIS_COLORS[axis],
+          }}>
+            {axis.charAt(0).toUpperCase() + axis.slice(1)}
+          </span>
+        ))}
+      </section>
     </div>
   );
 }

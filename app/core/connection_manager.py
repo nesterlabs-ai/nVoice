@@ -19,6 +19,7 @@ class ConnectionManager:
     - Enforce maximum concurrent connection limit
     - Heartbeat monitoring to detect stale connections
     - Automatic cleanup on disconnect
+    - VAD analyzer registry for runtime parameter changes
     """
 
     def __init__(self, max_sessions: int = 20):
@@ -29,6 +30,7 @@ class ConnectionManager:
         """
         self.active_sessions: Dict[str, WebSocket] = {}
         self.heartbeat_tasks: Dict[str, asyncio.Task] = {}
+        self.vad_analyzers: Dict[str, any] = {}  # session_id -> SileroVADAnalyzer
         self.max_sessions = max_sessions
         logger.info(f"ConnectionManager initialized with max_sessions={max_sessions}")
 
@@ -66,6 +68,26 @@ class ConnectionManager:
         heartbeat_task = asyncio.create_task(self._heartbeat(websocket, session_id))
         self.heartbeat_tasks[session_id] = heartbeat_task
 
+    def register_vad_analyzer(self, session_id: str, vad_analyzer) -> None:
+        """Register a VAD analyzer for a session (enables runtime param changes).
+
+        Args:
+            session_id: Session identifier
+            vad_analyzer: SileroVADAnalyzer instance
+        """
+        self.vad_analyzers[session_id] = vad_analyzer
+
+    def get_vad_analyzer(self, session_id: str):
+        """Get the VAD analyzer for a session.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            SileroVADAnalyzer instance or None
+        """
+        return self.vad_analyzers.get(session_id)
+
     def disconnect(self, session_id: str) -> None:
         """Unregister a WebSocket connection and cleanup resources.
 
@@ -76,6 +98,9 @@ class ConnectionManager:
         if session_id in self.heartbeat_tasks:
             self.heartbeat_tasks[session_id].cancel()
             del self.heartbeat_tasks[session_id]
+
+        # Remove VAD analyzer
+        self.vad_analyzers.pop(session_id, None)
 
         # Remove from active sessions
         if session_id in self.active_sessions:

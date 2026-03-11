@@ -159,6 +159,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # Interruption strategy is configured in voice_assistant.py via PipelineParams
         # (MinWordsInterruptionStrategy is a pipeline-level param, not transport-level)
 
+        # Register VAD analyzer for runtime parameter changes (noise cancellation toggle)
+        connection_manager.register_vad_analyzer(session_id, vad_analyzer)
+
         logger.info(
             f"[Session {session_id}] 🎤 VAD configured: confidence={vad_params.confidence}, "
             f"start_secs={vad_params.start_secs}, stop_secs={vad_params.stop_secs}, "

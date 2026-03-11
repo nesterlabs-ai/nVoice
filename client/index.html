@@ -124,13 +124,18 @@
     <div class="dashboard-grid" id="dashboard-grid" aria-hidden="true">
       <section class="mc-panel">
         <div class="mc-panel-grid">
-          <!-- LEFT COLUMN (7/12) -->
+          <!-- LEFT COLUMN: Transcript + Visitor Intent -->
           <div class="mc-col-left">
             <!-- Transcript (tall card ~60%) -->
             <div class="dashboard-card mc-card-transcript" id="dashboard-card-6">
+              <div class="mc-scanline"></div>
               <div class="dashboard-card-header transcript-header">
                 <span class="status-dot active" id="transcript-status-dot"></span>
                 <span class="dashboard-card-label">Transcript</span>
+                <span class="mc-live-indicator">
+                  <span class="mc-live-indicator-dot"></span>
+                  ACTIVE SESSION
+                </span>
                 <span id="transcript-status" class="hidden">READY</span>
               </div>
               <div class="dashboard-card-body transcript-log-body" id="transcript-list">
@@ -178,9 +183,8 @@
               </div>
             </div>
           </div>
-          <!-- RIGHT COLUMN (5/12) -->
-          <div class="mc-col-right">
-            <!-- Emotion Analysis (40%) -->
+          <!-- CENTER COLUMN: Emotion Analysis (full height) -->
+          <div class="mc-col-center">
             <div class="dashboard-card mc-card-emotion" id="dashboard-card-4">
               <div class="dashboard-card-header">
                 <span class="dashboard-card-label">EMOTION ANALYSIS</span>
@@ -189,7 +193,10 @@
                 <div id="emotion-analysis-root" class="dashboard-card-inner emotion-analysis-topic"></div>
               </div>
             </div>
-            <!-- Tone Modulator (30%) -->
+          </div>
+          <!-- RIGHT COLUMN: Tone + Knowledge Graph -->
+          <div class="mc-col-right">
+            <!-- Tone Modulator -->
             <div class="dashboard-card mc-card-tone" id="dashboard-card-5">
               <div class="dashboard-card-header">
                 <span class="dashboard-card-label">TONE MODULATOR</span>
@@ -198,15 +205,31 @@
                 <div id="tone-modulator-root" class="dashboard-card-inner"></div>
               </div>
             </div>
-            <!-- Knowledge Graph (30%) -->
+            <!-- Knowledge Graph (header rendered by widget) -->
             <div class="dashboard-card mc-card-knowledge" id="dashboard-card-2">
-              <div class="dashboard-card-header">
-                <span class="dashboard-card-label">KNOWLEDGE GRAPH</span>
-              </div>
               <div class="dashboard-card-body">
                 <div id="knowledge-graph-root" class="dashboard-card-inner"></div>
               </div>
             </div>
+          </div>
+        </div>
+        <!-- Session Stats Bar -->
+        <div class="mc-stats-bar" id="mc-stats-bar">
+          <div class="mc-stat-card">
+            <span class="mc-stat-label">Duration</span>
+            <span class="mc-stat-value" id="mc-stat-duration">00:00</span>
+          </div>
+          <div class="mc-stat-card">
+            <span class="mc-stat-label">Messages</span>
+            <span class="mc-stat-value" id="mc-stat-messages">0</span>
+          </div>
+          <div class="mc-stat-card">
+            <span class="mc-stat-label">Response Time</span>
+            <span class="mc-stat-value" id="mc-stat-response-time">--</span>
+          </div>
+          <div class="mc-stat-card">
+            <span class="mc-stat-label">Emotion Shifts</span>
+            <span class="mc-stat-value" id="mc-stat-emotion-shifts">0</span>
           </div>
         </div>
       </section>
@@ -267,6 +290,16 @@
                 <line x1="12" y1="19" x2="12" y2="22" stroke-linecap="round" stroke-linejoin="round"></line>
               </svg>
               <span class="mic-indicator"></span>
+            </button>
+            <div class="pill-divider"></div>
+            <!-- Noise Cancellation -->
+            <button type="button" class="pill-btn pill-btn-icon pill-btn-nc-active" id="control-nc" aria-label="Noise cancellation" title="Noise Cancellation: ON (tight VAD)">
+              <svg fill="none" height="20" width="20" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M9 9a3 3 0 116 0v3a3 3 0 01-6 0V9z" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path d="M5 11a7 7 0 0014 0" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path d="M3 3l18 18" stroke-linecap="round" stroke-linejoin="round" class="nc-slash-line" style="display:none"></path>
+              </svg>
+              <span class="nc-badge">NC</span>
             </button>
             <div class="pill-divider"></div>
             <!-- End Call -->
@@ -352,6 +385,8 @@
           <span class="emotion-expanded-legend-item"><span class="emotion-expanded-dot cyan"></span>Valence</span>
           <span class="emotion-expanded-legend-item"><span class="emotion-expanded-dot orange"></span>Arousal</span>
           <span class="emotion-expanded-legend-item"><span class="emotion-expanded-dot purple"></span>Dominance</span>
+          <span class="emotion-expanded-legend-item"><span class="emotion-expanded-dot green"></span>Engagement</span>
+          <span class="emotion-expanded-legend-item"><span class="emotion-expanded-dot blue"></span>Stability</span>
         </div>
       </div>
       <div class="emotion-expanded-body">

@@ -125,6 +125,7 @@ class VoiceScannerApp {
   private voiceState: VoiceState = 'idle';
   private isConnected: boolean = false;
   private isConnecting: boolean = false;
+  private isNoiseCancellation: boolean = true; // NC on by default (tight VAD)
   private preloaderAngle: number = 0;
 
   // Streaming transcript state
@@ -206,6 +207,13 @@ class VoiceScannerApp {
   private selectedPersonaId: string = '';
   private personaSelectionScreen: HTMLElement | null = null;
   private sessionStartTime: number = 0;
+
+  // Dashboard stats tracking
+  private mcStatMessageCount: number = 0;
+  private mcStatEmotionShifts: number = 0;
+  private mcStatLastEmotion: string = 'neutral';
+  private mcStatLastBotResponseStart: number = 0;
+  private mcStatLastResponseTime: string = '--';
 
   constructor() {  
 
@@ -447,6 +455,24 @@ class VoiceScannerApp {
     technical: '77, 166, 255',
   };
 
+  /** Convert hex color to "r, g, b" string for use in rgba() CSS vars */
+  private static hexToRgb(hex: string): string {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return `${r}, ${g}, ${b}`;
+  }
+
+  /** Darken a hex color by mixing with black (amount 0-1) */
+  private static darkenHex(hex: string, amount: number): string {
+    const h = hex.replace('#', '');
+    const r = Math.round(parseInt(h.substring(0, 2), 16) * (1 - amount));
+    const g = Math.round(parseInt(h.substring(2, 4), 16) * (1 - amount));
+    const b = Math.round(parseInt(h.substring(4, 6), 16) * (1 - amount));
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  }
+
   private selectPersona(personaId: string): void {
     this.selectedPersonaId = personaId;
     this.log(`Selected persona: ${personaId}`);
@@ -456,6 +482,14 @@ class VoiceScannerApp {
     const colorRgb = VoiceScannerApp.AGENT_COLORS_RGB[personaId] || '255, 77, 166';
     document.documentElement.style.setProperty('--accent-hero', color);
     document.documentElement.style.setProperty('--accent-hero-rgb', colorRgb);
+
+    // Set orb colors to match persona — primary is the accent, secondary is a darker shade
+    const orbPrimary = color;
+    const orbSecondary = VoiceScannerApp.darkenHex(color, 0.4);
+    document.documentElement.style.setProperty('--orb-primary', orbPrimary);
+    document.documentElement.style.setProperty('--orb-primary-rgb', VoiceScannerApp.hexToRgb(orbPrimary));
+    document.documentElement.style.setProperty('--orb-secondary', orbSecondary);
+    document.documentElement.style.setProperty('--orb-secondary-rgb', VoiceScannerApp.hexToRgb(orbSecondary));
 
     // Update agent identity on the talking page
     const persona = this.carouselPersonas.find(p => p.id === personaId);
@@ -609,6 +643,7 @@ class VoiceScannerApp {
     });
     document.getElementById('control-speaker')?.addEventListener('click', () => this.toggleSpeakerIcon());
     document.getElementById('control-mic')?.addEventListener('click', () => this.toggleMicIcon());
+    document.getElementById('control-nc')?.addEventListener('click', () => this.toggleNoiseCancellation());
 
     document.getElementById('close-option-restart')?.addEventListener('click', () => this.onRestartOption());
     document.getElementById('close-option-peak')?.addEventListener('click', () => this.onPeakOption());
@@ -727,6 +762,14 @@ class VoiceScannerApp {
     this.subtitleRevealTimeouts = [];
     this.lastScheduledSubtitleLines = [];
     if (this.liveSubtitleText) this.liveSubtitleText.textContent = '';
+
+    // Reset dashboard stats
+    this.mcStatMessageCount = 0;
+    this.mcStatEmotionShifts = 0;
+    this.mcStatLastEmotion = 'neutral';
+    this.mcStatLastBotResponseStart = 0;
+    this.mcStatLastResponseTime = '--';
+    this.updateMcStats();
   }
 
   /**
@@ -806,6 +849,115 @@ class VoiceScannerApp {
       connectionStatus?.classList.remove('online');
       if (connectionStatus) connectionStatus.textContent = 'OFFLINE';
     }
+  }
+
+  /**
+   * Play a premium crystal chime sound on connection using Web Audio API.
+   * Creates a layered bell-like tone with harmonics and reverb tail.
+   */
+  private playCrystalChime(): void {
+    try {
+      const ctx = this.audioContext || new AudioContext();
+      this.audioContext = ctx;
+      const now = ctx.currentTime;
+
+      // Master gain for the chime
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0, now);
+      master.gain.linearRampToValueAtTime(0.25, now + 0.02);
+      master.gain.exponentialRampToValueAtTime(0.001, now + 2.8);
+      master.connect(ctx.destination);
+
+      // Convolver for subtle shimmer/reverb
+      const convolver = ctx.createConvolver();
+      const reverbLen = ctx.sampleRate * 2;
+      const reverbBuf = ctx.createBuffer(2, reverbLen, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const data = reverbBuf.getChannelData(ch);
+        for (let i = 0; i < reverbLen; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / reverbLen, 3);
+        }
+      }
+      convolver.buffer = reverbBuf;
+      const reverbGain = ctx.createGain();
+      reverbGain.gain.value = 0.15;
+      convolver.connect(reverbGain);
+      reverbGain.connect(master);
+
+      // Crystal bell harmonics — layered sine tones
+      const harmonics = [
+        { freq: 1318.5, gain: 0.35, decay: 2.2 },  // E6 - bright top
+        { freq: 987.8,  gain: 0.45, decay: 2.5 },   // B5 - main tone
+        { freq: 659.3,  gain: 0.3,  decay: 2.0 },   // E5 - body
+        { freq: 1975.5, gain: 0.12, decay: 1.2 },   // B6 - sparkle
+        { freq: 2637,   gain: 0.06, decay: 0.8 },   // E7 - air
+      ];
+
+      harmonics.forEach((h, i) => {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = h.freq;
+
+        const gain = ctx.createGain();
+        const onset = now + i * 0.04; // stagger each harmonic slightly
+        gain.gain.setValueAtTime(0, onset);
+        gain.gain.linearRampToValueAtTime(h.gain, onset + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, onset + h.decay);
+
+        osc.connect(gain);
+        gain.connect(master);
+        gain.connect(convolver); // feed into reverb
+
+        osc.start(onset);
+        osc.stop(onset + h.decay + 0.1);
+      });
+
+      // High shimmer — subtle filtered noise burst
+      const noiseLen = ctx.sampleRate * 0.15;
+      const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+      const noiseData = noiseBuf.getChannelData(0);
+      for (let i = 0; i < noiseLen; i++) {
+        noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / noiseLen, 2);
+      }
+      const noiseSrc = ctx.createBufferSource();
+      noiseSrc.buffer = noiseBuf;
+      const hpf = ctx.createBiquadFilter();
+      hpf.type = 'highpass';
+      hpf.frequency.value = 6000;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.08, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      noiseSrc.connect(hpf);
+      hpf.connect(noiseGain);
+      noiseGain.connect(master);
+      noiseSrc.start(now);
+    } catch (e) {
+      // Silently fail — sound is non-critical
+    }
+  }
+
+  /**
+   * Trigger premium orb bloom animation on connection.
+   * Expands the orb with a radiant blue light burst.
+   */
+  private triggerConnectionBloom(): void {
+    const orb = document.getElementById('ai-orb');
+    const blob = document.getElementById('liquid-blob');
+    if (!orb || !blob) return;
+
+    // Add the bloom class that triggers the CSS animation
+    orb.classList.add('connection-bloom');
+
+    // Create a temporary radial light burst element
+    const burst = document.createElement('div');
+    burst.className = 'orb-light-burst';
+    orb.appendChild(burst);
+
+    // Clean up after animation completes
+    setTimeout(() => {
+      orb.classList.remove('connection-bloom');
+      burst.remove();
+    }, 2500);
   }
 
   /**
@@ -1052,7 +1204,11 @@ class VoiceScannerApp {
         const elapsed = Math.floor((Date.now() - this.sessionStartTime) / 1000);
         const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
         const secs = String(elapsed % 60).padStart(2, '0');
-        sessionTimer.textContent = `${mins}:${secs}`;
+        const timeStr = `${mins}:${secs}`;
+        sessionTimer.textContent = timeStr;
+        // Sync to dashboard stats duration
+        const mcDuration = document.getElementById('mc-stat-duration');
+        if (mcDuration) mcDuration.textContent = timeStr;
       }
       // Legacy timestamp element
       if (this.timestampElement) {
@@ -1064,6 +1220,18 @@ class VoiceScannerApp {
 
     updateTime();
     setInterval(updateTime, 1000);
+  }
+
+  /**
+   * Update mission control stats bar values
+   */
+  private updateMcStats(): void {
+    const msgEl = document.getElementById('mc-stat-messages');
+    if (msgEl) msgEl.textContent = String(this.mcStatMessageCount);
+    const rtEl = document.getElementById('mc-stat-response-time');
+    if (rtEl) rtEl.textContent = this.mcStatLastResponseTime;
+    const esEl = document.getElementById('mc-stat-emotion-shifts');
+    if (esEl) esEl.textContent = String(this.mcStatEmotionShifts);
   }
 
   /**
@@ -1350,6 +1518,17 @@ class VoiceScannerApp {
 
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
+
+    // Track message count and response time for stats bar
+    this.mcStatMessageCount++;
+    if (isUser) {
+      this.mcStatLastBotResponseStart = Date.now();
+    } else if (this.mcStatLastBotResponseStart > 0) {
+      const responseMs = Date.now() - this.mcStatLastBotResponseStart;
+      this.mcStatLastResponseTime = responseMs < 1000 ? `${responseMs}ms` : `${(responseMs / 1000).toFixed(1)}s`;
+      this.mcStatLastBotResponseStart = 0;
+    }
+    this.updateMcStats();
 
     // Push to conversation messages for SynchronizedAnalysis (before accumulatingBotAnswer is cleared)
     if (isUser) {
@@ -1880,6 +2059,41 @@ class VoiceScannerApp {
       btn.classList.toggle('pill-btn-mic-active', !this.micMuted);
     }
     btn?.setAttribute('aria-label', this.micMuted ? 'Microphone muted' : 'Microphone');
+  }
+
+  /**
+   * Toggle noise cancellation (tight vs relaxed VAD params)
+   */
+  private async toggleNoiseCancellation(): Promise<void> {
+    this.isNoiseCancellation = !this.isNoiseCancellation;
+    const mode = this.isNoiseCancellation ? 'tight' : 'relaxed';
+
+    const btn = document.getElementById('control-nc');
+    if (btn) {
+      btn.classList.toggle('pill-btn-nc-active', this.isNoiseCancellation);
+      btn.classList.toggle('pill-btn-nc-off', !this.isNoiseCancellation);
+      btn.title = this.isNoiseCancellation
+        ? 'Noise Cancellation: ON (tight VAD)'
+        : 'Noise Cancellation: OFF (relaxed VAD)';
+      // Toggle slash line on the icon
+      const slashLine = btn.querySelector('.nc-slash-line') as HTMLElement;
+      if (slashLine) slashLine.style.display = this.isNoiseCancellation ? 'none' : '';
+    }
+
+    // Call backend to update VAD params if connected
+    if (this.isConnected) {
+      try {
+        const backendUrl = this.getBackendUrl();
+        await fetch(`${backendUrl}/vad-mode`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode }),
+        });
+        this.log(`Noise cancellation: ${mode}`);
+      } catch (e) {
+        console.warn('[NC] Failed to update VAD mode:', e);
+      }
+    }
   }
 
   /**
@@ -3057,6 +3271,10 @@ class VoiceScannerApp {
             this.updateConnectionUI(true);
             this.addTerminalMessage('Connection established. Voice active.', 'success');
             this.showNotification('CONNECTION ESTABLISHED');
+
+            // Premium connection experience: crystal chime + orb bloom
+            this.playCrystalChime();
+            this.triggerConnectionBloom();
 
             // Set up bot player analyser after connection (with delay to ensure player is ready)
             setTimeout(() => {
@@ -4391,6 +4609,13 @@ class VoiceScannerApp {
     const emotion = data.primary_emotion || data.emotion || 'neutral';
     const arousal = data.arousal ?? 0.5;
     const valence = data.valence ?? 0.5;
+
+    // Track emotion shifts for stats bar
+    if (emotion !== this.mcStatLastEmotion && emotion !== 'neutral') {
+      this.mcStatEmotionShifts++;
+      this.mcStatLastEmotion = emotion;
+      this.updateMcStats();
+    }
 
     // Update CSS custom properties for emotion colors
     const root = document.documentElement;

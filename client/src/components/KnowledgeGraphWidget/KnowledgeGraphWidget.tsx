@@ -1,9 +1,8 @@
 /**
  * Knowledge Graph Widget
  *
- * Displays the LightRAG knowledge graph in a fixed position widget.
- * Highlights nodes based on keywords extracted from user queries.
- * Based on LightRAG's graph visualization implementation.
+ * Displays the LightRAG knowledge graph in a sci-fi command center style.
+ * Features sonar ring background, glass-morphic context pills, and accent-themed colors.
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
@@ -28,28 +27,34 @@ import { KnowledgeGraph, GraphWidgetProps } from './types';
 import '@react-sigma/core/lib/style.css';
 import './styles.css';
 
-// Constants for styling - matching LightRAG's pattern
+/* ── Color constants (accent-themed) ── */
 const COLORS = {
-  nodeDefault: '#9ca3af',
-  nodeHighlighted: '#ef4444',
-  nodeDisabled: '#4b5563',
-  edgeDefault: '#7D7D7D',
-  edgeHighlighted: '#ef4444',
-  labelDefault: '#e5e7eb',
-  labelHighlighted: '#000000',  // Dark text for highlighted nodes
+  nodeDefault: '#6b7280',
+  nodeHighlighted: '#2563eb',  // Will be overridden by accent-hero at runtime
+  nodeDisabled: '#374151',
+  edgeDefault: '#4b5563',
+  edgeHighlighted: '#2563eb',
+  labelDefault: '#d1d5db',
+  labelHighlighted: '#ffffff',
 };
 
-const MIN_NODE_SIZE = 5;
-const MAX_NODE_SIZE = 15;
+const MIN_NODE_SIZE = 4;
+const MAX_NODE_SIZE = 14;
 
 function randomColor(seed: string): string {
   seedrandom(seed, { global: true });
-  const colors = ['#9ca3af', '#a1a1aa', '#78716c'];
+  const colors = ['#6b7280', '#9ca3af', '#78716c', '#71717a'];
   return colors[Math.floor(Math.random() * colors.length)];
 }
 
+/* ── Get accent color from CSS variable ── */
+function getAccentColor(): string {
+  const style = getComputedStyle(document.documentElement);
+  return style.getPropertyValue('--accent-hero')?.trim() || '#2563eb';
+}
+
 /**
- * Graph Events Handler - handles click events
+ * Graph Events Handler
  */
 function GraphEvents({ onNodeClick }: { onNodeClick?: (nodeId: string) => void }) {
   const registerEvents = useRegisterEvents();
@@ -66,7 +71,7 @@ function GraphEvents({ onNodeClick }: { onNodeClick?: (nodeId: string) => void }
 }
 
 /**
- * FocusOnNode - highlights node, centers camera on it, and zooms in slightly
+ * FocusOnNode - centers camera and zooms
  */
 function FocusOnNode({ node }: { node: string | null }) {
   const sigma = useSigma();
@@ -78,13 +83,9 @@ function FocusOnNode({ node }: { node: string | null }) {
     const graph = sigma.getGraph();
     if (!graph.hasNode(node)) return;
 
-    // Set highlighted attribute
     graph.setNodeAttribute(node, 'highlighted', true);
-
-    // First center on node using gotoNode (this works reliably)
     gotoNode(node);
 
-    // Then zoom in slightly after a small delay
     const camera = sigma.getCamera();
     setTimeout(() => {
       const currentState = camera.getState();
@@ -105,15 +106,13 @@ function FocusOnNode({ node }: { node: string | null }) {
 }
 
 /**
- * InitialZoom - animates camera zoom after page loads
- * Creates a visible zoom-in effect so users see the graph "coming to life"
+ * InitialZoom - animates camera on page load
  */
 function InitialZoom({ graphLoaded }: { graphLoaded: boolean }) {
   const sigma = useSigma();
   const zoomApplied = useRef(false);
   const [pageReady, setPageReady] = useState(false);
 
-  // Listen for page ready event (dispatched when loading overlay hides)
   useEffect(() => {
     const handlePageReady = () => setPageReady(true);
     window.addEventListener('nesterPageReady', handlePageReady);
@@ -124,21 +123,16 @@ function InitialZoom({ graphLoaded }: { graphLoaded: boolean }) {
     if (!graphLoaded || zoomApplied.current) return;
 
     const camera = sigma.getCamera();
-
-    // Start zoomed out
     camera.setState({ ratio: 1.5, x: 0.5, y: 0.5 });
 
-    // Wait for page ready, then animate zoom in
     if (pageReady) {
       const timer = setTimeout(() => {
         zoomApplied.current = true;
-        // Zoom in to ratio 0.5 for a closer view
         camera.animate(
           { ratio: 0.5, x: 0.5, y: 0.5 },
           { duration: 1200, easing: 'cubicInOut' }
         );
       }, 200);
-
       return () => clearTimeout(timer);
     }
   }, [graphLoaded, pageReady, sigma]);
@@ -147,8 +141,7 @@ function InitialZoom({ graphLoaded }: { graphLoaded: boolean }) {
 }
 
 /**
- * GraphControl - handles graph loading and node/edge styling via reducers
- * Following LightRAG's pattern with setSettings
+ * GraphControl - handles graph loading and node/edge styling
  */
 function GraphControl({
   graphData,
@@ -165,14 +158,13 @@ function GraphControl({
   const { assign: assignLayout } = useLayoutForceAtlas2({ iterations: 50 });
   const graphLoadedRef = useRef(false);
 
-  // Load graph data once
   useEffect(() => {
     if (!graphData || graphLoadedRef.current) return;
     graphLoadedRef.current = true;
 
     const graph = new Graph();
+    const accent = getAccentColor();
 
-    // Calculate node degrees for sizing
     const degrees: Record<string, number> = {};
     graphData.nodes.forEach((n) => { degrees[n.id] = 0; });
     graphData.edges.forEach((e) => {
@@ -184,7 +176,6 @@ function GraphControl({
     const minDegree = Math.min(...Object.values(degrees), 0);
     const range = maxDegree - minDegree || 1;
 
-    // Add nodes
     graphData.nodes.forEach((node) => {
       const degree = degrees[node.id] || 0;
       const size = MIN_NODE_SIZE + (MAX_NODE_SIZE - MIN_NODE_SIZE) * Math.pow((degree - minDegree) / range, 0.5);
@@ -202,7 +193,6 @@ function GraphControl({
       });
     });
 
-    // Add edges
     graphData.edges.forEach((edge) => {
       if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
         try {
@@ -220,9 +210,9 @@ function GraphControl({
     setTimeout(() => assignLayout(), 100);
   }, [graphData, loadGraph, assignLayout]);
 
-  // Set up reducers - re-run when highlightedNodes or focusedNode changes
-  // Following LightRAG's pattern exactly
   useEffect(() => {
+    const accent = getAccentColor();
+
     setSettings({
       nodeReducer: (node, data) => {
         const newData: Record<string, any> = {
@@ -231,12 +221,11 @@ function GraphControl({
           labelColor: COLORS.labelDefault,
         };
 
-        // If we have highlighted nodes, apply styling
         if (highlightedNodes.size > 0) {
           if (highlightedNodes.has(node)) {
             newData.highlighted = true;
-            newData.color = COLORS.nodeHighlighted;
-            newData.labelColor = COLORS.labelHighlighted;  // Dark text for contrast
+            newData.color = accent;
+            newData.labelColor = COLORS.labelHighlighted;
           } else {
             newData.color = COLORS.nodeDisabled;
           }
@@ -251,7 +240,7 @@ function GraphControl({
         if (highlightedNodes.size > 0) {
           const [source, target] = graph.extremities(edge);
           if (highlightedNodes.has(source) || highlightedNodes.has(target)) {
-            newData.color = COLORS.edgeHighlighted;
+            newData.color = accent;
           } else {
             newData.color = COLORS.edgeDefault;
           }
@@ -321,9 +310,8 @@ export function KnowledgeGraphWidget({
     loadGraphData();
   }, []);
 
-  // Handle keyword highlighting and cycling - show one node at a time
+  // Keyword highlighting and cycling
   useEffect(() => {
-    // Clear any existing cycle
     if (cycleIntervalRef.current) {
       clearInterval(cycleIntervalRef.current);
       cycleIntervalRef.current = null;
@@ -357,18 +345,15 @@ export function KnowledgeGraphWidget({
       }
     });
 
-
     if (matchedNodes.length === 0) {
       setHighlightedNodes(new Set());
       setFocusedNode(null);
       return;
     }
 
-    // Show first node only
     setHighlightedNodes(new Set([matchedNodes[0]]));
     setFocusedNode(matchedNodes[0]);
 
-    // Cycle through nodes one by one
     if (matchedNodes.length > 1) {
       let currentIndex = 0;
 
@@ -376,11 +361,9 @@ export function KnowledgeGraphWidget({
         currentIndex = (currentIndex + 1) % matchedNodes.length;
         const currentNode = matchedNodes[currentIndex];
 
-        // Highlight only the current node
         setHighlightedNodes(new Set([currentNode]));
         setFocusedNode(currentNode);
 
-        // Stop after one complete cycle back to first
         if (currentIndex === 0) {
           if (cycleIntervalRef.current) {
             clearInterval(cycleIntervalRef.current);
@@ -416,13 +399,16 @@ export function KnowledgeGraphWidget({
 
   if (!visible) return null;
 
+  const nodeCount = graphData?.nodes.length ?? 0;
+  const edgeCount = graphData?.edges.length ?? 0;
+
   const sigmaSettings = {
     allowInvalidContainer: true,
     defaultNodeType: 'circle',
     defaultEdgeType: 'curvedArrow',
     renderEdgeLabels: false,
     renderLabels: true,
-    labelSize: 12,
+    labelSize: 11,
     labelColor: { color: COLORS.labelDefault, attribute: 'labelColor' },
     labelRenderedSizeThreshold: 4,
     edgeProgramClasses: {
@@ -432,12 +418,38 @@ export function KnowledgeGraphWidget({
     },
   };
 
+  // Context pills: show highlighted nodes, or fallback to first few graph nodes
+  const contextNodes = highlightedNodes.size > 0
+    ? [...highlightedNodes].slice(0, 5)
+    : (graphData?.nodes.slice(0, 4).map(n => n.id) ?? []);
+
   return (
     <div className={`knowledge-graph-widget ${className}`}>
+      {/* Header with stats */}
+      <div className="kg-header">
+        <div className="kg-header-left">
+          <div className="kg-live-dot" />
+          <span className="kg-header-title">Knowledge Graph</span>
+        </div>
+        <div className="kg-header-stats">
+          <span>{nodeCount} Nodes</span>
+          <span className="kg-header-divider">/</span>
+          <span>{edgeCount} Edges</span>
+        </div>
+      </div>
+
+      {/* Graph visualization area */}
       <div className="kg-container">
+        {/* Sonar rings background */}
+        <div className="kg-sonar-layer">
+          <div className="kg-sonar-ring" />
+          <div className="kg-sonar-ring" />
+          <div className="kg-sonar-ring" />
+        </div>
+
         {loading && (
           <div className="kg-loading">
-            <div className="kg-spinner"></div>
+            <div className="kg-spinner" />
             <span>Loading graph...</span>
           </div>
         )}
@@ -462,11 +474,12 @@ export function KnowledgeGraphWidget({
         )}
       </div>
 
-      {highlightedNodes.size > 0 && (
-        <div className="kg-highlights">
-          <span className="kg-highlights-label">NODES:</span>
-          <div className="kg-highlights-list">
-            {[...highlightedNodes].slice(0, 5).map((nodeId) => {
+      {/* Context strip footer */}
+      {contextNodes.length > 0 && (
+        <div className="kg-context-strip">
+          <span className="kg-context-label">Context:</span>
+          <div className="kg-context-pills">
+            {contextNodes.map((nodeId) => {
               const node = graphData?.nodes.find((n) => n.id === nodeId);
               const displayName = node?.labels?.length
                 ? node.labels[0]
@@ -475,8 +488,9 @@ export function KnowledgeGraphWidget({
               return (
                 <span
                   key={nodeId}
-                  className={`kg-highlight-tag ${isFocused ? 'kg-highlight-focused' : ''}`}
+                  className={`kg-context-pill ${isFocused ? 'kg-pill-focused' : ''}`}
                 >
+                  <span className="kg-pill-dot" />
                   {displayName}
                 </span>
               );

@@ -127,6 +127,76 @@ async def get_personas() -> Dict[str, Any]:
     }
 
 
+@router.post("/vad-mode")
+async def set_vad_mode(request: Request) -> Dict[str, Any]:
+    """Toggle VAD parameters between tight (noise cancellation) and relaxed modes.
+
+    When noise cancellation is ON (tight mode), VAD requires higher confidence
+    and volume to trigger — filtering out background noise.
+    When OFF (relaxed mode), VAD is more sensitive for responsive detection.
+
+    Request body:
+        session_id (str): Active session ID
+        mode (str): "tight" or "relaxed"
+
+    Returns:
+        Dict with applied VAD parameters
+    """
+    from app.core.connection_manager import connection_manager
+    from pipecat.audio.vad.vad_analyzer import VADParams
+
+    body = await request.json()
+    session_id = body.get("session_id", "")
+    mode = body.get("mode", "tight")
+
+    if mode not in ("tight", "relaxed"):
+        raise HTTPException(status_code=400, detail="mode must be 'tight' or 'relaxed'")
+
+    # If no session_id provided, use the most recent active session
+    if not session_id:
+        active_ids = connection_manager.get_session_ids()
+        if not active_ids:
+            raise HTTPException(status_code=404, detail="No active sessions")
+        session_id = active_ids[-1]
+
+    vad_analyzer = connection_manager.get_vad_analyzer(session_id)
+    if not vad_analyzer:
+        raise HTTPException(status_code=404, detail=f"No active session '{session_id}'")
+
+    if mode == "tight":
+        new_params = VADParams(
+            confidence=0.92,
+            start_secs=0.3,
+            stop_secs=1.0,
+            min_volume=0.80,
+        )
+    else:
+        new_params = VADParams(
+            confidence=0.65,
+            start_secs=0.15,
+            stop_secs=0.6,
+            min_volume=0.50,
+        )
+
+    vad_analyzer.set_params(new_params)
+    logger.info(
+        f"[Session {session_id}] 🎚️ VAD mode → {mode}: "
+        f"confidence={new_params.confidence}, start={new_params.start_secs}s, "
+        f"stop={new_params.stop_secs}s, vol={new_params.min_volume}"
+    )
+
+    return {
+        "session_id": session_id,
+        "mode": mode,
+        "params": {
+            "confidence": new_params.confidence,
+            "start_secs": new_params.start_secs,
+            "stop_secs": new_params.stop_secs,
+            "min_volume": new_params.min_volume,
+        },
+    }
+
+
 @router.get("/status")
 async def get_status() -> Dict[str, Any]:
     """Get server and voice assistant status.
