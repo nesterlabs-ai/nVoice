@@ -346,7 +346,14 @@ class ConversationManager:
                 cleaned_response = self._strip_markdown(response)
                 await params.result_callback(cleaned_response)
 
+            elapsed_total_ms = (time.time() - start_time) * 1000
             logger.info(f"✅ RAG call completed for: {question[:50]}...")
+
+            try:
+                from app.services.cloudwatch_metrics import emit_rag_call
+                emit_rag_call("", elapsed_total_ms, success=True)
+            except Exception:
+                pass
 
         except Exception as e:
             logger.error(f"Error in RAG call: {e}")
@@ -354,6 +361,14 @@ class ConversationManager:
             logger.error(traceback.format_exc())
             error_response = f"I apologize, but I encountered an error while processing your question: {str(e)}"
             await params.result_callback(error_response)
+
+            try:
+                from app.services.cloudwatch_metrics import emit_rag_call, emit_error
+                elapsed_ms = (time.time() - start_time) * 1000
+                emit_rag_call("", elapsed_ms, success=False)
+                emit_error("RAGError")
+            except Exception:
+                pass
 
     async def _handle_end_conversation(self, params: FunctionCallParams) -> None:
         """Handle end conversation function call.

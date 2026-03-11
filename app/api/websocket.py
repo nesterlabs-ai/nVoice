@@ -12,6 +12,7 @@ Features:
 """
 
 import os
+import time
 import uuid
 from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
@@ -210,6 +211,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             params=transport_params,
         )
 
+        session_start_time = time.time()
+
+        # Emit CloudWatch session start metrics
+        try:
+            from app.services.cloudwatch_metrics import emit_session_start
+            emit_session_start(session_id)
+        except Exception as e:
+            logger.debug(f"[Session {session_id}] CloudWatch start metrics skipped: {e}")
+
         # Create dedicated VoiceAssistant instance for this session
         voice_assistant = VoiceAssistant(voice_assistant_server.config)
         logger.info(f"[Session {session_id}] VoiceAssistant instance created")
@@ -247,7 +257,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         logger.info(f"[Session {session_id}] Client disconnected")
     except Exception as e:
         logger.error(f"[Session {session_id}] Exception in WebSocket endpoint: {e}")
+        try:
+            from app.services.cloudwatch_metrics import emit_error
+            emit_error(type(e).__name__, session_id)
+        except Exception:
+            pass
     finally:
+        # Emit CloudWatch session end metrics
+        if 'session_start_time' in locals():
+            try:
+                from app.services.cloudwatch_metrics import emit_session_end_metrics
+                duration = time.time() - session_start_time
+                emit_session_end_metrics(session_id, duration)
+            except Exception as e:
+                logger.debug(f"[Session {session_id}] CloudWatch metrics skipped: {e}")
+
         # Clean up connection in manager
         connection_manager.disconnect(session_id)
         logger.info(

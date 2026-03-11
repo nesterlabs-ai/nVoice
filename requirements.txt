@@ -25,3 +25,6 @@ google-generativeai>=0.8.0
 
 # Semantic template selection for A2UI (intent understanding)
 sentence-transformers>=2.2.0  # Multi-qa-MiniLM-L6-cos-v1 for query embeddings
+
+# AWS CloudWatch metrics (optional — graceful fallback if missing)
+boto3>=1.34.0
