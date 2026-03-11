@@ -216,6 +216,10 @@ class EC2GravitonInstance(Construct):
             "LOG_LEVEL": app.server.log_level,
             "AWS_REGION": region,
             "CLOUDWATCH_LOG_GROUP": self.log_group_name,
+            # CloudWatch custom metrics (session analytics)
+            "CLOUDWATCH_METRICS_ENABLED": "true",
+            "CLOUDWATCH_NAMESPACE": "NesterVoiceAI",
+            "ENVIRONMENT": self.config.environment,
         }
 
         if app.domain.name:

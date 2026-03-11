@@ -315,6 +315,10 @@ class LightsailCustomResource(Construct):
             # AWS config for CloudWatch Logs (awslogs driver)
             "AWS_REGION": region,
             "CLOUDWATCH_LOG_GROUP": f"/nester-ai/{self.config.environment}",
+            # CloudWatch custom metrics (session analytics)
+            "CLOUDWATCH_METRICS_ENABLED": "true",
+            "CLOUDWATCH_NAMESPACE": "NesterVoiceAI",
+            "ENVIRONMENT": self.config.environment,
         }
 
         if app.domain.name:
