@@ -344,7 +344,7 @@ personas:
       role: "Customer Support"
       description: "Energetic and engaging support specialist"
       avatar: "/personas/customer-support.webp"
-      voice_id: "${PERSONA_CUSTOMER_SUPPORT_VOICE_ID}"  # Blake - Helpful Agent
+      voice_id: "a167e0f3-df7e-4d52-a9c3-f949145efdab"  # Blake - Helpful Agent (hardcoded)
       greetings:
         - "Hey! I'm Blake from Nesterlabs support. I'm here to help you with anything about our services. What can I do for you? "
         - "Hi there! Blake here from Nesterlabs. I help visitors find the right AI solutions. How can I help you today? "
@@ -445,7 +445,7 @@ personas:
       role: "Customer Support (India)"
       description: "Warm and helpful Hinglish-speaking support agent"
       avatar: "/personas/indian-support.webp"
-      voice_id: "${PERSONA_INDIAN_SUPPORT_VOICE_ID}"  # Arushi - Hinglish Speaker
+      voice_id: "95d51f79-c397-46f9-b49a-23763d3eaa2d"  # Arushi - Hinglish Speaker (hardcoded)
       stt_language: "multi"  # Enable Hindi+English recognition for Hinglish
       greetings:
         - "Hey! Main Arushi hoon, Nesterlabs se. Hum AI products banate hain jo sach mein kaam karte hain. Aapko kaise help kar sakti hoon? "
@@ -560,7 +560,7 @@ personas:
         - "Hello, I'm Morgan from Nesterlabs. We help businesses build AI solutions that drive real results. What challenges is your team facing? "
         - "Hi there! I'm Morgan, sales consultant at Nesterlabs. We specialize in voice AI and agentic systems. What brings you to Nesterlabs today? "
         - "Welcome! I'm Morgan from Nesterlabs. We're an AI studio helping companies transform with intelligent solutions. How can I help you explore what we offer? "
-      voice_id: "${PERSONA_SALES_VOICE_ID}"  # Morgan - Executive Expert
+      voice_id: "0ee8beaa-db49-4024-940d-c7ea09b590b3"  # Morgan - Executive Expert (hardcoded)
       system_prompt_override: |
         You are Morgan, the sales consultant at Nesterlabs. VOICE MODE ONLY - respond in natural spoken sentences, no markdown.
 
@@ -655,7 +655,7 @@ personas:
       role: "Technical Advisor"
       description: "Clear and crisp technical expert in AI and voice systems"
       avatar: "/personas/technical.webp"
-      voice_id: "${PERSONA_TECHNICAL_VOICE_ID}"  # Daniel - Modern Assistant
+      voice_id: "47c38ca4-5f35-497b-b1a3-415245fb35e1"  # Daniel - Modern Assistant (hardcoded)
       greetings:
         - "Hi, I'm Daniel, technical advisor at Nesterlabs. I can walk you through our AI architecture, voice pipeline, or agentic systems. What are you curious about? "
         - "Hey! Daniel here from Nesterlabs. I focus on the technical side — voice AI, RAG, emotion detection, you name it. What would you like to dig into? "
