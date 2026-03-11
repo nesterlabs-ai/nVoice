@@ -29,6 +29,13 @@ _lock = threading.Lock()
 
 NAMESPACE = os.getenv("CLOUDWATCH_NAMESPACE", "NesterVoiceAI")
 ENABLED = os.getenv("CLOUDWATCH_METRICS_ENABLED", "true").lower() == "true"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+
+logger.info(
+    f"[CloudWatch] Config loaded: ENABLED={ENABLED}, NAMESPACE={NAMESPACE}, "
+    f"ENVIRONMENT={ENVIRONMENT}, AWS_REGION={os.getenv('AWS_REGION', 'not set')}, "
+    f"AWS_ACCESS_KEY_ID={'SET' if os.getenv('AWS_ACCESS_KEY_ID') else 'MISSING'}"
+)
 
 
 def _get_client():
@@ -83,8 +90,9 @@ def _put_metric(metric_name: str, value: float, unit: str, dimensions: list = No
             Namespace=NAMESPACE,
             MetricData=[metric_data],
         )
+        logger.info(f"[CloudWatch] ✅ Emitted {metric_name}={value} ({unit}) dims={dimensions}")
     except Exception as e:
-        logger.debug(f"[CloudWatch] Failed to put {metric_name}: {e}")
+        logger.warning(f"[CloudWatch] ❌ Failed to put {metric_name}: {e}")
 
 
 def emit_session_start(session_id: str, persona_id: str = ""):
@@ -93,7 +101,7 @@ def emit_session_start(session_id: str, persona_id: str = ""):
     if persona_id:
         dims.append({"Name": "PersonaId", "Value": persona_id})
 
-    _put_metric("SessionCount", 1, "Count", dims)
+    _put_metric("SessionStart", 1, "Count", dims)
 
     # Also emit active session gauge from connection manager
     try:
@@ -127,22 +135,27 @@ def emit_session_end_metrics(session_id: str, duration_secs: float, persona_id: 
 
 def emit_error(error_type: str, session_id: str = ""):
     """Emit an application error metric."""
-    dims = [
+    # Emit with Environment-only dimension (matches dashboard widget)
+    env_dims = [{"Name": "Environment", "Value": os.getenv("ENVIRONMENT", "production")}]
+    _put_metric("Error", 1, "Count", env_dims)
+
+    # Also emit with ErrorType for detailed filtering
+    detailed_dims = [
         {"Name": "Environment", "Value": os.getenv("ENVIRONMENT", "production")},
         {"Name": "ErrorType", "Value": error_type},
     ]
-    _put_metric("ApplicationErrors", 1, "Count", dims)
+    _put_metric("Error", 1, "Count", detailed_dims)
 
 
 def emit_rag_call(session_id: str, latency_ms: float, success: bool = True):
     """Emit RAG call metrics."""
     dims = [{"Name": "Environment", "Value": os.getenv("ENVIRONMENT", "production")}]
 
-    _put_metric("RAGCallCount", 1, "Count", dims)
+    _put_metric("RAGCall", 1, "Count", dims)
     _put_metric("RAGLatency", latency_ms, "Milliseconds", dims)
 
     if not success:
-        _put_metric("RAGErrors", 1, "Count", dims)
+        _put_metric("RAGError", 1, "Count", dims)
 
 
 def emit_tts_latency(latency_ms: float):
