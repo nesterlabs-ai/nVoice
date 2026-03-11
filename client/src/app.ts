@@ -50,6 +50,8 @@ class VoiceScannerApp {
   private scannerFrame: HTMLElement | null = null;
   private orbContainer: HTMLElement | null = null;
   private orbStatus: HTMLElement | null = null;
+  private liquidBlob: HTMLElement | null = null;
+  private orbInnerGlow: HTMLElement | null = null;
   private welcomeMessage: HTMLElement | null = null;
   private transcriptList: HTMLElement | null = null;
   private transcriptStatus: HTMLElement | null = null;
@@ -200,6 +202,11 @@ class VoiceScannerApp {
   private emotionTopicNodes: { id: string; timestamp: Date; sentiment: 'positive' | 'neutral' | 'negative'; sentimentLabel: string; intensity: number }[] = [];
   private emotionNodeCounter: number = 0;
 
+  // Persona selection
+  private selectedPersonaId: string = '';
+  private personaSelectionScreen: HTMLElement | null = null;
+  private sessionStartTime: number = 0;
+
   constructor() {  
 
     this.botAudio = document.createElement('audio');
@@ -214,11 +221,11 @@ class VoiceScannerApp {
     this.showLoadingOverlay();
     this.setVoiceState('idle');
 
-    // Hide loading after initialization
-    setTimeout(() => this.hideLoadingOverlay(), 2500);
-
-    // Auto-connect on load (Start Conversation flow without user click)
-    setTimeout(() => this.handleConnect(), 600);
+    // Hide loading after initialization, then show persona selection
+    setTimeout(() => {
+      this.hideLoadingOverlay();
+      this.showPersonaSelection();
+    }, 2500);
 
     // Expose test methods for debugging (no log spam on load)
     (window as any).testVisualCard = () => this.handleVisualHint({
@@ -231,6 +238,269 @@ class VoiceScannerApp {
         setTimeout(() => this.addEmotionToTimeline(emotion), i * 500);
       });
     };
+  }
+
+  // Carousel state
+  private carouselOrder: number[] = [];
+  private carouselPersonas: { id: string; name: string; role: string; description: string; avatar: string; tags: string[]; color?: string }[] = [];
+
+  // Agent accent colors
+  private static AGENT_COLORS: Record<string, string> = {
+    receptionist: '#00d4aa',
+    customer_support: '#ff8c42',
+    indian_support: '#ff4da6',
+    sales: '#ffc107',
+    technical: '#4da6ff',
+  };
+
+  /**
+   * Fetch personas from backend and render the 3D carousel selection screen
+   */
+  private async showPersonaSelection(): Promise<void> {
+    this.personaSelectionScreen = document.getElementById('persona-selection-screen');
+    const carousel = document.getElementById('persona-carousel');
+    if (!this.personaSelectionScreen || !carousel) {
+      this.handleConnect();
+      return;
+    }
+
+    this.personaSelectionScreen.classList.remove('hidden');
+
+    // Fallback persona data
+    const fallbackPersonas = [
+      { id: 'receptionist', name: 'Brooke', role: 'Receptionist', description: 'Confident and conversational front-desk assistant', avatar: '/personas/receptionist.webp', tags: ['English', 'Female', 'Professional'] },
+      { id: 'customer_support', name: 'Blake', role: 'Customer Support', description: 'Energetic and engaging support specialist', avatar: '/personas/customer-support.webp', tags: ['English', 'Male', 'Support'] },
+      { id: 'indian_support', name: 'Arushi', role: 'Hinglish Support', description: 'Warm and helpful Hinglish-speaking support agent', avatar: '/personas/indian-support.webp', tags: ['Hinglish', 'Female', 'India'] },
+      { id: 'sales', name: 'Morgan', role: 'Sales Consultant', description: 'Polished and professional sales advisor', avatar: '/personas/sales.webp', tags: ['English', 'Female', 'Sales'] },
+      { id: 'technical', name: 'Daniel', role: 'Technical Advisor', description: 'Clear and crisp technical expert in AI and voice systems', avatar: '/personas/technical.webp', tags: ['English', 'Male', 'Technical'] },
+    ];
+
+    let personas = fallbackPersonas;
+    try {
+      const backendUrl = this.getBackendUrl();
+      const res = await fetch(`${backendUrl}/personas`);
+      const data = await res.json();
+      if (data.personas && data.personas.length > 0) {
+        personas = data.personas;
+      }
+    } catch (err) {
+      this.log(`Backend unreachable for personas, using fallback: ${err}`);
+    }
+
+    this.carouselPersonas = personas;
+
+    // Build cards
+    carousel.innerHTML = '';
+    personas.forEach((persona, idx) => {
+      const color = VoiceScannerApp.AGENT_COLORS[persona.id] || '#4da6ff';
+      const card = document.createElement('div');
+      card.className = 'persona-card';
+      card.dataset.personaId = persona.id;
+      card.style.setProperty('--agent-color', color);
+      card.style.setProperty('--agent-glow', color + '26');
+      card.style.setProperty('--agent-border', color + '4d');
+
+      const initial = (persona.name || '?').charAt(0).toUpperCase();
+      const avatarContent = persona.avatar
+        ? `<img src="${persona.avatar}" alt="${persona.name}" onerror="this.parentElement.querySelector('.persona-avatar-ring')?.remove(); this.outerHTML='<div class=\\'persona-avatar-fallback\\'>${initial}</div>'" />`
+        : `<div class="persona-avatar-fallback">${initial}</div>`;
+
+      const tagsHtml = (persona.tags || [])
+        .map((tag: string) => `<span class="persona-tag">${tag}</span>`)
+        .join('');
+
+      card.innerHTML = `
+        <div class="persona-avatar-wrap">
+          <div class="persona-avatar-ring" style="border-color: ${color}"></div>
+          ${avatarContent}
+        </div>
+        <p class="persona-card-name">${persona.name}</p>
+        <p class="persona-card-role" style="color: ${color}">${persona.role}</p>
+        <p class="persona-card-desc">${persona.description}</p>
+        <div class="persona-card-tags">${tagsHtml}</div>
+      `;
+
+      // Click on card → rotate it to center
+      card.addEventListener('click', () => {
+        const currentPos = parseInt(card.getAttribute('data-pos') || '0');
+        if (currentPos === 0) {
+          // Already centered — select it
+          this.selectPersona(persona.id);
+        } else {
+          // Rotate carousel to bring this card to center
+          for (let i = 0; i < Math.abs(currentPos); i++) {
+            if (currentPos > 0) this.carouselNext();
+            else this.carouselPrev();
+          }
+        }
+      });
+
+      carousel.appendChild(card);
+    });
+
+    // Initialize carousel order: center the first card (receptionist)
+    this.carouselOrder = personas.map((_, i) => {
+      // Position cards: 0 = center, -1 = left, 1 = right, etc.
+      const half = Math.floor(personas.length / 2);
+      let pos = i;
+      if (pos > half) pos = pos - personas.length;
+      return pos;
+    });
+    this.updateCarousel();
+
+    // Navigation buttons
+    document.getElementById('persona-prev')?.addEventListener('click', () => this.carouselPrev());
+    document.getElementById('persona-next')?.addEventListener('click', () => this.carouselNext());
+
+    // Keyboard navigation
+    this._carouselKeyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') this.carouselNext();
+      if (e.key === 'ArrowLeft') this.carouselPrev();
+      if (e.key === 'Enter') {
+        const cards = document.querySelectorAll('.persona-card');
+        cards.forEach(c => {
+          if (c.getAttribute('data-pos') === '0') {
+            const pid = (c as HTMLElement).dataset.personaId;
+            if (pid) this.selectPersona(pid);
+          }
+        });
+      }
+    };
+    window.addEventListener('keydown', this._carouselKeyHandler);
+
+    // CTA button
+    document.getElementById('persona-cta')?.addEventListener('click', () => {
+      const cards = document.querySelectorAll('.persona-card');
+      cards.forEach(c => {
+        if (c.getAttribute('data-pos') === '0') {
+          const pid = (c as HTMLElement).dataset.personaId;
+          if (pid) this.selectPersona(pid);
+        }
+      });
+    });
+
+    // Spawn background particles
+    this.spawnParticles();
+  }
+
+  private _carouselKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+  private carouselNext(): void {
+    // Shift left: first element goes to end
+    const first = this.carouselOrder.shift()!;
+    this.carouselOrder.push(first);
+    this.updateCarousel();
+  }
+
+  private carouselPrev(): void {
+    // Shift right: last element goes to start
+    const last = this.carouselOrder.pop()!;
+    this.carouselOrder.unshift(last);
+    this.updateCarousel();
+  }
+
+  private updateCarousel(): void {
+    const cards = document.querySelectorAll('.persona-card') as NodeListOf<HTMLElement>;
+    const ctaBtn = document.getElementById('persona-cta') as HTMLElement | null;
+
+    cards.forEach((card, index) => {
+      const pos = this.carouselOrder[index];
+      card.setAttribute('data-pos', String(pos));
+
+      // Update CTA color based on front card
+      if (pos === 0 && ctaBtn) {
+        const color = VoiceScannerApp.AGENT_COLORS[card.dataset.personaId || ''] || '#4da6ff';
+        ctaBtn.style.backgroundColor = color;
+        ctaBtn.style.boxShadow = `0 0 25px ${color}4d`;
+        ctaBtn.style.setProperty('--cta-glow', `${color}66`);
+      }
+    });
+  }
+
+  private spawnParticles(): void {
+    const container = document.getElementById('persona-particles');
+    if (!container) return;
+    container.innerHTML = '';
+    for (let i = 0; i < 30; i++) {
+      const p = document.createElement('div');
+      p.className = 'persona-particle';
+      const size = Math.random() * 3 + 1;
+      p.style.width = `${size}px`;
+      p.style.height = `${size}px`;
+      p.style.left = `${Math.random() * 100}%`;
+      p.style.top = `${Math.random() * 100}%`;
+      p.style.animationDelay = `${Math.random() * 5}s`;
+      p.style.animationDuration = `${Math.random() * 10 + 10}s`;
+      container.appendChild(p);
+    }
+  }
+
+  /**
+   * Handle persona card click: store selection, hide screen, connect
+   */
+  // Map agent accent colors to RGB for CSS variables
+  private static AGENT_COLORS_RGB: Record<string, string> = {
+    receptionist: '0, 212, 170',
+    customer_support: '255, 140, 66',
+    indian_support: '255, 77, 166',
+    sales: '255, 193, 7',
+    technical: '77, 166, 255',
+  };
+
+  private selectPersona(personaId: string): void {
+    this.selectedPersonaId = personaId;
+    this.log(`Selected persona: ${personaId}`);
+
+    // Apply agent accent color to CSS variables globally
+    const color = VoiceScannerApp.AGENT_COLORS[personaId] || '#ff4da6';
+    const colorRgb = VoiceScannerApp.AGENT_COLORS_RGB[personaId] || '255, 77, 166';
+    document.documentElement.style.setProperty('--accent-hero', color);
+    document.documentElement.style.setProperty('--accent-hero-rgb', colorRgb);
+
+    // Update agent identity on the talking page
+    const persona = this.carouselPersonas.find(p => p.id === personaId);
+    if (persona) {
+      const agentName = document.getElementById('agent-name');
+      const agentAvatar = document.getElementById('agent-avatar-img') as HTMLImageElement | null;
+      const agentStatus = document.getElementById('agent-status');
+      if (agentName) agentName.textContent = persona.name;
+      if (agentAvatar && persona.avatar) agentAvatar.src = persona.avatar;
+      if (agentStatus) agentStatus.textContent = 'Connecting...';
+
+      // Sync Mission Control header
+      const mcName = document.getElementById('mc-agent-name');
+      if (mcName) mcName.textContent = persona.name;
+
+      // Tint MC mini orb with agent color
+      const mcOrbGlow = document.querySelector('.mc-orb-glow') as HTMLElement | null;
+      if (mcOrbGlow) mcOrbGlow.style.background = `linear-gradient(135deg, ${color}, #7c3aed)`;
+      const mcOrbCore = document.querySelector('.mc-orb-core') as HTMLElement | null;
+      if (mcOrbCore) mcOrbCore.style.background = `linear-gradient(135deg, ${color}, #818cf8)`;
+    }
+
+    // Update orb gradient with agent color and cache element refs
+    this.liquidBlob = document.getElementById('liquid-blob');
+    this.orbInnerGlow = document.querySelector('.orb-inner-glow');
+    if (this.liquidBlob) {
+      this.liquidBlob.style.background = `linear-gradient(135deg, ${color} 0%, #2563eb 50%, #ffffff 100%)`;
+    }
+
+    // Remove keyboard listener
+    if (this._carouselKeyHandler) {
+      window.removeEventListener('keydown', this._carouselKeyHandler);
+      this._carouselKeyHandler = null;
+    }
+
+    if (this.personaSelectionScreen) {
+      this.personaSelectionScreen.classList.add('hidden');
+    }
+
+    // Start session timer
+    this.sessionStartTime = Date.now();
+
+    setTimeout(() => {
+      this.handleConnect();
+    }, 500);
   }
 
   private setupDOMElements(): void {
@@ -412,7 +682,9 @@ class VoiceScannerApp {
     }
     this.resetAllCardsData();
     await this.disconnect();
-    this.handleConnect();
+    // Show persona selection again so user can pick a different agent
+    this.selectedPersonaId = '';
+    this.showPersonaSelection();
   }
 
   /**
@@ -481,27 +753,20 @@ class VoiceScannerApp {
     this.disconnect();
   }
 
-  /** Icon paths for control-close button (normal vs disabled) */
-  private static readonly CLOSE_ICON_ENABLED = '/X (1).svg';
-  private static readonly CLOSE_ICON_DISABLED = '/X-disable.svg';
-
   /**
-   * Enable or disable the control-close button. Disabled while WebSocket is connecting so user cannot close during pending API.
-   * Swaps the button icon to X-disable.svg when disabled.
+   * Enable or disable the control-close button. Disabled while WebSocket is connecting.
    */
   private setCloseButtonEnabled(enabled: boolean): void {
     const closeBtn = document.getElementById('control-close');
     if (!closeBtn) return;
     (closeBtn as HTMLButtonElement).disabled = !enabled;
     closeBtn.setAttribute('aria-disabled', String(!enabled));
-    const icon = closeBtn.querySelector('img');
-    if (icon) {
-      icon.src = enabled ? VoiceScannerApp.CLOSE_ICON_ENABLED : VoiceScannerApp.CLOSE_ICON_DISABLED;
-    }
     if (enabled) {
-      closeBtn.classList.remove('control-btn-close-disabled');
+      closeBtn.style.opacity = '1';
+      closeBtn.style.pointerEvents = 'auto';
     } else {
-      closeBtn.classList.add('control-btn-close-disabled');
+      closeBtn.style.opacity = '0.3';
+      closeBtn.style.pointerEvents = 'none';
     }
   }
 
@@ -780,7 +1045,16 @@ class VoiceScannerApp {
    * Start timestamp update
    */
   private startTimestampUpdate(): void {
+    const sessionTimer = document.getElementById('session-timer');
     const updateTime = () => {
+      // Session timer (mm:ss from session start)
+      if (sessionTimer && this.sessionStartTime > 0) {
+        const elapsed = Math.floor((Date.now() - this.sessionStartTime) / 1000);
+        const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const secs = String(elapsed % 60).padStart(2, '0');
+        sessionTimer.textContent = `${mins}:${secs}`;
+      }
+      // Legacy timestamp element
       if (this.timestampElement) {
         const now = new Date();
         const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
@@ -886,6 +1160,25 @@ class VoiceScannerApp {
 
     // Update new status display UI
     this.updateStatusDisplay();
+
+    // Update liquid blob orb state
+    const orbEl = document.getElementById('ai-orb');
+    if (orbEl) {
+      orbEl.classList.remove('idle', 'listening', 'thinking', 'speaking');
+      orbEl.classList.add(state);
+    }
+
+    // Update agent status text
+    const agentStatus = document.getElementById('agent-status');
+    if (agentStatus) {
+      const statusTexts: Record<VoiceState, string> = {
+        'idle': 'Ready',
+        'listening': 'Listening...',
+        'thinking': 'Thinking...',
+        'speaking': 'Speaking...'
+      };
+      agentStatus.textContent = statusTexts[state];
+    }
 
     // Legacy scanner frame updates (hidden but kept for compatibility)
     if (this.scannerFrame && this.orbContainer) {
@@ -1539,26 +1832,23 @@ class VoiceScannerApp {
    */
   private updatePeakButtonState(): void {
     const cardsShowing = this.mainLayout && !this.mainLayout.classList.contains('panels-hidden');
-    const iconPath = cardsShowing ? '/EyeClosed.svg' : '/Eye (1).svg';
     const label = cardsShowing ? 'Hide' : 'Peek';
 
     const controlPeak = document.getElementById('control-peak');
-    const controlPeakImg = controlPeak?.querySelector<HTMLImageElement>('.control-btn-icon');
-    const controlPeakLabel = controlPeak?.querySelector('.control-btn-label');
-    if (controlPeakImg) controlPeakImg.src = iconPath;
+    const controlPeakLabel = controlPeak?.querySelector('.pill-btn-label');
     if (controlPeakLabel) controlPeakLabel.textContent = label;
-    controlPeak?.setAttribute('aria-label', cardsShowing ? 'Hide dashboard' : 'Peak view');
+    controlPeak?.setAttribute('aria-label', cardsShowing ? 'Hide dashboard' : 'Peek view');
+    controlPeak?.classList.toggle('peek-active', !!cardsShowing);
 
     const closeOptionPeak = document.getElementById('close-option-peak');
-    const closeOptionPeakImg = closeOptionPeak?.querySelector<HTMLImageElement>('.close-option-icon');
-    const closeOptionPeakLabel = closeOptionPeak?.querySelector('.close-option-label');
-    if (closeOptionPeakImg) closeOptionPeakImg.src = iconPath;
+    const closeOptionPeakLabel = closeOptionPeak?.querySelector('.pill-btn-label');
     if (closeOptionPeakLabel) closeOptionPeakLabel.textContent = label;
-    closeOptionPeak?.setAttribute('aria-label', cardsShowing ? 'Hide' : 'Peak');
+    closeOptionPeak?.setAttribute('aria-label', cardsShowing ? 'Hide' : 'Peek');
+    closeOptionPeak?.classList.toggle('peek-active', !!cardsShowing);
   }
 
   /**
-   * Toggle speaker icon between SpeakerHigh.svg and SpeakerSlash.svg
+   * Toggle speaker mute (SVG icon toggles via CSS class)
    */
   private toggleSpeakerIcon(): void {
     this.speakerMuted = !this.speakerMuted;
@@ -1570,15 +1860,14 @@ class VoiceScannerApp {
       }
     }
     const btn = document.getElementById('control-speaker');
-    const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
-    if (img) {
-      img.src = this.speakerMuted ? '/SpeakerSlash.svg' : '/SpeakerHigh.svg';
+    if (btn) {
+      btn.classList.toggle('muted', this.speakerMuted);
     }
     btn?.setAttribute('aria-label', this.speakerMuted ? 'Sound muted' : 'Sound');
   }
 
   /**
-   * Toggle mic icon between Microphone (1).svg and MicrophoneSlash.svg
+   * Toggle mic mute (SVG icon toggles via CSS class)
    */
   private toggleMicIcon(): void {
     this.micMuted = !this.micMuted;
@@ -1586,9 +1875,9 @@ class VoiceScannerApp {
       this.localAudioTrack.enabled = !this.micMuted;
     }
     const btn = document.getElementById('control-mic');
-    const img = btn?.querySelector<HTMLImageElement>('.control-btn-icon');
-    if (img) {
-      img.src = this.micMuted ? '/MicrophoneSlash.svg' : '/Microphone (1).svg';
+    if (btn) {
+      btn.classList.toggle('muted', this.micMuted);
+      btn.classList.toggle('pill-btn-mic-active', !this.micMuted);
     }
     btn?.setAttribute('aria-label', this.micMuted ? 'Microphone muted' : 'Microphone');
   }
@@ -2235,6 +2524,205 @@ class VoiceScannerApp {
   }
 
   /**
+   * Drive the liquid blob orb visuals from real bot audio amplitude per frame.
+   * Only reacts when bot is speaking — full ballooning vibration driven by real audio.
+   */
+  private updateOrbFromAudio(): void {
+    if (!this.liquidBlob) return;
+
+    const t = performance.now() / 1000;
+
+    if (this.voiceState === 'speaking') {
+      // --- Bot speaking: full aggressive audio-reactive vibration ---
+      const amp = Math.min(this.smoothedAmplitude, 1.0);
+
+      // Scale: base 1.0, max ~1.25 at full amplitude — full ballooning
+      const scale = 1.0 + amp * 0.25;
+
+      // Organic morph from 4 frequency bands — ±20% deformation
+      const len = this.smoothedFrequencyData.length;
+      const f0 = this.smoothedFrequencyData[0] || 0;
+      const f1 = this.smoothedFrequencyData[Math.floor(len * 0.25)] || 0;
+      const f2 = this.smoothedFrequencyData[Math.floor(len * 0.5)] || 0;
+      const f3 = this.smoothedFrequencyData[Math.floor(len * 0.75)] || 0;
+
+      // Map frequency bands to border-radius deformations (30-70% range)
+      const r1 = 50 + (f0 - 0.3) * 20 + Math.sin(t * 2.1) * 3;
+      const r2 = 50 + (f1 - 0.3) * 20 + Math.sin(t * 2.7) * 3;
+      const r3 = 50 + (f2 - 0.3) * 20 + Math.sin(t * 3.2) * 3;
+      const r4 = 50 + (f3 - 0.3) * 20 + Math.sin(t * 1.8) * 3;
+      const r5 = 50 + (f1 - 0.3) * 15 + Math.sin(t * 2.4) * 3;
+      const r6 = 50 + (f2 - 0.3) * 15 + Math.sin(t * 3.0) * 3;
+      const r7 = 50 + (f3 - 0.3) * 15 + Math.sin(t * 1.5) * 3;
+      const r8 = 50 + (f0 - 0.3) * 15 + Math.sin(t * 2.0) * 3;
+
+      // Rotation wobble from amplitude
+      const rotate = Math.sin(t * 3.5) * amp * 4;
+
+      this.liquidBlob.style.transform = `scale(${scale}) rotate(${rotate}deg)`;
+      this.liquidBlob.style.borderRadius = `${r1}% ${r2}% ${r3}% ${r4}% / ${r5}% ${r6}% ${r7}% ${r8}%`;
+
+      // Glow intensity scales with amplitude — massive spread
+      const glowIntensity = 0.4 + amp * 0.6;
+      const glowSpread = 100 + amp * 120;
+      const outerGlow = 60 + amp * 80;
+      const farGlow = 40 + amp * 60;
+      this.liquidBlob.style.boxShadow = `
+        inset 0 0 ${50 + amp * 40}px rgba(255, 255, 255, ${0.35 + amp * 0.35}),
+        0 0 ${glowSpread}px rgba(37, 99, 235, ${glowIntensity}),
+        0 0 ${glowSpread + outerGlow}px rgba(37, 99, 235, ${glowIntensity * 0.5}),
+        0 0 ${glowSpread + outerGlow + farGlow}px rgba(108, 60, 224, ${glowIntensity * 0.3})
+      `;
+
+      // Override CSS animation — JS drives everything
+      this.liquidBlob.style.animation = 'none';
+
+      // Inner glow pulses hard with audio
+      if (this.orbInnerGlow) {
+        const glowScale = 1.0 + amp * 0.5;
+        const glowOpacity = 0.4 + amp * 0.4;
+        (this.orbInnerGlow as HTMLElement).style.transform = `scale(${glowScale})`;
+        (this.orbInnerGlow as HTMLElement).style.opacity = `${glowOpacity}`;
+      }
+    } else if (this.voiceState === 'thinking') {
+      // Pulsing rotation, no audio data
+      const pulse = 0.5 + Math.sin(t * 3) * 0.5;
+      const scale = 1.0 + pulse * 0.05;
+      const rotate = Math.sin(t * 2) * 3;
+      this.liquidBlob.style.transform = `scale(${scale}) rotate(${rotate}deg)`;
+      this.liquidBlob.style.borderRadius = `${45 + Math.sin(t * 2.5) * 5}% ${55 - Math.sin(t * 2.5) * 5}% ${50 + Math.sin(t * 3) * 5}% ${50 - Math.sin(t * 3) * 5}% / ${55 - Math.sin(t * 2) * 5}% ${45 + Math.sin(t * 2) * 5}% ${50 - Math.sin(t * 2.8) * 5}% ${50 + Math.sin(t * 2.8) * 5}%`;
+      this.liquidBlob.style.boxShadow = `
+        inset 0 0 40px rgba(255, 255, 255, ${0.3 + pulse * 0.15}),
+        0 0 60px rgba(37, 99, 235, ${0.2 + pulse * 0.15}),
+        0 0 90px rgba(108, 60, 224, ${0.08 + pulse * 0.07})
+      `;
+      this.liquidBlob.style.animation = 'none';
+    } else {
+      // Idle / listening — restore CSS animations, clear JS overrides
+      if (this.liquidBlob.style.animation === 'none') {
+        this.liquidBlob.style.animation = '';
+        this.liquidBlob.style.transform = '';
+        this.liquidBlob.style.borderRadius = '';
+        this.liquidBlob.style.boxShadow = '';
+        if (this.orbInnerGlow) {
+          (this.orbInnerGlow as HTMLElement).style.transform = '';
+          (this.orbInnerGlow as HTMLElement).style.opacity = '';
+        }
+      }
+    }
+  }
+
+  /**
+   * Process audio frequency data into smoothedFrequencyData and smoothedAmplitude.
+   * Runs every frame regardless of whether the canvas is visible.
+   */
+  private processAudioData(): void {
+    this.blobTime += 0.02;
+    this.blobPhase += 0.015;
+
+    const numBars = this.smoothedFrequencyData.length;
+
+    if (this.voiceState === 'speaking') {
+      // Determine which bot audio data array to use
+      let activeFreqArray: Uint8Array | null = null;
+
+      if (this.botPlayerDataArray && this.botPlayerDataArray.length > 0) {
+        for (let i = 0; i < this.botPlayerDataArray.length; i++) {
+          if (this.botPlayerDataArray[i] > 5) {
+            activeFreqArray = this.botPlayerDataArray;
+            break;
+          }
+        }
+      }
+
+      if (!activeFreqArray && this.dataArray && this.dataArray.length > 0) {
+        for (let i = 0; i < this.dataArray.length; i++) {
+          if (this.dataArray[i] > 5) {
+            activeFreqArray = this.dataArray;
+            break;
+          }
+        }
+      }
+
+      if (activeFreqArray) {
+        for (let i = 0; i < numBars; i++) {
+          const dataIndex = Math.floor((i / numBars) * activeFreqArray.length * 0.8);
+          const rawValue = (activeFreqArray[dataIndex] || 0) / 255;
+          const noiseThreshold = 0.08;
+          const gatedValue = rawValue > noiseThreshold ? (rawValue - noiseThreshold) / (1 - noiseThreshold) : 0;
+          const baseHeight = 0.22 + Math.sin(this.blobPhase + i * 0.1) * 0.06;
+          const audioComponent = Math.pow(gatedValue, 0.8) * 0.8;
+          const targetValue = baseHeight + audioComponent;
+
+          if (targetValue > this.smoothedFrequencyData[i]) {
+            this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.5;
+          } else {
+            this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.15;
+          }
+        }
+      } else {
+        // Fallback: simulate from single audio level
+        this.smoothedBotAudioLevel += (this.botAudioLevel - this.smoothedBotAudioLevel) * 0.3;
+        for (let i = 0; i < numBars; i++) {
+          const baseHeight = 0.22 + Math.sin(this.blobPhase + i * 0.1) * 0.06;
+          const pos = i / numBars;
+          const band1 = Math.sin(this.blobTime * 4.5 + i * 0.3) * 0.5 + 0.5;
+          const band2 = Math.sin(this.blobTime * 6.2 + i * 0.5) * 0.5 + 0.5;
+          const band3 = Math.sin(this.blobTime * 8.1 + i * 0.7) * 0.5 + 0.5;
+          const band4 = Math.sin(this.blobTime * 5.3 + i * 0.4) * 0.5 + 0.5;
+          const lowWeight = Math.exp(-Math.pow((pos - 0.2) * 3, 2));
+          const midWeight = Math.exp(-Math.pow((pos - 0.45) * 3, 2));
+          const highWeight = Math.exp(-Math.pow((pos - 0.7) * 3, 2));
+          const extraWeight = Math.exp(-Math.pow((pos - 0.35) * 4, 2));
+          const combinedBands = (band1 * lowWeight + band2 * midWeight + band3 * highWeight + band4 * extraWeight) / 2;
+          const audioComponent = this.smoothedBotAudioLevel * combinedBands * 1.2;
+          const targetValue = baseHeight + audioComponent;
+
+          if (targetValue > this.smoothedFrequencyData[i]) {
+            this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.5;
+          } else {
+            this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.15;
+          }
+        }
+      }
+    } else if (this.voiceState === 'listening' && this.inputDataArray && this.inputDataArray.length > 0) {
+      for (let i = 0; i < numBars; i++) {
+        const dataIndex = Math.floor((i / numBars) * this.inputDataArray.length * 0.8);
+        const rawValue = (this.inputDataArray[dataIndex] || 0) / 255;
+        const noiseThreshold = 0.08;
+        const gatedValue = rawValue > noiseThreshold ? (rawValue - noiseThreshold) / (1 - noiseThreshold) : 0;
+        const baseHeight = 0.22 + Math.sin(this.blobPhase + i * 0.1) * 0.06;
+        const audioComponent = Math.pow(gatedValue, 0.8) * 0.8;
+        const targetValue = baseHeight + audioComponent;
+
+        if (targetValue > this.smoothedFrequencyData[i]) {
+          this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.5;
+        } else {
+          this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.15;
+        }
+      }
+    } else {
+      // Idle/thinking
+      for (let i = 0; i < numBars; i++) {
+        let targetValue: number;
+        if (this.voiceState === 'thinking') {
+          targetValue = 0.25 + Math.sin(this.blobTime * 2 + i * 0.2) * 0.1;
+        } else {
+          targetValue = 0.35 + Math.sin(this.blobPhase + i * 0.25) * 0.07;
+        }
+        this.smoothedFrequencyData[i] += (targetValue - this.smoothedFrequencyData[i]) * 0.1;
+      }
+    }
+
+    // Calculate overall amplitude
+    let totalAmplitude = 0;
+    for (let i = 0; i < numBars; i++) {
+      totalAmplitude += this.smoothedFrequencyData[i];
+    }
+    this.smoothedAmplitude = totalAmplitude / numBars;
+  }
+
+  /**
    * Start idle blob animation (runs even when not connected)
    */
   private startIdleBlobAnimation(): void {
@@ -2256,8 +2744,14 @@ class VoiceScannerApp {
         }
       }
 
-      // Draw the main wave visualizer
+      // Process audio data into smoothedFrequencyData/smoothedAmplitude (always runs)
+      this.processAudioData();
+
+      // Draw the main wave visualizer (may skip if canvas hidden)
       this.drawGeminiBlob();
+
+      // Drive liquid blob orb from processed audio data
+      this.updateOrbFromAudio();
 
       // When connected, also update other visualizations
       if (this.isConnected) {
@@ -2547,6 +3041,9 @@ class VoiceScannerApp {
         params: {
           baseUrl: backendUrl,
           endpoints: { connect: '/connect' },
+          requestData: {
+            ...(this.selectedPersonaId ? { persona_id: this.selectedPersonaId } : {}),
+          },
         },
         enableMic: true,
         enableCam: false,

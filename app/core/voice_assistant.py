@@ -68,13 +68,15 @@ class VoiceAssistant:
         runner: Pipeline runner
     """
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Dict[str, Any] = None, persona_config: Dict[str, Any] = None):
         """Initialize the Voice Assistant.
 
         Args:
             config: Configuration dictionary containing settings for all services
+            persona_config: Optional persona override (voice_id, system_prompt_override, greetings)
         """
         self.config = config or {}
+        self.persona_config = persona_config
 
         # Initialize services
         self.stt_service = None
@@ -168,16 +170,37 @@ class VoiceAssistant:
 
         # Initialize Speech-to-Text service
         stt_config = self.config.get("stt", {})
+        stt_kwargs = stt_config.get("config", {}).copy()
+
+        # Override STT language if persona specifies one (e.g., "multi" for Hinglish)
+        if self.persona_config and self.persona_config.get("stt_language"):
+            stt_kwargs["language"] = self.persona_config["stt_language"]
+            logger.info(f"🎭 Persona STT language override: {self.persona_config['stt_language']}")
+
         self.stt_service = SpeechToTextService(
             stt_provider=stt_config.get("provider", "whisper"),
-            **stt_config.get("config", {}),
+            **stt_kwargs,
         )
 
         # Initialize Text-to-Speech service
         tts_config = self.config.get("tts", {})
+        tts_kwargs = tts_config.get("config", {}).copy()
+
+        # Override voice_id if persona specifies one
+        if self.persona_config and self.persona_config.get("voice_id"):
+            persona_voice_id = self.persona_config["voice_id"]
+            # Resolve ${ENV_VAR} references
+            if persona_voice_id.startswith("${") and persona_voice_id.endswith("}"):
+                import os
+                env_var = persona_voice_id[2:-1]
+                persona_voice_id = os.getenv(env_var, "")
+            if persona_voice_id:
+                tts_kwargs["voice_id"] = persona_voice_id
+                logger.info(f"🎭 Persona voice override: voice_id={persona_voice_id[:8]}...")
+
         self.tts_service = TextToSpeechService(
             tts_provider=tts_config.get("provider", "elevenlabs"),
-            **tts_config.get("config", {}),
+            **tts_kwargs,
         )
 
         # Initialize Input Analyzer
@@ -201,6 +224,11 @@ class VoiceAssistant:
         # Include system_prompt in llm_config so ConversationManager can access it
         llm_config = conversation_config.get("llm", {}).copy()
         llm_config["system_prompt"] = conversation_config.get("system_prompt", "")
+
+        # Override system_prompt if persona has a custom one
+        if self.persona_config and self.persona_config.get("system_prompt_override"):
+            llm_config["system_prompt"] = self.persona_config["system_prompt_override"]
+            logger.info(f"🎭 Persona system prompt override applied ({len(self.persona_config['system_prompt_override'])} chars)")
         self.conversation_manager = ConversationManager(
             input_analyzer=self.input_analyzer,
             rag_service=self.rag_service,
@@ -384,14 +412,18 @@ class VoiceAssistant:
             # to know when bot speech begins/ends. Pushing directly to self.tts
             # bypasses the pipeline and the mute filter never unmutes.
 
-            # Randomized greeting messages for variety
+            # Use persona-specific greetings if available, otherwise default
             import random
-            greeting_options = [
-                "Hi, I'm Nester AI. We're reimagining intelligence through research, design, and technology. What brings you here today? ",
-                "Hey there! I'm Nester AI from Nesterlabs. We build AI products with a human touch. What brings you here today? ",
-                "Hi! Nester AI here. We help companies build amazing AI experiences. What would you like to explore? ",
-                "Hello! I'm Nester AI, your guide to Nesterlabs. We're an AI studio in the Bay Area. What would you like to explore? "
-            ]
+            if self.persona_config and self.persona_config.get("greetings"):
+                greeting_options = self.persona_config["greetings"]
+                logger.info(f"🎭 Using persona greetings ({len(greeting_options)} options)")
+            else:
+                greeting_options = [
+                    "Hi, I'm Nester AI. We're reimagining intelligence through research, design, and technology. What brings you here today? ",
+                    "Hey there! I'm Nester AI from Nesterlabs. We build AI products with a human touch. What brings you here today? ",
+                    "Hi! Nester AI here. We help companies build amazing AI experiences. What would you like to explore? ",
+                    "Hello! I'm Nester AI, your guide to Nesterlabs. We're an AI studio in the Bay Area. What would you like to explore? "
+                ]
             # Add trailing space to ensure last word is emitted (not buffered for next chunk)
             greeting_text = random.choice(greeting_options)
 

@@ -8,13 +8,13 @@
   <title>Nester AI - Voice Intelligence</title>
   <link rel="icon" type="image/svg+xml" href="/Nester-Logo.svg">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <!-- Critical CSS: prevent FOUC – show loader, hide dashboard cards until main CSS loads -->
   <style>
     .loading-overlay {
       position: fixed;
       inset: 0;
-      background: #0E0102;
+      background: #060608;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -51,128 +51,170 @@
     </div>
   </div>
 
-  <!-- ===== NESTER DESIGN LANGUAGE LAYOUT ===== -->
+  <!-- ===== PERSONA SELECTION SCREEN (3D Carousel) ===== -->
+  <div class="persona-selection-screen" id="persona-selection-screen">
+    <!-- Background particles -->
+    <div class="persona-particles" id="persona-particles"></div>
+    <!-- Background glow -->
+    <div class="persona-bg-glow"></div>
 
-  <!-- Header Bar -->
-  <!-- <header class="header-bar">
-    <div class="header-left">
-      <img src="/nester-icon.png" alt="Nester AI" class="header-logo" onerror="this.style.display='none'">
-      <span class="brand-text">NESTER</span>
-      <span class="brand-divider">/</span>
-      <span class="brand-sub">VOICE</span>
+    <!-- Header -->
+    <header class="persona-header">
+      <img src="/Logo White.svg" alt="Nester" class="persona-logo" />
+      <h1 class="persona-title">Choose Your AI Agent</h1>
+      <p class="persona-subtitle">Select a persona to begin your conversation</p>
+    </header>
+
+    <!-- 3D Carousel -->
+    <div class="persona-carousel-wrap">
+      <button class="persona-nav-btn persona-nav-prev" id="persona-prev" aria-label="Previous Agent">
+        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>
+      </button>
+
+      <div class="persona-carousel" id="persona-carousel">
+        <!-- Cards injected by app.ts -->
+      </div>
+
+      <button class="persona-nav-btn persona-nav-next" id="persona-next" aria-label="Next Agent">
+        <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>
+      </button>
     </div>
-    <div class="header-right">
-      <span class="header-status" id="connection-status">OFFLINE</span>
-      <span class="header-time" id="timestamp">00:00:00</span>
-    </div>
-  </header> -->
+
+    <!-- CTA Button -->
+    <footer class="persona-footer">
+      <button class="persona-cta-btn" id="persona-cta">Start Conversation</button>
+      <div class="persona-powered">Powered by Nesterlabs AI</div>
+    </footer>
+  </div>
+
+  <!-- ===== NESTER DESIGN LANGUAGE LAYOUT ===== -->
 
   <!-- Main Layout -->
   <main class="main-layout panels-hidden">
-    <a href="https://www.nesterlabs.com/" class="main-layout-logo-link" aria-label="Nester Labs">
-      <img src="/Logo White.svg" alt="Nester" class="main-layout-logo" aria-hidden="true" />
-    </a>
-    <!-- 6-Card Dashboard Grid (visible when Peek/dashboard mode) -->
-    <!-- Column order: 1 = Visitor Intent + Transcript, 2 = Conversation + Emotion, 3 = Knowledge Graph + Tone -->
+    <!-- Noise texture overlay -->
+    <div class="noise-overlay" aria-hidden="true"></div>
+
+    <!-- Top Navigation Bar -->
+    <header class="session-header" id="session-header">
+      <div class="session-brand">NESTERLABS</div>
+      <div class="session-info">
+        <div class="session-status-dot"></div>
+        <span class="session-timer" id="session-timer">00:00</span>
+      </div>
+    </header>
+
+    <!-- Mission Control Peek Header (mini orb + agent name + live status) -->
+    <header class="mc-header" id="mc-header">
+      <div class="mc-header-left">
+        <div class="mc-orb">
+          <div class="mc-orb-glow"></div>
+          <div class="mc-orb-core"></div>
+        </div>
+        <div class="mc-agent-info">
+          <span class="mc-agent-name" id="mc-agent-name">Nester</span>
+          <div class="mc-live-badge">
+            <span class="mc-live-dot"></span>
+            <span class="mc-live-text">Live</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Mission Control Dashboard Panel (slides up from bottom) -->
     <div class="dashboard-grid" id="dashboard-grid" aria-hidden="true">
-      <!-- Column 1: Visitor Intent (top), Transcript (bottom) -->
-      <div class="dashboard-card visitor-intent-card" id="dashboard-card-3">
-        <div class="dashboard-card-header">
-          <span class="dashboard-card-label">VISITOR INTENT</span>
-        </div>
-        <div class="dashboard-card-body visitor-intent-body">
-          <div class="visitor-intent-section">
-            <p class="visitor-intent-desc" id="visitor-intent-desc">Visitor intent will appear here as you speak</p>
-            <div class="visitor-intent-confidence">
-              <div class="confidence-bar">
-                <div class="confidence-fill" id="visitor-intent-confidence-fill" style="width: 10%"></div>
+      <section class="mc-panel">
+        <div class="mc-panel-grid">
+          <!-- LEFT COLUMN (7/12) -->
+          <div class="mc-col-left">
+            <!-- Transcript (tall card ~60%) -->
+            <div class="dashboard-card mc-card-transcript" id="dashboard-card-6">
+              <div class="dashboard-card-header transcript-header">
+                <span class="status-dot active" id="transcript-status-dot"></span>
+                <span class="dashboard-card-label">Transcript</span>
+                <span id="transcript-status" class="hidden">READY</span>
               </div>
-              <span class="confidence-label">CONFIDENCE</span>
-            </div>
-          </div>
-          <div class="visitor-info-section">
-            <h3 class="visitor-info-header">VISITOR INFO</h3>
-            <div class="visitor-info-grid">
-              <div class="visitor-info-col observed">
-                <span class="visitor-info-col-label">OBSERVED</span>
-                <div class="visitor-info-list" id="visitor-observed-list">
-                  <div class="visitor-info-item"><span class="key">Language:</span> <span class="value" id="visitor-language">English</span></div>
-                  <div class="visitor-info-item"><span class="key">Issue:</span> <span class="value" id="visitor-issue">Account</span></div>
-                  <div class="visitor-info-item"><span class="key">Platform:</span> <span class="value" id="visitor-platform">Desktop Web</span></div>
-                </div>
-              </div>
-              <div class="visitor-info-col inferred">
-                <span class="visitor-info-col-label">INFERRED</span>
-                <div class="visitor-info-list" id="visitor-inferred-list">
-                  <div class="visitor-info-item"><span class="key">Tech Level:</span> <span class="value" id="visitor-tech-level">Intermediate</span></div>
-                  <div class="visitor-info-item"><span class="key">Urgency:</span> <span class="value" id="visitor-urgency">High</span></div>
-                  <div class="visitor-info-item"><span class="key">Prior contact:</span> <span class="value" id="visitor-prior-contact">Yes (2 times)</span></div>
+              <div class="dashboard-card-body transcript-log-body" id="transcript-list">
+                <div class="welcome-message transcript-welcome" id="welcome-message">
+                  <span class="transcript-welcome-text">Messages will appear here</span>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-      <div class="dashboard-card" id="dashboard-card-1">
-        <div class="dashboard-card-header">
-          <span class="dashboard-card-label">CONVERSATION ANALYSIS</span>
-        </div>
-        <div class="dashboard-card-body">
-          <div id="synchronized-analysis-root" class="dashboard-card-inner"></div>
-        </div>
-      </div>
-      <div class="dashboard-card" id="dashboard-card-2">
-        <div class="dashboard-card-header">
-          <span class="dashboard-card-label">KNOWLEDGE GRAPH</span>
-        </div>
-        <div class="dashboard-card-body">
-          <div id="knowledge-graph-root" class="dashboard-card-inner"></div>
-        </div>
-      </div>
-      <!-- Column 2: Emotion Analysis (below Conversation Analysis) -->
-      <div class="dashboard-card" id="dashboard-card-6">
-        <div class="dashboard-card-header transcript-header">
-          <span class="status-dot active" id="transcript-status-dot"></span>
-          <span class="dashboard-card-label">Transcript</span>
-          <span id="transcript-status" class="hidden">READY</span>
-        </div>
-        <div class="dashboard-card-body transcript-log-body" id="transcript-list">
-          <div class="welcome-message transcript-welcome" id="welcome-message">
-            <span class="transcript-welcome-text">Messages will appear here</span>
-          </div>
-        </div>
-      </div>
-      <div class="dashboard-card" id="dashboard-card-4">
-        <div class="dashboard-card-header">
-          <span class="dashboard-card-label">EMOTION ANALYSIS</span>
-        </div>
-        <div class="dashboard-card-body">
-          <!-- <div class="emotion-display">
-            <span class="emotion-emoji" id="emotion-emoji">😊</span>
-            <div class="emotion-info">
-              <span class="emotion-label" id="emotion-label">NEUTRAL</span>
-              <span class="emotion-confidence">Confidence: <span id="emotion-confidence">0%</span></span>
+            <!-- Visitor Intent (shorter card ~40%) -->
+            <div class="dashboard-card visitor-intent-card mc-card-intent" id="dashboard-card-3">
+              <div class="dashboard-card-header">
+                <span class="dashboard-card-label">VISITOR INTENT</span>
+              </div>
+              <div class="dashboard-card-body visitor-intent-body">
+                <div class="visitor-intent-section">
+                  <p class="visitor-intent-desc" id="visitor-intent-desc">Visitor intent will appear here as you speak</p>
+                  <div class="visitor-intent-confidence">
+                    <div class="confidence-bar">
+                      <div class="confidence-fill" id="visitor-intent-confidence-fill" style="width: 10%"></div>
+                    </div>
+                    <span class="confidence-label">CONFIDENCE</span>
+                  </div>
+                </div>
+                <div class="visitor-info-section">
+                  <h3 class="visitor-info-header">VISITOR INFO</h3>
+                  <div class="visitor-info-grid">
+                    <div class="visitor-info-col observed">
+                      <span class="visitor-info-col-label">OBSERVED</span>
+                      <div class="visitor-info-list" id="visitor-observed-list">
+                        <div class="visitor-info-item"><span class="key">Language:</span> <span class="value" id="visitor-language">English</span></div>
+                        <div class="visitor-info-item"><span class="key">Issue:</span> <span class="value" id="visitor-issue">Account</span></div>
+                        <div class="visitor-info-item"><span class="key">Platform:</span> <span class="value" id="visitor-platform">Desktop Web</span></div>
+                      </div>
+                    </div>
+                    <div class="visitor-info-col inferred">
+                      <span class="visitor-info-col-label">INFERRED</span>
+                      <div class="visitor-info-list" id="visitor-inferred-list">
+                        <div class="visitor-info-item"><span class="key">Tech Level:</span> <span class="value" id="visitor-tech-level">Intermediate</span></div>
+                        <div class="visitor-info-item"><span class="key">Urgency:</span> <span class="value" id="visitor-urgency">High</span></div>
+                        <div class="visitor-info-item"><span class="key">Prior contact:</span> <span class="value" id="visitor-prior-contact">Yes (2 times)</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="emotion-chart-section">
-            <canvas id="emotion-chart-canvas"></canvas>
-            <div class="chart-legend">
-              <span class="legend-item"><span class="legend-color valence"></span>VALENCE</span>
-              <span class="legend-item"><span class="legend-color arousal"></span>AROUSAL</span>
-              <span class="legend-item"><span class="legend-color dominance"></span>DOMINANCE</span>
+          <!-- RIGHT COLUMN (5/12) -->
+          <div class="mc-col-right">
+            <!-- Emotion Analysis (40%) -->
+            <div class="dashboard-card mc-card-emotion" id="dashboard-card-4">
+              <div class="dashboard-card-header">
+                <span class="dashboard-card-label">EMOTION ANALYSIS</span>
+              </div>
+              <div class="dashboard-card-body">
+                <div id="emotion-analysis-root" class="dashboard-card-inner emotion-analysis-topic"></div>
+              </div>
             </div>
-          </div> -->
-          <div id="emotion-analysis-root" class="dashboard-card-inner emotion-analysis-topic"></div>
+            <!-- Tone Modulator (30%) -->
+            <div class="dashboard-card mc-card-tone" id="dashboard-card-5">
+              <div class="dashboard-card-header">
+                <span class="dashboard-card-label">TONE MODULATOR</span>
+              </div>
+              <div class="dashboard-card-body">
+                <div id="tone-modulator-root" class="dashboard-card-inner"></div>
+              </div>
+            </div>
+            <!-- Knowledge Graph (30%) -->
+            <div class="dashboard-card mc-card-knowledge" id="dashboard-card-2">
+              <div class="dashboard-card-header">
+                <span class="dashboard-card-label">KNOWLEDGE GRAPH</span>
+              </div>
+              <div class="dashboard-card-body">
+                <div id="knowledge-graph-root" class="dashboard-card-inner"></div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="dashboard-card" id="dashboard-card-5">
-        <div class="dashboard-card-header">
-          <span class="dashboard-card-label">TONE MODULATOR</span>
-        </div>
-        <div class="dashboard-card-body">
-          <div id="tone-modulator-root" class="dashboard-card-inner"></div>
-        </div>
-      </div>
+      </section>
+    </div>
+
+    <!-- Conversation Analysis (hidden, kept for data) -->
+    <div class="hidden" id="dashboard-card-1">
+      <div id="synchronized-analysis-root" class="dashboard-card-inner"></div>
     </div>
 
     <!-- Legacy left panel (hidden when dashboard shown) -->
@@ -181,49 +223,90 @@
       <div class="panel knowledge-graph-panel hidden" id="knowledge-graph-legacy"></div>
     </aside>
 
-    <!-- CENTER: Wave Visualizer (connect-area removed; connection starts automatically on load) -->
+    <!-- CENTER: Voice Interaction Space -->
     <section class="center-section">
       <div class="connect-area hidden" id="connect-area" aria-hidden="true"></div>
 
-      <!-- Live subtitle: single line, centered above wave, shows current speaker only -->
+      <!-- Agent Identity (avatar + name + status) -->
+      <div class="agent-identity" id="agent-identity">
+        <div class="agent-avatar-wrap" id="agent-avatar-wrap">
+          <img src="/personas/receptionist.webp" alt="" class="agent-avatar-img" id="agent-avatar-img" />
+        </div>
+        <h2 class="agent-name" id="agent-name">Brooke</h2>
+        <span class="agent-status" id="agent-status">Listening...</span>
+      </div>
+
+      <!-- Liquid Metallic AI Orb -->
+      <div class="orb-container" id="ai-orb">
+        <div class="liquid-blob" id="liquid-blob">
+          <div class="orb-inner-glow"></div>
+        </div>
+      </div>
+
+      <!-- Live Captions (below orb) -->
       <div class="live-subtitle" id="live-subtitle" aria-live="polite">
         <span class="live-subtitle-text" id="live-subtitle-text"></span>
       </div>
 
-      <!-- Single media/close bar: animates from bottom to center when Close is clicked -->
-      <div class="media-control-bar" id="media-control-bar" aria-label="Media controls">
-        <div class="media-control-group" id="media-control-group">
-          <button type="button" class="control-btn control-btn-speaker" id="control-speaker" aria-label="Sound">
-            <img src="/SpeakerHigh.svg" alt="" class="control-btn-icon" />
-          </button>
-          <img src="/Line 3.svg" alt="" class="control-bar-divider" aria-hidden="true" />
-          <button type="button" class="control-btn control-btn-mic" id="control-mic" aria-label="Microphone">
-            <img src="/Microphone (1).svg" alt="" class="control-btn-icon" />
-          </button>
-          <button type="button" class="control-btn control-btn-close" id="control-close" aria-label="Close">
-            <img src="/X (1).svg" alt="" class="control-btn-icon control-btn-icon-invert" />
-          </button>
-          <img src="/Line 3.svg" alt="" class="control-bar-divider hide-on-mobile" aria-hidden="true" />
-          <button type="button" class="control-btn control-btn-peak hide-on-mobile" id="control-peak" aria-label="Peek view">
-            <img src="/Eye (1).svg" alt="" class="control-btn-icon" />
-            <span class="control-btn-label">Peek</span>
-          </button>
+      <!-- Bottom Control Bar (glass pill) -->
+      <footer class="session-controls" id="session-controls">
+        <div class="glass-pill-bar" id="media-control-bar" aria-label="Media controls">
+          <div class="media-control-group" id="media-control-group">
+            <!-- Volume -->
+            <button type="button" class="pill-btn pill-btn-icon" id="control-speaker" aria-label="Sound">
+              <svg fill="none" height="20" width="20" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </button>
+            <div class="pill-divider"></div>
+            <!-- Mic -->
+            <button type="button" class="pill-btn pill-btn-icon pill-btn-mic-active" id="control-mic" aria-label="Microphone">
+              <svg fill="none" height="20" width="20" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path d="M19 10v2a7 7 0 01-14 0v-2" stroke-linecap="round" stroke-linejoin="round"></path>
+                <line x1="12" y1="19" x2="12" y2="22" stroke-linecap="round" stroke-linejoin="round"></line>
+              </svg>
+              <span class="mic-indicator"></span>
+            </button>
+            <div class="pill-divider"></div>
+            <!-- End Call -->
+            <button type="button" class="pill-btn pill-btn-icon" id="control-close" aria-label="End call">
+              <svg fill="none" height="20" width="20" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </button>
+            <div class="pill-divider hide-on-mobile"></div>
+            <!-- Peek -->
+            <button type="button" class="pill-btn pill-btn-peek hide-on-mobile" id="control-peak" aria-label="Peek view">
+              <span class="pill-btn-label">Peek</span>
+              <svg fill="none" height="18" width="18" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="close-options-group" id="close-options-group" aria-label="Restart or Peek">
+            <button type="button" class="pill-btn pill-btn-icon" id="close-option-restart" aria-label="Restart">
+              <svg fill="none" height="18" width="18" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M1 4v6h6M23 20v-6h-6" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+              <span class="pill-btn-label">Restart</span>
+            </button>
+            <div class="pill-divider hide-on-mobile"></div>
+            <button type="button" class="pill-btn pill-btn-peek hide-on-mobile" id="close-option-peak" aria-label="Peek">
+              <span class="pill-btn-label">Peek</span>
+              <svg fill="none" height="18" width="18" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </button>
+          </div>
         </div>
-        <div class="close-options-group" id="close-options-group" aria-label="Restart or Peek">
-          <button type="button" class="close-option close-option-restart" id="close-option-restart" aria-label="Restart">
-            <img src="/ArrowClockwise.svg" alt="" class="close-option-icon" />
-            <span class="close-option-label">Restart</span>
-          </button>
-          <img src="/Line 3.svg" alt="" class="control-bar-divider hide-on-mobile" aria-hidden="true" />
-          <button type="button" class="close-option close-option-peak hide-on-mobile" id="close-option-peak" aria-label="Peek">
-            <img src="/Eye (1).svg" alt="" class="close-option-icon" />
-            <span class="close-option-label">Peek</span>
-          </button>
-        </div>
-      </div>
+      </footer>
 
-      <!-- Gemini Wave Visualizer -->
-      <div class="wave-container" id="gemini-wave-container">
+      <!-- Gemini Wave Visualizer (hidden, kept for audio analysis) -->
+      <div class="wave-container" id="gemini-wave-container" style="display:none;">
         <canvas id="gemini-wave-canvas" class="wave-canvas"></canvas>
       </div>
     </section>

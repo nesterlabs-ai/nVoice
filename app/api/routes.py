@@ -48,13 +48,22 @@ async def connect(request: Request) -> Dict[str, Any]:
 
     Returns the appropriate WebSocket URL based on server configuration
     and deployment environment (development vs production).
+    Accepts optional persona_id in POST body to select agent persona.
 
     Returns:
-        Dict containing the WebSocket URL
+        Dict containing the WebSocket URL (with persona_id query param if provided)
     """
     server = get_server_instance()
     server_mode = os.getenv("WEBSOCKET_SERVER", "fast_api")
     public_url = os.getenv("PUBLIC_URL", "")
+
+    # Read persona_id from POST body (sent by RTVI client via requestData)
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    persona_id = body.get("persona_id", "")
 
     # Check if request came over HTTPS (from reverse proxy headers)
     request_scheme = request.headers.get("X-Forwarded-Proto", "").lower()
@@ -79,8 +88,43 @@ async def connect(request: Request) -> Dict[str, Any]:
         port = server.server_config.get("fastapi_port", 7860)
         ws_url = f"ws://{host}:{port}/ws"
 
+    # Append persona_id as query parameter if provided
+    if persona_id:
+        separator = "&" if "?" in ws_url else "?"
+        ws_url = f"{ws_url}{separator}persona_id={persona_id}"
+        logger.info(f"Persona selected: {persona_id}")
+
     logger.info(f"Returning WebSocket URL: {ws_url} (mode: {server_mode})")
     return {"ws_url": ws_url}
+
+
+@router.get("/personas")
+async def get_personas() -> Dict[str, Any]:
+    """Get available agent personas for the selection screen.
+
+    Returns persona list with name, role, description, avatar, and tags.
+    Voice IDs and system prompts are NOT exposed to the client.
+    """
+    config = get_assistant_config()
+    personas_config = config.get("personas", {})
+    agents = personas_config.get("agents", {})
+    default_persona = personas_config.get("default_persona", "")
+
+    persona_list = []
+    for persona_id, persona in agents.items():
+        persona_list.append({
+            "id": persona_id,
+            "name": persona.get("name", ""),
+            "role": persona.get("role", ""),
+            "description": persona.get("description", ""),
+            "avatar": persona.get("avatar", ""),
+            "tags": persona.get("tags", []),
+        })
+
+    return {
+        "personas": persona_list,
+        "default_persona": default_persona,
+    }
 
 
 @router.get("/status")

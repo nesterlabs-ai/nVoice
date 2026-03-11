@@ -35,6 +35,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     session_id = str(uuid.uuid4())[:8]
     logger.info(f"[Session {session_id}] New WebSocket connection attempt")
 
+    # Read persona_id from WebSocket query params (appended by /connect endpoint)
+    persona_id = websocket.query_params.get("persona_id", "")
+    if persona_id:
+        logger.info(f"[Session {session_id}] Persona requested: {persona_id}")
+
     # Import connection manager
     from app.core.connection_manager import connection_manager
 
@@ -210,8 +215,18 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             params=transport_params,
         )
 
+        # Look up persona config if persona_id was provided
+        persona_config = None
+        if persona_id:
+            personas = full_config.get("personas", {}).get("agents", {})
+            if persona_id in personas:
+                persona_config = personas[persona_id]
+                logger.info(f"[Session {session_id}] Loaded persona: {persona_config.get('name', persona_id)} (voice_id={'SET' if persona_config.get('voice_id') else 'DEFAULT'})")
+            else:
+                logger.warning(f"[Session {session_id}] Persona '{persona_id}' not found, using default")
+
         # Create dedicated VoiceAssistant instance for this session
-        voice_assistant = VoiceAssistant(voice_assistant_server.config)
+        voice_assistant = VoiceAssistant(voice_assistant_server.config, persona_config=persona_config)
         logger.info(f"[Session {session_id}] VoiceAssistant instance created")
 
         # Log emotion detection state for this session
