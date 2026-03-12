@@ -8,11 +8,13 @@ This module defines the HTTP endpoints for:
 """
 
 import os
+import secrets
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from loguru import logger
 
 from app.config.loader import get_assistant_config
@@ -34,6 +36,24 @@ except ImportError as e:
 
 router = APIRouter(tags=["voice-assistant"])
 BASE_DIR = Path(__file__).resolve().parents[2]
+
+# ── Admin auth ────────────────────────────────────────────────────────────────
+_http_basic = HTTPBasic()
+
+def _admin_auth(credentials: HTTPBasicCredentials = Depends(_http_basic)):
+    """Verify HTTP Basic credentials for admin endpoints."""
+    expected_user = os.getenv("ADMIN_USERNAME", "admin").encode()
+    expected_pass = os.getenv("ADMIN_PASSWORD", "").encode()
+    if not expected_pass:
+        raise HTTPException(status_code=503, detail="ADMIN_PASSWORD env var not set")
+    ok_user = secrets.compare_digest(credentials.username.encode(), expected_user)
+    ok_pass = secrets.compare_digest(credentials.password.encode(), expected_pass)
+    if not (ok_user and ok_pass):
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 def get_server_instance():
@@ -664,7 +684,7 @@ async def a2ui_app_styles() -> FileResponse:
 
 
 @router.get("/admin/transcripts", response_class=HTMLResponse)
-async def admin_transcripts_page() -> str:
+async def admin_transcripts_page(_: None = Depends(_admin_auth)) -> str:
     """Admin page: browse and replay conversation transcripts from CloudWatch Logs."""
     return """<!DOCTYPE html>
 <html lang="en">
@@ -916,7 +936,7 @@ async def admin_transcripts_page() -> str:
 
 
 @router.get("/admin/transcripts/sessions")
-async def list_transcript_sessions(token: str = None) -> Dict[str, Any]:
+async def list_transcript_sessions(token: str = None, _: None = Depends(_admin_auth)) -> Dict[str, Any]:
     """List all transcript sessions from CloudWatch Logs."""
     import os, json
     try:
@@ -955,7 +975,7 @@ async def list_transcript_sessions(token: str = None) -> Dict[str, Any]:
 
 
 @router.get("/admin/transcripts/session/{session_id}")
-async def get_transcript_session(session_id: str) -> Dict[str, Any]:
+async def get_transcript_session(session_id: str, _: None = Depends(_admin_auth)) -> Dict[str, Any]:
     """Get all messages for a specific session from CloudWatch Logs."""
     import os, json
     try:
