@@ -663,6 +663,334 @@ async def a2ui_app_styles() -> FileResponse:
     return FileResponse(css_path)
 
 
+@router.get("/admin/transcripts", response_class=HTMLResponse)
+async def admin_transcripts_page() -> str:
+    """Admin page: browse and replay conversation transcripts from CloudWatch Logs."""
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Transcripts — NesterAI Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #060608;
+    --surface: rgba(15,15,20,0.9);
+    --border: rgba(255,255,255,0.06);
+    --accent: #2563eb;
+    --user-bg: rgba(37,99,235,0.12);
+    --user-border: rgba(37,99,235,0.3);
+    --bot-bg: rgba(255,255,255,0.04);
+    --bot-border: rgba(255,255,255,0.08);
+    --text: #e2e8f0;
+    --muted: rgba(255,255,255,0.4);
+    --font: 'JetBrains Mono', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; display: flex; height: 100vh; overflow: hidden; }
+
+  /* Sidebar */
+  #sidebar {
+    width: 280px; min-width: 280px; display: flex; flex-direction: column;
+    border-right: 1px solid var(--border); background: var(--surface);
+    backdrop-filter: blur(20px);
+  }
+  #sidebar-header {
+    padding: 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px;
+  }
+  #sidebar-header h1 { font-size: 11px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); }
+  #sidebar-header .live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; animation: pulse 2s infinite; margin-right: 6px; }
+  @keyframes pulse { 0%,100%{opacity:.5}50%{opacity:1} }
+  #search { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-family: var(--font); font-size: 11px; outline: none; }
+  #search:focus { border-color: rgba(37,99,235,0.4); }
+  #sessions-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .session-item {
+    padding: 10px 12px; border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+    transition: all 0.15s ease;
+  }
+  .session-item:hover { background: rgba(255,255,255,0.04); border-color: var(--border); }
+  .session-item.active { background: rgba(37,99,235,0.1); border-color: rgba(37,99,235,0.3); }
+  .session-item .sid { font-size: 11px; font-weight: 700; color: var(--accent); }
+  .session-item .smeta { font-size: 9px; color: var(--muted); margin-top: 3px; }
+  #sessions-empty { color: var(--muted); font-size: 11px; text-align: center; padding: 24px 12px; }
+  #sessions-loading { color: var(--muted); font-size: 11px; text-align: center; padding: 24px 12px; }
+  #load-more { margin: 8px; padding: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-family: var(--font); font-size: 10px; cursor: pointer; text-align: center; }
+  #load-more:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Main */
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #topbar {
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--surface); backdrop-filter: blur(20px);
+  }
+  #topbar .session-title { font-size: 12px; font-weight: 700; }
+  #topbar .session-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  #export-btn {
+    padding: 6px 14px; background: rgba(37,99,235,0.15); border: 1px solid rgba(37,99,235,0.3);
+    border-radius: 6px; color: var(--accent); font-family: var(--font); font-size: 10px;
+    cursor: pointer; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700;
+    display: none;
+  }
+  #export-btn:hover { background: rgba(37,99,235,0.25); }
+
+  #transcript-area { flex: 1; overflow-y: auto; padding: 24px 20px; display: flex; flex-direction: column; gap: 16px; }
+  #placeholder { color: var(--muted); font-size: 12px; text-align: center; margin: auto; }
+  #transcript-loading { color: var(--muted); font-size: 11px; text-align: center; margin: auto; }
+
+  /* Message bubbles */
+  .msg { display: flex; flex-direction: column; max-width: 72%; gap: 4px; }
+  .msg.user { align-self: flex-end; align-items: flex-end; }
+  .msg.bot { align-self: flex-start; align-items: flex-start; }
+  .msg-label { font-size: 8px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); padding: 0 4px; }
+  .msg.user .msg-label { color: rgba(37,99,235,0.7); }
+  .msg-bubble {
+    padding: 10px 14px; border-radius: 12px; line-height: 1.6; font-size: 12px;
+    border: 1px solid var(--bot-border); background: var(--bot-bg);
+    position: relative; word-break: break-word;
+  }
+  .msg.user .msg-bubble { background: var(--user-bg); border-color: var(--user-border); border-bottom-right-radius: 4px; }
+  .msg.bot .msg-bubble { border-bottom-left-radius: 4px; }
+  .msg-time { font-size: 9px; color: var(--muted); padding: 0 4px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar: session list -->
+<aside id="sidebar">
+  <div id="sidebar-header">
+    <h1><span class="live-dot"></span>Transcripts</h1>
+    <input id="search" type="text" placeholder="Search session ID..." oninput="filterSessions(this.value)"/>
+  </div>
+  <div id="sessions-list">
+    <div id="sessions-loading">Loading sessions...</div>
+  </div>
+  <button id="load-more" onclick="loadMoreSessions()" style="display:none">Load older sessions</button>
+</aside>
+
+<!-- Main: transcript viewer -->
+<main id="main">
+  <div id="topbar">
+    <div>
+      <div class="session-title" id="session-title">Select a session</div>
+      <div class="session-meta" id="session-meta"></div>
+    </div>
+    <button id="export-btn" onclick="exportTranscript()">Export</button>
+  </div>
+  <div id="transcript-area">
+    <div id="placeholder">← Select a session to view its transcript</div>
+  </div>
+</main>
+
+<script>
+  let allSessions = [];
+  let currentMessages = [];
+  let nextToken = null;
+
+  // ── Load session list ──────────────────────────────────────────────────────
+  async function loadSessions(append = false) {
+    try {
+      const url = '/admin/transcripts/sessions' + (nextToken ? '?token=' + encodeURIComponent(nextToken) : '');
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!append) {
+        allSessions = data.sessions || [];
+        document.getElementById('sessions-loading').remove();
+      } else {
+        allSessions = allSessions.concat(data.sessions || []);
+      }
+      nextToken = data.next_token || null;
+      document.getElementById('load-more').style.display = nextToken ? 'block' : 'none';
+      renderSessionList(allSessions);
+    } catch(e) {
+      document.getElementById('sessions-loading').textContent = 'Failed to load sessions.';
+    }
+  }
+
+  function loadMoreSessions() { loadSessions(true); }
+
+  function renderSessionList(sessions) {
+    const list = document.getElementById('sessions-list');
+    // Clear existing items (keep loading div if present)
+    list.querySelectorAll('.session-item').forEach(el => el.remove());
+    if (!sessions.length) {
+      if (!list.querySelector('#sessions-empty')) {
+        const empty = document.createElement('div');
+        empty.id = 'sessions-empty';
+        empty.textContent = 'No sessions found.';
+        list.insertBefore(empty, list.firstChild);
+      }
+      return;
+    }
+    const old = list.querySelector('#sessions-empty');
+    if (old) old.remove();
+
+    sessions.forEach(s => {
+      const el = document.createElement('div');
+      el.className = 'session-item';
+      el.dataset.sid = s.session_id;
+      const date = s.last_event ? new Date(s.last_event).toLocaleString() : 'Unknown time';
+      el.innerHTML = `<div class="sid">${s.session_id}</div><div class="smeta">${s.turns} turns &middot; ${date}</div>`;
+      el.onclick = () => loadTranscript(s.session_id, el);
+      list.appendChild(el);
+    });
+  }
+
+  function filterSessions(query) {
+    const q = query.toLowerCase();
+    const filtered = allSessions.filter(s => s.session_id.toLowerCase().includes(q));
+    renderSessionList(filtered);
+  }
+
+  // ── Load transcript ────────────────────────────────────────────────────────
+  async function loadTranscript(sessionId, el) {
+    document.querySelectorAll('.session-item').forEach(i => i.classList.remove('active'));
+    if (el) el.classList.add('active');
+    document.getElementById('session-title').textContent = 'Session ' + sessionId;
+    document.getElementById('session-meta').textContent = 'Loading...';
+    document.getElementById('export-btn').style.display = 'none';
+    const area = document.getElementById('transcript-area');
+    area.innerHTML = '<div id="transcript-loading">Loading transcript...</div>';
+    try {
+      const res = await fetch('/admin/transcripts/session/' + sessionId);
+      const data = await res.json();
+      currentMessages = data.messages || [];
+      renderTranscript(sessionId, currentMessages);
+    } catch(e) {
+      area.innerHTML = '<div style="color:#ef4444;text-align:center;margin:auto">Failed to load transcript.</div>';
+    }
+  }
+
+  function renderTranscript(sessionId, messages) {
+    const area = document.getElementById('transcript-area');
+    area.innerHTML = '';
+    if (!messages.length) {
+      area.innerHTML = '<div style="color:rgba(255,255,255,0.3);text-align:center;margin:auto">No messages in this session.</div>';
+      return;
+    }
+    messages.forEach(m => {
+      const div = document.createElement('div');
+      div.className = 'msg ' + (m.role === 'user' ? 'user' : 'bot');
+      const label = m.role === 'user' ? 'USER' : 'AI BOT';
+      const time = m.timestamp ? new Date(m.timestamp).toLocaleTimeString() : '';
+      div.innerHTML = `<div class="msg-label">${label}</div><div class="msg-bubble">${escHtml(m.text)}</div><div class="msg-time">${time}</div>`;
+      area.appendChild(div);
+    });
+    area.scrollTop = area.scrollHeight;
+    // Update meta
+    const meta = messages.length + ' turns';
+    document.getElementById('session-meta').textContent = meta;
+    document.getElementById('export-btn').style.display = 'block';
+  }
+
+  function escHtml(t) {
+    const d = document.createElement('div');
+    d.textContent = t || '';
+    return d.innerHTML;
+  }
+
+  // ── Export ─────────────────────────────────────────────────────────────────
+  function exportTranscript() {
+    if (!currentMessages.length) return;
+    const lines = currentMessages.map(m => {
+      const ts = m.timestamp ? new Date(m.timestamp).toISOString() : '';
+      return `[${ts}] ${m.role.toUpperCase()}: ${m.text}`;
+    });
+    const blob = new Blob([lines.join('\\n\\n')], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'transcript.txt';
+    a.click();
+  }
+
+  loadSessions();
+</script>
+</body>
+</html>"""
+
+
+@router.get("/admin/transcripts/sessions")
+async def list_transcript_sessions(token: str = None) -> Dict[str, Any]:
+    """List all transcript sessions from CloudWatch Logs."""
+    import os, json
+    try:
+        import boto3
+    except ImportError:
+        raise HTTPException(status_code=503, detail="boto3 not installed")
+
+    log_group = os.getenv("CLOUDWATCH_LOG_GROUP", f"/nester-ai/{os.getenv('ENVIRONMENT', 'production')}")
+    region = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+
+    try:
+        client = boto3.client("logs", region_name=region)
+        kwargs = dict(logGroupName=log_group, logStreamNamePrefix="transcript/", limit=50, orderBy="LastEventTime", descending=True)
+        if token:
+            kwargs["nextToken"] = token
+        resp = client.describe_log_streams(**kwargs)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    sessions = []
+    for stream in resp.get("logStreams", []):
+        name = stream.get("logStreamName", "")
+        if not name.startswith("transcript/"):
+            continue
+        session_id = name.replace("transcript/", "")
+        last_ts = stream.get("lastEventTimestamp")
+        # Count events (use stored event count as proxy for turns)
+        turns = stream.get("storedBytes", 0)  # Not exact but fast
+        sessions.append({
+            "session_id": session_id,
+            "last_event": last_ts,
+            "turns": "—",  # Will be populated when session is opened
+        })
+
+    return {"sessions": sessions, "next_token": resp.get("nextToken")}
+
+
+@router.get("/admin/transcripts/session/{session_id}")
+async def get_transcript_session(session_id: str) -> Dict[str, Any]:
+    """Get all messages for a specific session from CloudWatch Logs."""
+    import os, json
+    try:
+        import boto3
+    except ImportError:
+        raise HTTPException(status_code=503, detail="boto3 not installed")
+
+    log_group = os.getenv("CLOUDWATCH_LOG_GROUP", f"/nester-ai/{os.getenv('ENVIRONMENT', 'production')}")
+    region = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+    stream_name = f"transcript/{session_id}"
+
+    try:
+        client = boto3.client("logs", region_name=region)
+        messages = []
+        kwargs = dict(logGroupName=log_group, logStreamName=stream_name, startFromHead=True, limit=200)
+        while True:
+            resp = client.get_log_events(**kwargs)
+            events = resp.get("events", [])
+            for ev in events:
+                try:
+                    payload = json.loads(ev.get("message", "{}"))
+                    payload["timestamp"] = ev.get("timestamp")
+                    messages.append(payload)
+                except Exception:
+                    pass
+            next_token = resp.get("nextForwardToken")
+            if not events or kwargs.get("nextToken") == next_token:
+                break
+            kwargs["nextToken"] = next_token
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"session_id": session_id, "messages": messages}
+
+
 @router.post("/graph/keywords")
 async def extract_graph_keywords(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Select relevant knowledge graph nodes and extract topic based on query and answer.
