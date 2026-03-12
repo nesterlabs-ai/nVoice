@@ -47,6 +47,7 @@ from app.processors.text_filter_processor import TextFilterProcessor
 from app.processors.visual_hint_processor import VisualHintProcessor
 from app.processors.smart_interruption_processor import SmartInterruptionProcessor
 from app.processors.subtitle_sync_processor import SubtitleSyncProcessor
+from app.processors.transcript_logger_processor import TranscriptLoggerProcessor
 
 
 class VoiceAssistant:
@@ -75,6 +76,7 @@ class VoiceAssistant:
             config: Configuration dictionary containing settings for all services
         """
         self.config = config or {}
+        self.session_id: str = ""  # Set by websocket.py before run()
 
         # Initialize services
         self.stt_service = None
@@ -275,9 +277,15 @@ class VoiceAssistant:
         # TextFilterProcessor removes markdown before TTS
 
         # Build pipeline processors list
+        transcript_logger = TranscriptLoggerProcessor(
+            session_id=self.session_id or "unknown",
+            persona_id=self.config.get("conversation", {}).get("persona_id", ""),
+        )
+
         pipeline_processors = [
             transport.input(),
             stt,                          # STT first to generate transcriptions
+            transcript_logger,            # Log user speech + bot responses to CloudWatch Logs
         ]
 
         # Only add SmartInterruptionProcessor if enabled
