@@ -26,6 +26,8 @@ _lock = threading.Lock()
 LOG_GROUP = os.getenv("CLOUDWATCH_LOG_GROUP", f"/nester-ai/{os.getenv('ENVIRONMENT', 'production')}")
 ENABLED = os.getenv("CLOUDWATCH_METRICS_ENABLED", "true").lower() == "true"
 
+TAG = "[CLOUDWATCH-METRIC]"
+
 
 # ── Client init ───────────────────────────────────────────────────────────────
 
@@ -47,15 +49,15 @@ def _get_client():
             region = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
             _logs_client = boto3.client("logs", region_name=region)
             _logs_available = True
-            logger.info(f"[TranscriptLogger] CloudWatch Logs client ready (group={LOG_GROUP})")
+            logger.info(f"{TAG} ✅ Logs client ready — group={LOG_GROUP}  region={region}  enabled={ENABLED}")
             return _logs_client
         except ImportError:
             _logs_available = False
-            logger.info("[TranscriptLogger] boto3 not installed — transcript logging disabled")
+            logger.warning(f"{TAG} ⚠️  boto3 not installed — transcript logging DISABLED")
             return None
         except Exception as e:
             _logs_available = False
-            logger.warning(f"[TranscriptLogger] Failed to init CW Logs client: {e}")
+            logger.error(f"{TAG} ❌ Failed to init Logs client: {e}")
             return None
 
 
@@ -85,12 +87,14 @@ class SessionTranscriptLogger:
                 logStreamName=self.stream_name,
             )
             self._stream_created = True
+            logger.info(f"{TAG} 📂 Created log stream: {LOG_GROUP}/{self.stream_name}")
             return True
         except client.exceptions.ResourceAlreadyExistsException:
             self._stream_created = True
+            logger.info(f"{TAG} 📂 Reusing log stream:  {LOG_GROUP}/{self.stream_name}")
             return True
         except Exception as e:
-            logger.debug(f"[TranscriptLogger] Could not create log stream: {e}")
+            logger.error(f"{TAG} ❌ Could not create log stream {self.stream_name}: {e}")
             return False
 
     def log_turn(self, role: str, text: str, extra: dict = None):
@@ -103,11 +107,16 @@ class SessionTranscriptLogger:
             extra: Optional dict of extra fields (emotion, persona, etc.)
         """
         if not ENABLED:
+            logger.debug(f"{TAG} SKIP transcript turn — logging disabled")
             return
 
         client = _get_client()
         if not client:
+            logger.warning(f"{TAG} SKIP transcript turn — no Logs client")
             return
+
+        preview = text[:60] + ("…" if len(text) > 60 else "")
+        logger.info(f"{TAG} 📝 QUEUE  [{role.upper()}]  session={self.session_id}  text=\"{preview}\"")
 
         # Offload to thread so we never block the pipeline
         thread = threading.Thread(
@@ -140,8 +149,16 @@ class SessionTranscriptLogger:
         if self._sequence_token:
             kwargs["sequenceToken"] = self._sequence_token
 
+        preview = text[:60] + ("…" if len(text) > 60 else "")
         try:
             resp = client.put_log_events(**kwargs)
             self._sequence_token = resp.get("nextSequenceToken")
+            logger.info(
+                f"{TAG} ✅ SENT   [{role.upper()}]  session={self.session_id}  "
+                f"stream={self.stream_name}  text=\"{preview}\""
+            )
         except Exception as e:
-            logger.debug(f"[TranscriptLogger] put_log_events failed: {e}")
+            logger.error(
+                f"{TAG} ❌ FAIL   [{role.upper()}]  session={self.session_id}  "
+                f"stream={self.stream_name}  error={e}"
+            )
