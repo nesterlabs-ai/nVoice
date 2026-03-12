@@ -94,9 +94,9 @@ class SubtitleSyncProcessor(FrameProcessor):
         try:
             data_frame = RTVIServerMessageFrame(data=message_data)
             await self.push_frame(data_frame)
-            logger.debug(
-                f"[SUBTITLE-SYNC] word='{word}' seq={seq} pts={pts_offset:.3f}s utterance={utterance_id[:8]}"
-            )
+            # logger.debug(
+            #     f"[SUBTITLE-SYNC] word='{word}' seq={seq} pts={pts_offset:.3f}s utterance={utterance_id[:8]}"
+            # )
         except Exception as e:
             logger.error(f"[SUBTITLE-SYNC] Failed to emit word: {e}")
 
