@@ -221,7 +221,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             logger.debug(f"[Session {session_id}] CloudWatch start metrics skipped: {e}")
 
         # Create dedicated VoiceAssistant instance for this session
-        voice_assistant = VoiceAssistant(voice_assistant_server.config, session_id=session_id)
+        voice_assistant = VoiceAssistant(voice_assistant_server.config)
         logger.info(f"[Session {session_id}] VoiceAssistant instance created")
 
         # Log emotion detection state for this session
