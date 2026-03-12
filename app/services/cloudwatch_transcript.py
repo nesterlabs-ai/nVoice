@@ -77,8 +77,20 @@ class SessionTranscriptLogger:
         self._sequence_token: Optional[str] = None
         self._stream_created = False
 
+    def _ensure_log_group(self, client) -> bool:
+        """Create the log group if it doesn't exist yet."""
+        try:
+            client.create_log_group(logGroupName=LOG_GROUP)
+            logger.info(f"{TAG} 📁 Created log group: {LOG_GROUP}")
+            return True
+        except client.exceptions.ResourceAlreadyExistsException:
+            return True
+        except Exception as e:
+            logger.error(f"{TAG} ❌ Could not create log group {LOG_GROUP}: {e}")
+            return False
+
     def _ensure_stream(self, client) -> bool:
-        """Create the log stream if it doesn't exist yet."""
+        """Create the log group + stream if they don't exist yet."""
         if self._stream_created:
             return True
         try:
@@ -93,6 +105,12 @@ class SessionTranscriptLogger:
             self._stream_created = True
             logger.info(f"{TAG} 📂 Reusing log stream:  {LOG_GROUP}/{self.stream_name}")
             return True
+        except client.exceptions.ResourceNotFoundException:
+            # Log group doesn't exist — create it, then retry stream creation
+            logger.warning(f"{TAG} ⚠️  Log group {LOG_GROUP} not found, creating it...")
+            if self._ensure_log_group(client):
+                return self._ensure_stream(client)
+            return False
         except Exception as e:
             logger.error(f"{TAG} ❌ Could not create log stream {self.stream_name}: {e}")
             return False
