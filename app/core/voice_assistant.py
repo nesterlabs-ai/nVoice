@@ -383,11 +383,9 @@ class VoiceAssistant:
         async def on_client_connected(transport, client):
             logger.info(f"✅ Client connected: {client}")
 
-        @self.task.event_handler("on_pipeline_started")
-        async def on_pipeline_started(task, frame):
-            # on_pipeline_started fires AFTER StartFrame has propagated through
-            # every processor including RTVIProcessor — guaranteed no race condition.
-            logger.info("🎤 Pipeline ready (on_pipeline_started), sending greeting...")
+            # Wait for pipeline to be fully ready (StartFrame must be processed)
+            await asyncio.sleep(1.5)
+            logger.info("🎤 Pipeline ready, sending greeting...")
 
             # Queue greeting through the TASK so it flows through the full pipeline
             # This is critical: STTMuteFilter needs to see TTS start/stop frames
