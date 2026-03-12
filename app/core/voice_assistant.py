@@ -47,6 +47,7 @@ from app.processors.text_filter_processor import TextFilterProcessor
 from app.processors.visual_hint_processor import VisualHintProcessor
 from app.processors.smart_interruption_processor import SmartInterruptionProcessor
 from app.processors.subtitle_sync_processor import SubtitleSyncProcessor
+from app.processors.transcript_logger_processor import TranscriptLoggerProcessor
 
 
 class VoiceAssistant:
@@ -68,13 +69,14 @@ class VoiceAssistant:
         runner: Pipeline runner
     """
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Dict[str, Any] = None, session_id: str = "unknown"):
         """Initialize the Voice Assistant.
 
         Args:
             config: Configuration dictionary containing settings for all services
         """
         self.config = config or {}
+        self.session_id = session_id
 
         # Initialize services
         self.stt_service = None
@@ -123,6 +125,9 @@ class VoiceAssistant:
             enabled=True,
             inject_laughter=(tts_provider_for_filter == "cartesia"),
         )
+
+        # Conversation transcript logger — writes clean user+bot turns to CloudWatch Logs
+        self.transcript_logger = TranscriptLoggerProcessor(session_id=session_id)
 
         # Visual hint processor - now minimal, A2UI is handled via RAG calls only
         # A2UI (Agent-to-UI) is triggered ONLY when call_rag_system is invoked
@@ -298,6 +303,7 @@ class VoiceAssistant:
             llm,
             self.visual_hint_processor,   # Stream text and detect content for visual cards
             self.text_filter,             # Remove markdown before TTS
+            self.transcript_logger,       # Log clean user+bot turns to CloudWatch Logs
             SentenceAggregator(),         # Collect text into full sentences before TTS (prevents choppy audio)
             tts,
             self.subtitle_sync,           # Sync subtitles with TTS audio via upstream TTSTextFrame
