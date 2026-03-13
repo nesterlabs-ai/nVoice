@@ -36,6 +36,7 @@ import type { Message, Topic } from './components/SynchronizedAnalysisWidget/top
 // Wave Visualization Config
 import { waveConfig } from './config/waveVisualization';
 import { Loader } from './components/Loader';
+import { USE_LOCAL_BACKEND, LOCAL_BACKEND_URL, REMOTE_BACKEND_URL } from './config';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -200,7 +201,7 @@ class VoiceScannerApp {
   private emotionTopicNodes: { id: string; timestamp: Date; sentiment: 'positive' | 'neutral' | 'negative'; sentimentLabel: string; intensity: number }[] = [];
   private emotionNodeCounter: number = 0;
 
-  constructor() {  
+  constructor() {
 
     this.botAudio = document.createElement('audio');
     this.botAudio.autoplay = true;
@@ -728,10 +729,10 @@ class VoiceScannerApp {
     }
   }
 
-   /**
-   * Update loader text (e.g. "Planning next moves", "INITIALIZING")
-   */
-   setLoaderText(text: string): void {
+  /**
+  * Update loader text (e.g. "Planning next moves", "INITIALIZING")
+  */
+  setLoaderText(text: string): void {
     this.loader?.setText(text);
   }
 
@@ -1015,6 +1016,27 @@ class VoiceScannerApp {
   }
 
   /**
+   * Check if the transcript is currently scrolled to the bottom (within threshold)
+   */
+  private isTranscriptAtBottom(): boolean {
+    if (!this.transcriptList) return true;
+    const threshold = 50; // pixels
+    const position = this.transcriptList.scrollTop + this.transcriptList.offsetHeight;
+    const height = this.transcriptList.scrollHeight;
+    return position >= height - threshold;
+  }
+
+  /**
+   * Scroll transcript to the bottom if the user is already at the bottom or if forced
+   */
+  private maybeScrollToTranscriptBottom(force: boolean = false): void {
+    if (!this.transcriptList) return;
+    if (force || this.isTranscriptAtBottom()) {
+      this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+    }
+  }
+
+  /**
    * Format timestamp for transcript log (HH:mm:ss)
    */
   private formatTranscriptTime(date: Date = new Date()): string {
@@ -1069,8 +1091,8 @@ class VoiceScannerApp {
 
     this.transcriptList.appendChild(line);
 
-    // Scroll to bottom
-    this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+    // Scroll to bottom (force for new messages)
+    this.maybeScrollToTranscriptBottom(true);
   }
 
   /**
@@ -1379,10 +1401,8 @@ class VoiceScannerApp {
           this.setBotSubtitleFromText((textSpan.textContent || '').trim());
         }
 
-        // Scroll to bottom
-        if (this.transcriptList) {
-          this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
-        }
+        // Scroll to bottom if already there
+        this.maybeScrollToTranscriptBottom();
       }
     }
 
@@ -2454,6 +2474,7 @@ class VoiceScannerApp {
    * Get backend URL
    */
   private getBackendUrl(): string {
+    // Highest priority: explicit env (for production / advanced setups)
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) {
       // @ts-ignore
@@ -2462,7 +2483,9 @@ class VoiceScannerApp {
     if ((window as any).__BACKEND_URL__) {
       return (window as any).__BACKEND_URL__;
     }
-    return 'http://localhost:7860';
+
+    // Fallback: use simple toggle from frontend config
+    return USE_LOCAL_BACKEND ? LOCAL_BACKEND_URL : REMOTE_BACKEND_URL;
   }
 
   /**
@@ -2667,7 +2690,7 @@ class VoiceScannerApp {
       if (this.rtviClient) {
         try {
           await this.rtviClient.disconnect();
-        } catch (e) {}
+        } catch (e) { }
         this.rtviClient = null;
       }
     }
@@ -2984,7 +3007,7 @@ class VoiceScannerApp {
     this.streamingBubble.appendChild(timeSpan);
     this.streamingBubble.appendChild(textContainer);
     this.transcriptList.appendChild(this.streamingBubble);
-    this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+    this.maybeScrollToTranscriptBottom(true);
   }
 
   /**
@@ -3004,9 +3027,7 @@ class VoiceScannerApp {
     textContainer.appendChild(wordSpan);
     this.streamingWords.push(word);
 
-    if (this.transcriptList) {
-      this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
-    }
+    this.maybeScrollToTranscriptBottom();
   }
 
   /**
