@@ -124,6 +124,7 @@ class VoiceScannerApp {
   private voiceState: VoiceState = 'idle';
   private isConnected: boolean = false;
   private isConnecting: boolean = false;
+  private botInitiatedDisconnect: boolean = false;  // true when backend sends conversation_ending
   private preloaderAngle: number = 0;
 
   // Streaming transcript state
@@ -215,8 +216,8 @@ class VoiceScannerApp {
     this.showLoadingOverlay();
     this.setVoiceState('idle');
 
-    // Hide loading after initialization
-    setTimeout(() => this.hideLoadingOverlay(), 2500);
+    // Loading overlay is now hidden when the bot first starts speaking (see BotStartedSpeaking handler)
+    // or via the fallback timer set in onConnected. The old 2.5s fixed timer is removed.
 
     // Auto-connect on load (Start Conversation flow without user click)
     setTimeout(() => this.handleConnect(), 600);
@@ -445,6 +446,100 @@ class VoiceScannerApp {
     const connectArea = document.getElementById('connect-area');
     mediaBar?.classList.remove('close-mode');
     connectArea?.classList.remove('hidden');
+  }
+
+  /**
+   * Show "session ended" screen when the bot gracefully terminates the conversation.
+   * Reuses the close-mode bar (Restart | Peek) so the user can start a new session.
+   */
+  private showSessionEndedScreen(): void {
+    // Enter close-mode so the "Restart" button is shown as "Start New Conversation"
+    this.showCloseOptions();
+    // Notify user that the session ended intentionally
+    this.showNotification('SESSION COMPLETE');
+    this.addTerminalMessage('Conversation ended. Click Restart to start a new session.', 'success');
+  }
+
+  /**
+   * Synthesize a crystal bell chime via Web Audio API.
+   * Ported from feat/agent-personas — plays on WebSocket connect.
+   * No audio file required; silently fails if Web Audio is unavailable.
+   */
+  private playCrystalChime(): void {
+    try {
+      const ctx = this.audioContext || new AudioContext();
+      this.audioContext = ctx;
+      const now = ctx.currentTime;
+
+      // Master gain: fast attack, 2.8s decay
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0, now);
+      master.gain.linearRampToValueAtTime(0.25, now + 0.02);
+      master.gain.exponentialRampToValueAtTime(0.001, now + 2.8);
+      master.connect(ctx.destination);
+
+      // Synthetic convolver reverb for shimmer
+      const convolver = ctx.createConvolver();
+      const reverbLen = ctx.sampleRate * 2;
+      const reverbBuf = ctx.createBuffer(2, reverbLen, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const data = reverbBuf.getChannelData(ch);
+        for (let i = 0; i < reverbLen; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / reverbLen, 3);
+        }
+      }
+      convolver.buffer = reverbBuf;
+      const reverbGain = ctx.createGain();
+      reverbGain.gain.value = 0.15;
+      convolver.connect(reverbGain);
+      reverbGain.connect(master);
+
+      // 5 staggered sine harmonics: crystal bell chord (E5–E7)
+      const harmonics = [
+        { freq: 1318.5, gain: 0.35, decay: 2.2 },  // E6 - bright top
+        { freq: 987.8,  gain: 0.45, decay: 2.5 },   // B5 - main tone
+        { freq: 659.3,  gain: 0.3,  decay: 2.0 },   // E5 - body
+        { freq: 1975.5, gain: 0.12, decay: 1.2 },   // B6 - sparkle
+        { freq: 2637,   gain: 0.06, decay: 0.8 },   // E7 - air
+      ];
+      harmonics.forEach((h, i) => {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = h.freq;
+        const gain = ctx.createGain();
+        const onset = now + i * 0.04;
+        gain.gain.setValueAtTime(0, onset);
+        gain.gain.linearRampToValueAtTime(h.gain, onset + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, onset + h.decay);
+        osc.connect(gain);
+        gain.connect(master);
+        gain.connect(convolver);
+        osc.start(onset);
+        osc.stop(onset + h.decay + 0.1);
+      });
+
+      // High-pass noise burst for percussive attack shimmer
+      const noiseLen = ctx.sampleRate * 0.15;
+      const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+      const noiseData = noiseBuf.getChannelData(0);
+      for (let i = 0; i < noiseLen; i++) {
+        noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / noiseLen, 2);
+      }
+      const noiseSrc = ctx.createBufferSource();
+      noiseSrc.buffer = noiseBuf;
+      const hpf = ctx.createBiquadFilter();
+      hpf.type = 'highpass';
+      hpf.frequency.value = 6000;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.08, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      noiseSrc.connect(hpf);
+      hpf.connect(noiseGain);
+      noiseGain.connect(master);
+      noiseSrc.start(now);
+    } catch (_e) {
+      // Silently fail — sound is non-critical
+    }
   }
 
   /**
@@ -740,7 +835,7 @@ class VoiceScannerApp {
    * Hide loading overlay
    */
   private hideLoadingOverlay(): void {
-    if (this.loadingOverlay) {
+    if (this.loadingOverlay && !this.loadingOverlay.classList.contains('hidden')) {
       this.loadingOverlay.classList.add('hidden');
       this.setCloseButtonEnabled(true);
       this.addTerminalMessage('Voice scanner ready. Awaiting user input.', 'regular');
@@ -2415,6 +2510,9 @@ class VoiceScannerApp {
     // Bot speech events
     this.rtviClient.on(RTVIEvent.BotStartedSpeaking, () => {
       this.log('Bot started speaking');
+      // Hide loading overlay on first bot speech — seamless: overlay disappears exactly
+      // as the greeting starts. Guard in hideLoadingOverlay() prevents double-calls.
+      this.hideLoadingOverlay();
       // Note: Bot audio visualization uses simulated data since RTVI doesn't expose bot audio track
       this.botIsSpeaking = true;
       if (this.subtitleClearTimeout) {
@@ -2540,6 +2638,12 @@ class VoiceScannerApp {
             this.addTerminalMessage('Connection established. Voice active.', 'success');
             this.showNotification('CONNECTION ESTABLISHED');
 
+            // Crystal chime — premium connection audio feedback
+            this.playCrystalChime();
+
+            // Fallback: hide loading overlay if bot somehow doesn't speak within 8s
+            setTimeout(() => this.hideLoadingOverlay(), 8000);
+
             // Set up bot player analyser after connection (with delay to ensure player is ready)
             setTimeout(() => {
               this.setupBotPlayerAnalyser();
@@ -2567,7 +2671,14 @@ class VoiceScannerApp {
             this.updateConnectionUI(false);
             this.stopAudioVisualization();
             this.startIdleBlobAnimation(); // Keep wave animating in idle state
-            this.addTerminalMessage('Connection terminated.', 'regular');
+            if (this.botInitiatedDisconnect) {
+              // showSessionEndedScreen() was already called when conversation_ending arrived.
+              // Just clear the flag; close-mode is already active so updateConnectionUI(false)
+              // above correctly kept connect-area hidden.
+              this.botInitiatedDisconnect = false;
+            } else {
+              this.addTerminalMessage('Connection terminated.', 'regular');
+            }
           },
           onBotReady: () => {
             this.log(`Bot ready`);
@@ -2638,6 +2749,13 @@ class VoiceScannerApp {
 
               // Handle different message types
               switch (messageType) {
+                case 'conversation_ending':
+                  this.botInitiatedDisconnect = true;
+                  // Show session-ended screen immediately while bot says farewell.
+                  // Don't wait for onDisconnected — the RTVI message may arrive before
+                  // the WebSocket close event is processed, giving better UX.
+                  this.showSessionEndedScreen();
+                  break;
                 case 'hybrid_emotion_detected':
                   this.updateHybridEmotionDisplay(messageData);
                   this.updateEmotionReactiveUI(messageData);

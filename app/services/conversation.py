@@ -119,6 +119,11 @@ class ConversationManager:
         self._booking_in_progress = False
         self.tally_service = TallySubmissionService()
 
+        # Pipeline task and RTVI processor references (set after pipeline creation)
+        self._task = None
+        self._rtvi_processor = None
+        self._conversation_ending = False
+
         # A2UI integration
         self._a2ui_enabled = a2ui_enabled and A2UI_AVAILABLE
         self._a2ui_rag_service: Optional[A2UIRAGService] = None
@@ -211,9 +216,25 @@ class ConversationManager:
         self._thinking_phrase_index = (self._thinking_phrase_index + 1) % len(self.THINKING_PHRASES)
         return phrase
 
+    def set_pipeline_task(self, task: Any) -> None:
+        """Set the pipeline task reference for controlling pipeline params.
+
+        Args:
+            task: The PipelineTask instance
+        """
+        self._task = task
+
+    def set_rtvi_processor(self, rtvi: Any) -> None:
+        """Set the RTVI processor for sending server messages to the frontend.
+
+        Args:
+            rtvi: The RTVIProcessor instance
+        """
+        self._rtvi_processor = rtvi
+
     def set_tts_service(self, tts_service: Any) -> None:
         """Set the TTS service for function call feedback.
-        
+
         Args:
             tts_service: The TTS service instance
         """
@@ -373,29 +394,64 @@ class ConversationManager:
     async def _handle_end_conversation(self, params: FunctionCallParams) -> None:
         """Handle end conversation function call.
 
-        When the LLM detects the user wants to end the conversation, this sends
-        an EndFrame upstream to gracefully terminate the session.
+        When the LLM detects the user wants to end the conversation:
+        1. Marks conversation as ending (blocks session timeout re-trigger)
+        2. Disables interruptions so farewell TTS cannot be cut off
+        3. Signals frontend to show "session ended" UI
+        4. Plays a varied farewell message
+        5. Waits for TTS playback, then terminates the session
 
         Args:
             params: Function call parameters
         """
         import asyncio
-        from pipecat.frames.frames import TTSSpeakFrame
+        import random
 
         logger.warning("🔴 End conversation function called by LLM")
 
-        # Push farewell message directly to TTS to avoid extra LLM round
-        farewell_message = "Goodbye! Thank you for visiting Nesterlabs."
+        # Guard: prevent double-invocation (e.g. session timeout races with LLM)
+        if self._conversation_ending:
+            logger.warning("⚠️ end_conversation called while already ending — ignoring")
+            await params.result_callback("")
+            return
+        self._conversation_ending = True
+
+        # Disable interruptions so farewell TTS cannot be cut off by background noise
+        if self._task:
+            try:
+                self._task.params.allow_interruptions = False
+                logger.info("🔇 Interruptions disabled for farewell TTS")
+            except Exception as e:
+                logger.warning(f"Could not disable interruptions: {e}")
+
+        # Signal frontend that session is ending so it can show the "session ended" UI
+        if self._rtvi_processor:
+            try:
+                from pipecat.processors.frameworks.rtvi import RTVIServerMessageFrame
+                await self._rtvi_processor.push_frame(
+                    RTVIServerMessageFrame(data={"message_type": "conversation_ending"})
+                )
+                logger.info("📤 conversation_ending signal sent to frontend")
+            except Exception as e:
+                logger.warning(f"Could not send conversation_ending signal: {e}")
+
+        # Pick a varied farewell from a pool — sounds more natural than a single hardcoded line
+        farewell_options = [
+            "It was great chatting with you! Hope to connect again soon — take care!",
+            "Thanks for stopping by. Best of luck with your project!",
+            "Really enjoyed talking through this with you. Best of luck!",
+            "Thanks for the conversation! Reach out anytime — goodbye for now.",
+        ]
+        farewell_message = random.choice(farewell_options)
         logger.info(f"📢 Pushing farewell message to TTS: '{farewell_message}'")
 
         if self.tts_service:
             await self.tts_service.queue_frame(TTSSpeakFrame(farewell_message))
 
-        # Return empty response to function to avoid LLM generating more text
+        # Return empty response so LLM does not generate additional text
         await params.result_callback("")
 
-        # Wait for: TTS generation + TTS playback
-        # ~1s TTS generation + ~2.5s TTS playback = 3.5s total
+        # Wait for TTS generation + playback (~1s gen + ~2.5s playback = 3.5s)
         logger.info("⏳ Waiting 3.5 seconds for farewell TTS to complete...")
         await asyncio.sleep(3.5)
         logger.info("✅ Wait complete, sending EndFrame")
@@ -512,7 +568,7 @@ class ConversationManager:
 
         end_conversation_function = FunctionSchema(
             name="end_conversation",
-            description="Call this function when the user wants to end the conversation AND has declined the appointment offer. IMPORTANT: Before calling this, you must FIRST offer to schedule an appointment by asking politely. Only call end_conversation if they decline the appointment offer or after a successful appointment booking.",
+            description="Call this function when the user wants to end the conversation AND has declined the appointment offer, OR when the user confirms there is nothing more they need after a successful booking. IMPORTANT: Before calling this on a farewell, you must FIRST offer to schedule an appointment. Only call end_conversation if they decline the appointment offer or after booking when user says they are done.",
             properties={},
             required=[],
         )

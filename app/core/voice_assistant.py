@@ -375,6 +375,9 @@ class VoiceAssistant:
         async def on_client_connected(transport, client):
             logger.info(f"✅ Client connected: {client}")
 
+            # Start 10-minute session timeout
+            asyncio.create_task(self._session_timeout(timeout_secs=600))
+
             # Wait for pipeline to be fully ready (StartFrame must be processed)
             await asyncio.sleep(1.5)
             logger.info("🎤 Pipeline ready, sending greeting...")
@@ -463,6 +466,13 @@ Universal pattern: Always sharpen the problem before jumping to solutions. Ask o
         logger.debug("Creating task...")
         self.create_task()
 
+        # Wire pipeline task and RTVI processor into ConversationManager
+        # (must happen after create_task() so self.task is available)
+        if self.conversation_manager:
+            self.conversation_manager.set_pipeline_task(self.task)
+            self.conversation_manager.set_rtvi_processor(self.rtvi)
+            logger.info("🔗 Pipeline task and RTVI processor wired into ConversationManager")
+
         # Set up transport handlers
         logger.debug("Setting up transport handlers...")
         self.setup_transport_handlers(transport)
@@ -509,6 +519,68 @@ Universal pattern: Always sharpen the problem before jumping to solutions. Ask o
             logger.error(f"❌ Failed to emit A2UI update: {e}")
             import traceback
             logger.error(traceback.format_exc())
+
+    async def _session_timeout(self, timeout_secs: int = 600) -> None:
+        """Proactively wrap up the session after a time limit.
+
+        After `timeout_secs` seconds, if the conversation is not already ending,
+        directly speaks a wrap-up prompt via TTS and injects it into the LLM context
+        as an assistant turn. The user's natural response then flows through the LLM
+        which (guided by an injected system message) proceeds with appointment booking
+        or calls end_conversation().
+
+        Args:
+            timeout_secs: Seconds before the timeout fires (default 600 = 10 min)
+        """
+        await asyncio.sleep(timeout_secs)
+
+        # Skip if conversation is already winding down
+        if self.conversation_manager and self.conversation_manager._conversation_ending:
+            logger.info(f"⏱️ Session timeout fired but conversation already ending — skipping")
+            return
+
+        logger.info(f"⏱️ {timeout_secs // 60}-minute session timeout reached — speaking wrap-up prompt")
+
+        # System message tells LLM how to handle the user's next response
+        timeout_system_msg = (
+            "[SESSION TIME LIMIT REACHED] The voice session has been active for 10 minutes. "
+            "You have just spoken the wrap-up prompt to the user. "
+            "Now wait for their response. If they want to schedule a call: proceed with the appointment booking flow. "
+            "If they decline or say no: thank them warmly and call end_conversation(). "
+            "Do NOT mention 'session time limit' or 'timer' to the user."
+        )
+
+        # The pre-composed wrap-up speech that we'll say directly via TTS
+        timeout_speech = (
+            "We've been chatting for a while now — I want to make sure I'm not keeping you! "
+            "Would you like to schedule some time with the Nester team for a deeper conversation?"
+        )
+
+        # 1. Inject system guidance so LLM knows the context when user replies
+        if self.conversation_manager and self.conversation_manager.context:
+            self.conversation_manager.context.messages.append(
+                {"role": "system", "content": timeout_system_msg}
+            )
+            # Also record the wrap-up speech as an assistant turn so conversation history is consistent
+            self.conversation_manager.context.messages.append(
+                {"role": "assistant", "content": timeout_speech}
+            )
+            logger.info("📝 Timeout system message + assistant turn injected into context")
+
+        # 2. Speak the wrap-up prompt directly via TTS (bypasses LLM entirely)
+        #    The user hears the question; their reply naturally triggers the LLM via
+        #    the normal STT → VAD → context aggregator pipeline path.
+        if self.conversation_manager and self.conversation_manager.tts_service:
+            try:
+                from pipecat.frames.frames import TTSSpeakFrame
+                await self.conversation_manager.tts_service.queue_frame(
+                    TTSSpeakFrame(timeout_speech)
+                )
+                logger.info(f"🔊 Timeout wrap-up spoken via TTS: '{timeout_speech}'")
+            except Exception as e:
+                logger.warning(f"Could not speak timeout wrap-up: {e}")
+        else:
+            logger.warning("⚠️ TTS service not available for timeout wrap-up")
 
     def get_service_status(self) -> Dict[str, Any]:
         """Get the status of all services.

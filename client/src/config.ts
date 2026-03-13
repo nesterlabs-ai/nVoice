@@ -1,7 +1,7 @@
 // Simple frontend configuration for backend selection.
 // Toggle `USE_LOCAL_BACKEND` to switch between local and remote backend during development.
 
-export const USE_LOCAL_BACKEND = false;
+export const USE_LOCAL_BACKEND = true;
 
 export const LOCAL_BACKEND_URL = 'http://localhost:7860';
 
