@@ -36,6 +36,7 @@ import type { Message, Topic } from './components/SynchronizedAnalysisWidget/top
 // Wave Visualization Config
 import { waveConfig } from './config/waveVisualization';
 import { Loader } from './components/Loader';
+import { USE_LOCAL_BACKEND, LOCAL_BACKEND_URL, REMOTE_BACKEND_URL } from './config';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
@@ -2454,6 +2455,7 @@ class VoiceScannerApp {
    * Get backend URL
    */
   private getBackendUrl(): string {
+    // Highest priority: explicit env (for production / advanced setups)
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) {
       // @ts-ignore
@@ -2462,7 +2464,9 @@ class VoiceScannerApp {
     if ((window as any).__BACKEND_URL__) {
       return (window as any).__BACKEND_URL__;
     }
-    return 'http://localhost:7860';
+
+    // Fallback: use simple toggle from frontend config
+    return USE_LOCAL_BACKEND ? LOCAL_BACKEND_URL : REMOTE_BACKEND_URL;
   }
 
   /**
