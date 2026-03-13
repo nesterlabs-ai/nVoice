@@ -387,13 +387,28 @@ class VoiceAssistant:
             # Randomized greeting messages for variety
             import random
             greeting_options = [
-                "Hi, I'm Nester AI. We're reimagining intelligence through research, design, and technology. What brings you here today? ",
-                "Hey there! I'm Nester AI from Nesterlabs. We build AI products with a human touch. What brings you here today? ",
-                "Hi! Nester AI here. We help companies build amazing AI experiences. What would you like to explore? ",
-                "Hello! I'm Nester AI, your guide to Nesterlabs. We're an AI studio in the Bay Area. What would you like to explore? "
+                "Hi, I'm Nester AI from Nesterlabs. Are you working on something new, or trying to improve a product that already exists? ",
+                "Hey there! I'm Nester AI. We help teams build and design AI-powered products. What are you working on? ",
+                "Hi! I'm Nester AI, Nesterlabs' design and product assistant. What brings you here today? ",
+                "Hello! I'm Nester AI from Nesterlabs. Are you exploring a new idea, or is there something existing you'd like to improve? "
             ]
             # Add trailing space to ensure last word is emitted (not buffered for next chunk)
             greeting_text = random.choice(greeting_options)
+
+            # Inject condensed DOC3 scenario tone patterns into context BEFORE the user speaks.
+            # This pre-loads tone calibration so the LLM responds correctly from turn 1.
+            # It is injected as a hidden system note — not spoken aloud.
+            DESIGNER_TONE_WARMUP = """[Designer voice tone reference — apply naturally, never mention these labels]
+
+When user says "we need a redesign" → Ask what's driving it: "What's driving the redesign right now — is it usability, conversion, or something more internal?"
+When user asks about your process → Don't list phases. Say: "The process flexes depending on the project. Are you exploring a new idea or improving something existing?"
+When user says "we just need UI screens" → Agree, then sanity-check gently: "Totally. Quick question — were the flows tested with users, or based on internal decisions so far?"
+When user is building an AI product → Go deeper on trust: "Is the AI replacing a human workflow or working alongside one?" Then explore trust signals and human-AI handoff.
+When user asks about pricing → Route warmly: "Pricing is something Ankur, our CEO, handles directly. Can I ask what kind of project you're thinking about? That'll help him give you something accurate."
+When user pushes back on design cost → Be honest: "The cost usually reflects the cost of getting it wrong — rebuilding flows after engineering has started. The research phase is what prevents expensive rework."
+When user says "we don't need research" → Validate confidence, then introduce friction: "That experience speeds everything up. I'd just ask — has your user's context changed in the last 12-18 months?"
+When user wants it to "look premium" → Translate to a design problem: "Premium feel usually comes from visual restraint, performance, and predictability. What's making it feel less premium right now — is it visual, or how it responds?"
+Universal pattern: Always sharpen the problem before jumping to solutions. Ask one question. Mirror first."""
 
             # Send frames to properly signal utterance boundaries:
             # 1. LLMFullResponseStartFrame - initializes utterance_id
@@ -405,12 +420,16 @@ class VoiceAssistant:
             await self.task.queue_frame(LLMFullResponseEndFrame())
             logger.info(f"✅ Greeting frames queued successfully")
 
-            # Add greeting to conversation context so LLM knows it already greeted
+            # Add tone warmup + greeting to conversation context
+            # Warmup is a hidden system note — gives the LLM scenario tone patterns before turn 1
             if self.conversation_manager and self.conversation_manager.context:
+                self.conversation_manager.context.messages.append(
+                    {"role": "system", "content": DESIGNER_TONE_WARMUP}
+                )
                 self.conversation_manager.context.messages.append(
                     {"role": "assistant", "content": greeting_text}
                 )
-                logger.info("📝 Greeting added to conversation context")
+                logger.info("📝 Designer tone warmup + greeting added to conversation context")
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
