@@ -201,7 +201,7 @@ class VoiceScannerApp {
   private emotionTopicNodes: { id: string; timestamp: Date; sentiment: 'positive' | 'neutral' | 'negative'; sentimentLabel: string; intensity: number }[] = [];
   private emotionNodeCounter: number = 0;
 
-  constructor() {  
+  constructor() {
 
     this.botAudio = document.createElement('audio');
     this.botAudio.autoplay = true;
@@ -729,10 +729,10 @@ class VoiceScannerApp {
     }
   }
 
-   /**
-   * Update loader text (e.g. "Planning next moves", "INITIALIZING")
-   */
-   setLoaderText(text: string): void {
+  /**
+  * Update loader text (e.g. "Planning next moves", "INITIALIZING")
+  */
+  setLoaderText(text: string): void {
     this.loader?.setText(text);
   }
 
@@ -1016,6 +1016,27 @@ class VoiceScannerApp {
   }
 
   /**
+   * Check if the transcript is currently scrolled to the bottom (within threshold)
+   */
+  private isTranscriptAtBottom(): boolean {
+    if (!this.transcriptList) return true;
+    const threshold = 50; // pixels
+    const position = this.transcriptList.scrollTop + this.transcriptList.offsetHeight;
+    const height = this.transcriptList.scrollHeight;
+    return position >= height - threshold;
+  }
+
+  /**
+   * Scroll transcript to the bottom if the user is already at the bottom or if forced
+   */
+  private maybeScrollToTranscriptBottom(force: boolean = false): void {
+    if (!this.transcriptList) return;
+    if (force || this.isTranscriptAtBottom()) {
+      this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+    }
+  }
+
+  /**
    * Format timestamp for transcript log (HH:mm:ss)
    */
   private formatTranscriptTime(date: Date = new Date()): string {
@@ -1070,8 +1091,8 @@ class VoiceScannerApp {
 
     this.transcriptList.appendChild(line);
 
-    // Scroll to bottom
-    this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+    // Scroll to bottom (force for new messages)
+    this.maybeScrollToTranscriptBottom(true);
   }
 
   /**
@@ -1380,10 +1401,8 @@ class VoiceScannerApp {
           this.setBotSubtitleFromText((textSpan.textContent || '').trim());
         }
 
-        // Scroll to bottom
-        if (this.transcriptList) {
-          this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
-        }
+        // Scroll to bottom if already there
+        this.maybeScrollToTranscriptBottom();
       }
     }
 
@@ -2671,7 +2690,7 @@ class VoiceScannerApp {
       if (this.rtviClient) {
         try {
           await this.rtviClient.disconnect();
-        } catch (e) {}
+        } catch (e) { }
         this.rtviClient = null;
       }
     }
@@ -2988,7 +3007,7 @@ class VoiceScannerApp {
     this.streamingBubble.appendChild(timeSpan);
     this.streamingBubble.appendChild(textContainer);
     this.transcriptList.appendChild(this.streamingBubble);
-    this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+    this.maybeScrollToTranscriptBottom(true);
   }
 
   /**
@@ -3008,9 +3027,7 @@ class VoiceScannerApp {
     textContainer.appendChild(wordSpan);
     this.streamingWords.push(word);
 
-    if (this.transcriptList) {
-      this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
-    }
+    this.maybeScrollToTranscriptBottom();
   }
 
   /**
