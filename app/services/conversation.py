@@ -63,28 +63,29 @@ class ConversationManager:
     to provide a seamless conversational experience.
     """
     
-    # 20 natural, conversational thinking phrases that sound more human
+    # 20 consultant-style thinking phrases — played during RAG latency.
+    # Sound like expert recall, not computer search. No "looking up" / "searching" language.
     THINKING_PHRASES = [
-        "Umm, let me check that.",
-        "Oh, let me look that up for you.",
-        "Give me a sec.",
-        "Hmm, let me find that.",
-        "One moment.",
-        "Let me see.",
-        "Ah, let me search for that.",
-        "Okay, checking now.",
-        "Let me pull that up.",
-        "Umm, searching.",
-        "Yeah, let me find that.",
-        "Hold on.",
-        "Let me look into that.",
-        "Hmm, one sec.",
-        "Okay, let me check.",
-        "Searching for that now.",
-        "Let me grab that info.",
-        "Just a moment.",
-        "Alright, looking that up.",
-        "Let me find that for you.",
+        "That's a nuanced one... let me get this right.",
+        "I'm thinking through how we've handled this before.",
+        "Interesting — let me recall the specifics on that.",
+        "Give me a second — I want to get this right.",
+        "I'm pulling from our internal work on this...",
+        "Let me think through our take on that.",
+        "That touches on something specific — give me a moment.",
+        "I'm recalling a pattern we've used for exactly this...",
+        "Let me get the details right on this one.",
+        "That's worth being precise about — one moment.",
+        "I'm running through how we've framed this before.",
+        "Let me consult our work on that specifically.",
+        "Mmm, that's a good one — let me think it through.",
+        "I want to give you the right answer on this, give me a second.",
+        "I'm sharpening my focus on that — just a moment.",
+        "Let me pull the right reference for this.",
+        "That's a specific territory — let me get it right.",
+        "I'm walking through our internal approach on this...",
+        "One moment — I want to be precise here.",
+        "Let me make sure I give you the right angle on this.",
     ]
 
     def __init__(self,

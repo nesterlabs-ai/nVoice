@@ -124,7 +124,8 @@ class VoiceScannerApp {
   private voiceState: VoiceState = 'idle';
   private isConnected: boolean = false;
   private isConnecting: boolean = false;
-  private botInitiatedDisconnect: boolean = false;  // true when backend sends conversation_ending
+  private botInitiatedDisconnect: boolean = false;   // true when backend sends conversation_ending
+  private userInitiatedDisconnect: boolean = false;  // true when user clicks the X (close) button
   private preloaderAngle: number = 0;
 
   // Streaming transcript state
@@ -335,6 +336,7 @@ class VoiceScannerApp {
 
     document.getElementById('control-peak')?.addEventListener('click', () => this.toggleSidePanels());
     document.getElementById('control-close')?.addEventListener('click', () => {
+      this.userInitiatedDisconnect = true;
       this.hideA2UIPanel();
       this.showCloseOptions(); // Switch bar to Restart | Peek so user can restart or peek
       this.handleDisconnect();
@@ -2673,11 +2675,16 @@ class VoiceScannerApp {
             this.startIdleBlobAnimation(); // Keep wave animating in idle state
             if (this.botInitiatedDisconnect) {
               // showSessionEndedScreen() was already called when conversation_ending arrived.
-              // Just clear the flag; close-mode is already active so updateConnectionUI(false)
-              // above correctly kept connect-area hidden.
+              // Just clear the flag; close-mode is already active.
               this.botInitiatedDisconnect = false;
+            } else if (this.userInitiatedDisconnect) {
+              // User clicked the X button — close-mode (Restart | Peek) is already showing.
+              // Nothing extra needed.
+              this.userInitiatedDisconnect = false;
             } else {
-              this.addTerminalMessage('Connection terminated.', 'regular');
+              // Unexpected disconnect: idle timeout, network drop, server crash, etc.
+              // Show session-ended screen so user has a clear "Restart" button.
+              this.showSessionEndedScreen();
             }
           },
           onBotReady: () => {
