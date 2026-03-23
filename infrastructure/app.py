@@ -43,11 +43,16 @@ def main():
 
     cdk_env = cdk.Environment(account=account, region=region)
 
-    if environment == "graviton-test":
-        # EC2 Graviton stack (ARM64 parallel test deployment)
+    if environment in ("graviton-test", "prod"):
+        # EC2 Graviton stack (ARM64 deployment)
+        stack_names = {
+            "graviton-test": "NesterAI-Graviton-Test",  # Existing stack name
+            "prod": "NesterAI-EC2-Prod",
+        }
+        stack_name = stack_names[environment]
         EC2GravitonStack(
             app,
-            "NesterAI-Graviton-Test",
+            stack_name,
             config=config,
             env=cdk_env,
             description=f"NesterAI Voice Assistant - EC2 Graviton Infrastructure ({environment})",
