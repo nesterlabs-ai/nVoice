@@ -40,7 +40,7 @@ services:
         awslogs-create-group: "true"
 
   backend:
-    image: ${BACKEND_IMAGE}
+    image: ${BACKEND_IMAGE:-767397733115.dkr.ecr.us-west-2.amazonaws.com/nester-ai-prod-backend:latest}
     container_name: nester-backend
     restart: always
     expose:
@@ -77,7 +77,7 @@ services:
         awslogs-create-group: "true"
 
   frontend:
-    image: ${FRONTEND_IMAGE}
+    image: ${FRONTEND_IMAGE:-767397733115.dkr.ecr.us-west-2.amazonaws.com/nester-ai-prod-frontend:latest}
     container_name: nester-frontend
     restart: always
     expose:
