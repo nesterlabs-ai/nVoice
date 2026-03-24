@@ -132,6 +132,26 @@ class EC2GravitonInstance(Construct):
             )
         )
 
+        # CloudWatch custom metrics (session analytics)
+        self.instance_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["cloudwatch:PutMetricData"],
+                resources=["*"],
+            )
+        )
+
+        # SSM Parameter Store read (for refresh-env.sh)
+        self.instance_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["ssm:GetParameter"],
+                resources=[
+                    f"arn:aws:ssm:{region}:*:parameter/{prefix}/*",
+                ],
+            )
+        )
+
         # AMI - Amazon Linux 2023 ARM64
         ami = ec2.MachineImage.latest_amazon_linux2023(
             cpu_type=ec2.AmazonLinuxCpuType.ARM_64,

@@ -1,11 +1,11 @@
 """
 EC2 Graviton Infrastructure Stack for NesterAI Voice Assistant.
 
-Deploys an EC2 Graviton (ARM64) instance as a parallel test environment
-for benchmarking emotion detection performance vs Lightsail x86.
+Supports two modes:
+- Shared secrets (graviton-test): References existing Secrets Manager secret from dev account
+- Standalone secrets (prod): Creates its own Secrets Manager secret + CI/CD IAM user
 
-Shares Secrets Manager with the dev environment but has its own
-ECR repos (ARM64 images) and CloudWatch log group.
+Both modes create ECR repos (ARM64 images), CloudWatch logs/dashboard, and EC2 Graviton instance.
 """
 
 from constructs import Construct
@@ -17,7 +17,13 @@ from aws_cdk import (
 )
 
 from utils.config_loader import NesterConfig
-from components import NesterECR, NesterCloudWatchLogs, NesterSSMConfig
+from components import (
+    NesterECR,
+    NesterCloudWatchLogs,
+    NesterCloudWatchDashboard,
+    NesterSSMConfig,
+    NesterSecrets,
+)
 from components.ec2_graviton import EC2GravitonInstance
 
 
@@ -27,9 +33,10 @@ class EC2GravitonStack(Stack):
 
     Creates:
     - ECR repositories for ARM64 container images
-    - CloudWatch Log Group for container logs
+    - CloudWatch Log Group + Dashboard for container logs and metrics
     - EC2 Graviton instance with IAM role, security group, and Elastic IP
-    - Imports shared Secrets Manager secret from dev environment
+    - Secrets Manager secret (standalone) or imports shared secret
+    - CI/CD IAM user (standalone) or references existing user
     """
 
     def __init__(
@@ -50,29 +57,69 @@ class EC2GravitonStack(Stack):
         Tags.of(self).add("Stack", id)
 
         # 1. Create ECR repositories for ARM64 container images
-        # Repo names: nester-ai-graviton-test-backend/frontend
         self.ecr = NesterECR(
             self,
             "ECR",
             config=config,
         )
 
-        # 2. Grant the existing CI/CD IAM user push access to Graviton ECR repos
-        # The CI/CD user (nester-ai-dev-ecr-user) is shared across deployments
-        cicd_user = iam.User.from_user_name(
-            self, "CiCdUser", "nester-ai-dev-ecr-user"
-        )
+        # 2. Secrets Manager — shared or standalone
+        if config.secrets.shared_secret_arn:
+            # Shared mode (graviton-test): reference existing secret from dev account
+            api_keys_secret_arn = config.secrets.shared_secret_arn
+
+            # Grant the existing CI/CD IAM user push access
+            cicd_user = iam.User.from_user_name(
+                self, "CiCdUser", "nester-ai-dev-ecr-user"
+            )
+        else:
+            # Standalone mode (prod): create own secret + CI/CD user
+            self.secrets = NesterSecrets(self, "Secrets", config=config)
+            api_keys_secret_arn = self.secrets.secret_arn
+
+            # Create dedicated CI/CD user for this environment
+            cicd_user = iam.User(
+                self,
+                "CiCdUser",
+                user_name=f"nester-ai-{config.environment}-cicd-user",
+            )
+
+            # Grant CI/CD user SecretsManager read access
+            cicd_user.add_to_policy(
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "secretsmanager:GetSecretValue",
+                        "secretsmanager:DescribeSecret",
+                    ],
+                    resources=[api_keys_secret_arn],
+                )
+            )
+
+        # Grant CI/CD user ECR push access
         self.ecr.backend_repo.grant_pull_push(cicd_user)
         self.ecr.frontend_repo.grant_pull_push(cicd_user)
 
-        # 3. Reference shared Secrets Manager secret (same API keys as dev) (same API keys as dev)
-        # Full ARN from config avoids the partial-ARN matching issue with from_secret_name_v2
-        shared_secret_arn = config.secrets.shared_secret_arn
+        # Grant CI/CD user CloudWatch PutMetricData (for deployment metrics)
+        cicd_user.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["cloudwatch:PutMetricData"],
+                resources=["*"],
+            )
+        )
 
-        # 4. Create CloudWatch Log Group for container logs
+        # 3. Create CloudWatch Log Group for container logs
         self.cloudwatch_logs = NesterCloudWatchLogs(
             self,
             "CloudWatchLogs",
+            config=config,
+        )
+
+        # 4. Create CloudWatch Dashboard
+        self.cloudwatch_dashboard = NesterCloudWatchDashboard(
+            self,
+            "CloudWatchDashboard",
             config=config,
         )
 
@@ -88,7 +135,7 @@ class EC2GravitonStack(Stack):
             self,
             "EC2Graviton",
             config=config,
-            api_keys_secret_arn=shared_secret_arn,
+            api_keys_secret_arn=api_keys_secret_arn,
             ssm_parameter_name=self.ssm_config.parameter_name,
             backend_image_uri=self.ecr.backend_image_uri(config.image_tag),
             frontend_image_uri=self.ecr.frontend_image_uri(config.image_tag),
@@ -122,9 +169,9 @@ class EC2GravitonStack(Stack):
 
         CfnOutput(
             self,
-            "SharedSecretArn",
-            value=shared_secret_arn,
-            description="Shared Secrets Manager secret ARN (from dev environment)",
+            "ApiKeysSecretArn",
+            value=api_keys_secret_arn,
+            description="Secrets Manager secret ARN for API keys",
         )
 
         # ECR outputs
@@ -173,4 +220,12 @@ class EC2GravitonStack(Stack):
             "SSMParameterName",
             value=self.ssm_config.parameter_name,
             description="SSM Parameter Store path for server config",
+        )
+
+        # CI/CD user output
+        CfnOutput(
+            self,
+            "CiCdUserName",
+            value=cicd_user.user_name,
+            description="CI/CD IAM user name (create access keys manually)",
         )
