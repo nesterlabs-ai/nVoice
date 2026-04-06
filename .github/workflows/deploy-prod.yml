@@ -189,6 +189,9 @@ jobs:
             # Clean up
             rm -rf /tmp/deploy
 
+            # Fix ownership after sudo cp
+            sudo chown -R ec2-user:ec2-user /opt/nester
+
             # Remove old Docker images, containers, and volumes to free disk space
             echo "=== Cleaning up old Docker resources ==="
             docker system prune -a -f --volumes || true
