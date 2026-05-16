@@ -1,114 +1,194 @@
 [
   {
-    "content": "Nester Labs is a specialist GenAI and agentic AI studio that helps companies go from idea to prototype to production for LLM-powered products. They have a strong emphasis on design, RAG (Retrieval-Augmented Generation), and complex workflows. Their tagline is about reimagining intelligence.",
+    "content": "Nesterlabs is an AI-accelerated studio based in Sunnyvale, California (701 Lakeway Dr #200, Sunnyvale CA 94085). Tagline: 'Reimagining Intelligence Through Research, Design & Technology'. We position ourselves as 'the execution layer for AI-driven companies' — our focus is taking AI systems beyond prototypes into production environments with end-to-end ownership. We are not a generic AI consultancy; we have a sharp focus on two main offerings: production voice AI agents (nVoice work) and agentic operational systems (nAgent work). Contact: contact@nesterlabs.com, +1 (408) 673-1340, nesterlabs.com.",
     "metadata": {
       "source": "nester_labs",
       "category": "company_overview",
-      "topic": "about"
+      "topic": "positioning"
     }
   },
   {
-    "content": "Nester Labs offers end-to-end GenAI product builds, from problem discovery and UX design to model selection, infrastructure, and productionization. They build both MVPs (Minimum Viable Products) and full production-ready products for clients.",
+    "content": "Nesterlabs' Voice AI offering (nVoice work) is built around the value proposition 'Voice that holds the conversation.' We deliver four core capabilities: (1) Emotion Sensing — audio prosody combined with text sentiment to detect frustration, hesitation, and distress from vocal delivery patterns alongside spoken content; (2) Persona Mirroring — dynamic adaptation of tone, pace, formality, and address per individual caller, ranging from direct/detailed to casual/warm interaction styles; (3) Adaptive Visual UI — real-time generation of cards, lists, forms, and structured interfaces synchronized with voice conversations; (4) Dual-Graph Memory — a dual system combining per-user and agent-global graphs, supporting short-term, long-term, episodic, and semantic retention across sessions. Voice-specific challenges we address: turn boundaries, silence behavior, barge-in handling, audio-domain emotion detection, and TTS timing.",
     "metadata": {
       "source": "nester_labs",
       "category": "offerings",
-      "topic": "product_builds"
+      "topic": "voice_ai_capabilities"
     }
   },
   {
-    "content": "Nester Labs specializes in RAG and Knowledge products. They build custom knowledge interfaces including internal copilots, knowledge bots, and search assistants. Their approach uses retrieval-augmented generation, multi-source data integration, and evaluation loops to ensure quality.",
+    "content": "Nesterlabs' Voice AI methodology uses a three-phase approach: Imagine (map voice taxation factors pre-implementation — turn boundaries, silence behavior, barge-in, audio-domain emotion, TTS timing), Make (build runtime with turn-taking and streaming response timing), and Scale (calibrate per channel with production hardening). The four operational shifts our voice systems deliver: (1) reduce contact-center overhead through agent-handled intake and triage; (2) accelerate caller resolution in single interactions; (3) trust integrated from initial design via emotion sensing, escalation, and compliance; (4) scale capacity without proportional headcount increases. Initial voice systems reach production within weeks. We support regulated environments with HIPAA-compatible workflows and human-in-loop escalation paths designed in.",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "methodology",
+      "topic": "voice_ai_methodology"
+    }
+  },
+  {
+    "content": "Voice AI integrations supported by Nesterlabs: LLMs — OpenAI, Claude (Anthropic), Gemini, DeepSeek, Grok. STT/TTS — Deepgram, ElevenLabs, Whisper, Cartesia, Resemble, LiveKit, Pipecat, Twilio. Memory/Storage — Zep, Graphiti, Neo4j, Mem0, Postgres, MongoDB. We are non-proprietary by design: our voice systems work with existing infrastructure stacks rather than forcing migration to our own platform. Production example: 'Sarah' is our AI intake coordinator for a healthcare client — crisis-aware safety protocols with real-time sentiment monitoring, HIPAA-compliant architecture, delivered 77% faster booking and 78% cost reduction.",
     "metadata": {
       "source": "nester_labs",
       "category": "offerings",
-      "topic": "rag_knowledge"
+      "topic": "voice_ai_integrations"
     }
   },
   {
-    "content": "Nester Labs builds Agentic AI workflows - agents that orchestrate tools, APIs, and data pipelines. Examples include genomics applications and enterprise process automation. Their agentic systems include monitoring and guardrails for reliability and safety.",
+    "content": "Nesterlabs' agentic AI offering (nAgent work) is positioned as 'the execution layer for AI-driven companies.' Our mission: design, build, and ship AI systems that move beyond prototypes into production environments with end-to-end ownership. We organize agentic work into four interlocking practices: (1) Agentic operational systems — AI agents and orchestration embedded in real workflows; (2) Voice and conversational systems — real-time intake, coordination, and support; (3) AI-enabled products — AI integrated into operating models, not added peripherally; (4) Reliability and production hardening — observability, governance, and testing at scale. Guiding principle: 'The companies that move fastest will not treat AI as a feature. They will build operations around it.'",
     "metadata": {
       "source": "nester_labs",
       "category": "offerings",
-      "topic": "agentic_ai"
+      "topic": "agentic_ai_overview"
     }
   },
   {
-    "content": "Nester Labs takes a Discovery and Design first approach. They conduct workshops, information architecture planning, and user journey mapping before writing code. This leverages their strong UX background to ensure products solve real user problems.",
+    "content": "Nesterlabs' three-phase agentic AI lifecycle: 01 IMAGINE — Gather & Discover: engineering and design map business, workflows, users, and constraints. Trust boundaries, escalation paths, and human oversight are defined before architecture begins. Deliverable: shared system model and trust boundaries. 02 MAKE — Architect & Build: research, design, engineering, and infrastructure move as a unified execution layer. Agents, orchestration, tools, interfaces, and runtime behavior are designed cohesively. Deliverable: aligned architecture and execution layer. 03 SCALE — Harden & Launch: systems are pressure-tested through observability, behavioral evaluation, load testing, governance review, and edge-case analysis. Deliverable: production-ready system. We use a Contextual Inquiry method — our teams work directly with operators inside their workflows to understand real conditions, shaping architecture and trust boundaries early. Post-deployment, most systems continue evolving with us through reliability tuning, behavioral calibration, workflow expansion, and operational optimization.",
     "metadata": {
       "source": "nester_labs",
       "category": "methodology",
-      "topic": "discovery_design"
+      "topic": "agentic_lifecycle"
     }
   },
   {
-    "content": "Nester Labs is tech-agnostic but AI-native. They are not tied to one vendor and can use OpenAI, Anthropic, open-source models, various vector databases, and different cloud providers based on client constraints and requirements.",
+    "content": "Nesterlabs offers two agentic engagement models: Model 01 — By Initiative: a defined product or system with scoped milestones (Kickoff → Design → Build → Ship). Model 02 — Ongoing Execution: continuous team movement across workflows as the system evolves. Operational shifts we deliver: reduce operational overhead by absorbing repetitive coordination, approvals, and routing; accelerate execution with continuous operation under human oversight; reliability built-in via behavioral testing and governance from start; scale capacity without proportional overhead growth. Integration platforms: CRM/Enterprise — HubSpot, Salesforce, SAP, Zendesk, Intercom. Payment/Dev — Stripe, GitHub, Vercel. AI Models — OpenAI, Claude, Gemini, DeepSeek, Mistral, Hugging Face. Voice/Communication — Twilio, LiveKit, Pipecat, Telephony, Slack, Discord. Infrastructure — Snowflake, MongoDB, Google Cloud, Cloudflare. Principle: 'Built around your existing systems' — we operate across existing tools with no forced migrations.",
     "metadata": {
       "source": "nester_labs",
-      "category": "methodology",
-      "topic": "tech_approach"
+      "category": "offerings",
+      "topic": "agentic_engagement_models"
     }
   },
   {
-    "content": "Nester Labs has a product plus platform mindset. They build systems rather than one-off chatbots. This includes AI layers on top of existing products and data, creating comprehensive solutions rather than isolated features.",
+    "content": "The Nester Stack (nStack) is our internal suite of seven production-ready tools that accelerate every client engagement. Core premise: 'Building with AI is easy. Shipping is the hard part.' We group the tools into three categories. Production primitives (these run inside what we ship): nMemory, nPulse, nVoice. Development accelerators (these speed up how we build): nFlow, nCompose. Hardening tools (these de-risk what we ship): nGuard, nForge. Each tool addresses a specific failure mode we've seen repeatedly in production AI systems — memory loss across sessions, missed emotional cues, voice latency, brittle agent orchestration, slow design-to-code handoff, AI-generated code with security holes, and voice agents that pass demos but break with real callers.",
     "metadata": {
       "source": "nester_labs",
-      "category": "methodology",
-      "topic": "systems_thinking"
+      "category": "nstack",
+      "topic": "nstack_overview"
     }
   },
   {
-    "content": "Nester Labs targets problems like turning large, messy enterprise data into searchable, conversational knowledge tools and internal copilots. They help organizations make their data accessible and actionable through AI interfaces.",
+    "content": "nMemory is Nesterlabs' persistent memory system for AI agents. Tagline: 'Memory that survives the conversation.' Problem solved: agents lose context when users reconnect, repeated information gathering across agent handoffs, retrieval latency that outpaces conversation speed. Architecture: tiered memory — short-term (active session), long-term (user history), episodic (specific events). Performance: sub-50ms retrieval at p99, including embedding, vector lookup, and re-ranking. Vector-store agnostic — works with Pinecone, Qdrant, Vertex Vector Search, Bedrock Knowledge Bases, OpenSearch. Bidirectional sync with Salesforce, HubSpot, Dynamics, and custom ERP/CRM systems via MCP wrappers. Compliance-ready: HIPAA retention for healthcare, SOC 2 controls, PII redaction at retrieval. Status: production-ready, ships with infrastructure on day one for healthcare, multi-agent, and edtech use cases.",
     "metadata": {
       "source": "nester_labs",
-      "category": "use_cases",
-      "topic": "enterprise_data"
+      "category": "nstack",
+      "topic": "nmemory"
     }
   },
   {
-    "content": "Nester Labs builds domain-specific AI agents for genomics pipelines, technical support, and operational workflows. These agents can call tools, check constraints, and respond intelligently within specific domains.",
+    "content": "nPulse is Nesterlabs' real-time emotion detection and response system for voice and text. Tagline: 'Emotion in real time.' Problem solved: a user is upset, the AI agent keeps going in the same tone, same pace, same script — by the time the dashboard shows disengagement, the user is gone. Architecture: voice audio and text inputs → emotion evaluation, tone analysis, sentiment detection engine → TTS modulation, LLM context injection, agent behavior adjustment. Performance: under 100ms signal routing. Model-agnostic — works with GPT, Claude, Gemini, and open-source models. Dual input: same signal model processes both voice and text. Trajectory-aware: tracks the emotional arc rather than isolated moments. Capabilities: voice emotion detection with prosody and frustration analysis, text sentiment tracking for chat agents, real-time output modulation (TTS pace/tone, text phrasing), behavior mode switching at configured thresholds, automatic human escalation with full conversation context. Status: live in production. Target applications: EdTech learner disengagement, teletherapy crisis detection, customer support frustration escalation.",
     "metadata": {
       "source": "nester_labs",
-      "category": "use_cases",
-      "topic": "domain_agents"
+      "category": "nstack",
+      "topic": "npulse"
     }
   },
   {
-    "content": "Nester Labs helps companies that have played with AI demos but need real, reliable production systems. They provide proper evaluations, monitoring, and governance to turn prototypes into production-ready applications.",
+    "content": "nVoice is Nesterlabs' open-source voice agent platform. Tagline: 'Voice that does not pause.' GitHub: github.com/nesterlabs-ai/nVoice. Built on Pipecat and LiveKit frameworks. Problem solved: a 3-second pause causes callers to speak again and breaks conversation flow; off-the-shelf STT fails with Hinglish and code-switching; regulated industries cannot send caller audio to third-party cloud APIs. Core claim: sub-1.5s end-to-end latency from caller speech to agent response. Architecture: inputs (caller audio, nMemory context, nPulse signals) → processing (STT, LLM reasoning, TTS synthesis) → outputs (voice output, transcript, latency metrics). Pluggable STT: Deepgram, Whisper, Azure Speech, Google STT. Pluggable TTS: ElevenLabs, Cartesia, Google, Azure. Transport/telephony: Daily.co, LiveKit, Twilio, SIP, PSTN. LLMs: GPT, Claude, Gemini, open-source alternatives. Features: real-time interruption handling, pulse-modulated output (emotional tone via nPulse), multilingual support including Hinglish with mid-sentence code-switching, self-hosted deployment. Target users: healthcare patient intake, regulated industries requiring data residency, multilingual markets particularly Indian English speakers.",
     "metadata": {
       "source": "nester_labs",
-      "category": "use_cases",
-      "topic": "production_systems"
+      "category": "nstack",
+      "topic": "nvoice"
     }
   },
   {
-    "content": "Nester Labs frames AI as augmenting human intelligence rather than replacing it. They focus on collaboration between human experts and AI systems, emphasizing that AI should enhance human capabilities.",
+    "content": "nFlow is Nesterlabs' accelerator platform for shipping agentic products. Tagline: 'Agentic products, shipped fast.' Problem solved: demos are easy with LLMs, but production deployments face edge cases, incorrect tool calls, unauditable outputs, and lost state between turns. Architecture: inputs (agent definitions, domain rules, workflow specs, tool registry, agent networks) → engine (state tracking, validation logic, orchestration, plan approval, HITL gates) → outputs (agent steering, validation results, audit trails, tool invocations, escalations). Six core features: (1) Workflow State Machines — structured tracking of required inputs and incomplete steps; (2) Grounding Rules — domain expert-defined validation, e.g. phone format, PAN structure; (3) Data Point Tracking — maps captured vs needed inputs across workflows; (4) Action Fencing — explicit agent boundaries with read-only defaults and scoped write access; (5) Intent Audit Trails — complete logging of state transitions and tool calls; (6) Human Escalation — automatic handoff at scope boundaries or confidence thresholds. Orchestration platforms supported: LangGraph, CrewAI, OpenAI Agents SDK, Google ADK. Open protocols: MCP (tool gateway) and A2A (cross-vendor agent collaboration). Deployment: Google Cloud, AWS, Azure, self-hosted. Status: production accelerator. Target users: organizations building multi-agent systems needing compliance, validation, and observability across healthcare, document processing, and enterprise workflows.",
     "metadata": {
       "source": "nester_labs",
-      "category": "philosophy",
-      "topic": "human_ai_collaboration"
+      "category": "nstack",
+      "topic": "nflow"
     }
   },
   {
-    "content": "Nester Labs emphasizes long-term partnerships with clients. They stay involved post-MVP to iterate on models, UX, and infrastructure as products scale, rather than just delivering and leaving.",
+    "content": "nCompose is Nesterlabs' open-source design-to-code tool. Tagline: 'Designs that ship as code.' GitHub: github.com/nesterlabs-ai/nCompose. Problem solved: frontend teams traditionally estimate 4–6 weeks to implement Figma designs, forcing product managers to cut features due to runway constraints; nCompose compresses this timeline from weeks to hours. Three core capabilities: (1) Token Extraction — converts Figma design elements (colors, spacing, typography, shadows, radius) into design tokens; (2) Component Detection — transforms Figma components into code components with inferred props from variants; (3) Code Generation — produces framework-specific, idiomatic output. Type-safe: TypeScript-first, props typed, variants typed, refs typed. Round-trip capable: designer updates in Figma regenerate code without overwriting manual edits. Naming preservation: component and token names stay consistent between design and codebase. Framework support: React, Vue, Svelte, Angular, vanilla JavaScript. Design system integration: Tailwind CSS, CSS-in-JS, custom design systems. Target users: B2B SaaS companies with design handoff workflows, agentic UI systems needing brand-aligned components, teams migrating legacy Figma libraries to code. Status: open source launching month-end. Listed as an accelerator product.",
     "metadata": {
       "source": "nester_labs",
-      "category": "philosophy",
-      "topic": "partnerships"
+      "category": "nstack",
+      "topic": "ncompose"
     }
   },
   {
-    "content": "Nester Labs values engineers who can think in systems - understanding pipelines, agents, and UX holistically rather than just isolated models. Their internal Nester AI experiments include work on Pipecat voice agents, RAG systems, and LangGraph implementations.",
+    "content": "nGuard is Nesterlabs' verification system for AI-generated code. Tagline: 'Verifying what AI generates.' Problem solved: AI-generated code often ships with critical vulnerabilities undetected until customers discover them — API keys in .env.example, IDOR in user-lookup routes, missing auth on admin endpoints. How it works: connects to GitHub repositories and runs six deterministic engines in parallel. Every finding includes file, line number, and reproducible payload evidence. The system generates patches rather than just flagging issues. The six engines: (1) Secrets & Exposure — detects API keys and .env leaks; (2) Security (SAST + DAST) — identifies IDOR, injection, missing auth, JWT misconfig, CVEs; (3) Reliability — catches timeouts, retries, N+1 queries, unhandled errors; (4) Test Coverage — flags untested auth flows and payment handlers; (5) Deployment Readiness — verifies Dockerfile, CI/CD, health endpoints; (6) Observability — checks structured logging, error tracking, APM hooks. Scoring: evidence-backed readiness score (NRS and NQS) with file:line backed evidence. Supports HIPAA and SOC 2 compliance patterns. Works alongside nForge (agent auditing), nFlow (orchestration verification), and nVoice (voice pipeline gates). Status: production tool (commercial, not open source). Target users: AI-generated MVP teams, multi-agent systems, product teams nearing launch.",
     "metadata": {
       "source": "nester_labs",
-      "category": "engineering",
-      "topic": "skills_valued"
+      "category": "nstack",
+      "topic": "nguard"
     }
   },
   {
-    "content": "The Nester Conversational Bot is a voice assistant built with Pipecat framework, featuring speech-to-text with Deepgram, text-to-speech with ElevenLabs, OpenAI LLM integration, and a RAG system using Pinecone vector database with LangGraph workflows.",
+    "content": "nForge is Nesterlabs' QA platform for voice AI agents. Tagline: 'QA for AI agents.' Problem solved: 'Voice agents pass demos. They break in production.' Sanitized test environments don't expose the factors that actually break voice bots in deployment — accents, code-switching, background noise, challenging caller behavior. Core capabilities: (1) AGENTNET — a suite of 30+ simulated callers with distinct personas (e.g., Ananya the Hinglish learner, James the skeptical buyer), each with structured identities, voice mappings, and demographic profiles for comprehensive testing; (2) VoiceScore — dual-layer evaluation combining deterministic audio metrics (responsiveness, conciseness, efficiency, delivery) with LLM-as-judge semantic assessment, yielding A-F grades per call; (3) Gap Analysis Loop — failed responses automatically feed back into project knowledge, enabling iterative bot improvement without manual prompt rewrites; (4) Auto-Suite Generation — analyzes bot type and auto-generates tailored test plans based on recognized patterns (sales, intake, verification, support). Provider integrations: 15+ connections including WebSocket, Twilio Media Streams, Daily, OpenAI Realtime, Pipecat Protobuf. Supports Anthropic, OpenAI, Cartesia, ElevenLabs, Deepgram, and OpenAI-compatible self-hosted models. Status: production offering (commercial, not open source). Target users: teams building voice agents for sales, customer support, intake, and identity verification workflows.",
     "metadata": {
       "source": "nester_labs",
-      "category": "products",
-      "topic": "voice_assistant"
+      "category": "nstack",
+      "topic": "nforge"
+    }
+  },
+  {
+    "content": "How the nStack maps to client engagements: during the Imagine phase, we use nFlow's state machine and grounding rules thinking to define trust boundaries and validation requirements before any architecture is committed. During the Make phase, nMemory, nPulse, and nVoice are dropped in as primitives so we don't rebuild memory, emotion, or voice latency engineering from scratch — and nCompose accelerates the design-to-code handoff. During the Scale phase, nGuard audits the codebase across six engines (secrets, security, reliability, tests, deployment, observability) and nForge stress-tests voice agents against 30+ simulated callers with A-F VoiceScore grading. The Lab of Nester also continuously evaluates every major AI release — LLMs, voice models, embedding strategies, agent frameworks, MCP servers, guardrail systems — so what we bring to client engagements is tested and production-ready, not experimental. Retainer clients receive ongoing upgrades as new capabilities emerge.",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "nstack",
+      "topic": "nstack_application"
+    }
+  },
+  {
+    "content": "Sarah (Agentic Intake Coordinator) is Nesterlabs' production voice AI case study for healthcare. It is an AI voice booking system for mental health therapy intake. Results delivered: 77% faster booking time and 78% cost reduction. Built with crisis-aware safety protocols, real-time sentiment monitoring (using nPulse-style emotion detection), and a HIPAA-compliant architecture. The system handles the structured intake workflow — patient information capture, insurance verification, appointment scheduling — while routing crisis signals to human escalation paths. Client is confidential. Sarah demonstrates how our nVoice, nPulse, and nMemory primitives combine in a regulated production environment.",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "projects",
+      "topic": "sarah_case_study"
+    }
+  },
+  {
+    "content": "Nesterlabs project portfolio includes: Kahuna Labs — brand strategy, identity, and web for a frontline productivity platform. AI Voice Mentorship Platform — voice AI mentor for EdTech, sub-1.5s latency, emotion-aware coaching (confidential client). Sarah — agentic intake coordinator for mental health therapy (77% faster booking, 78% cost reduction, HIPAA-compliant, confidential client). Conversations with Data — enterprise multi-agent system for natural language data querying (confidential client). Banky — AI-First Bank product (coming soon). SquareX — AI-enabled browser security management portal. Astha.ai — agentic identity management platform. RevOps — insight assist and performance for sales tech. Basepair — genomic workflow discovery using agentic AI. These projects show our range across voice AI (Sarah, Mentorship), enterprise agentic systems (Conversations with Data, RevOps, Astha), regulated workflows (Sarah, Banky, Basepair), and design-led AI products (Kahuna, SquareX).",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "projects",
+      "topic": "project_portfolio"
+    }
+  },
+  {
+    "content": "Nesterlabs' practical voice architecture approach is stack-flexible rather than one-size-fits-all. For custom production voice pipelines, we commonly build on Pipecat and LiveKit because they give us strong control over streaming, transport, interruption handling, turn-taking, and how STT, LLM, TTS, memory, and business tools are wired together. We also work directly with OpenAI Realtime when the product benefits from a tighter managed realtime path and the tradeoff makes sense for speed of implementation or simpler runtime design. Typical voice components include Deepgram for STT, ElevenLabs or Cartesia for TTS, Twilio or LiveKit for telephony/transport, and memory plus tool orchestration around the core conversation loop. When the workflow needs broader business-system automation, routing, or post-call actions, we may use n8n or a custom orchestration layer to connect scheduling, CRM, EHR, notifications, and internal operations. Our selection logic is pragmatic: we choose the stack based on latency targets, workflow complexity, compliance constraints, hosting requirements, and how much runtime control the client needs.",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "offerings",
+      "topic": "voice_architecture_stack_choices"
+    }
+  },
+  {
+    "content": "Nesterlabs' practical approach to agentic system orchestration is also stack-flexible. We do not force every workflow into a single framework. The first decision is whether the system needs deep custom control over workflow state, approvals, branching, retries, auditability, and human escalation, or whether a more managed platform can carry enough of that load. Our own orchestration thinking is heavily shaped by nFlow: state machines, grounding rules, data-point tracking, action fencing, audit trails, and explicit human escalation gates. For systems where we want low-level control over long-running stateful orchestration, durable execution, and human-in-the-loop checkpoints, LangGraph is a strong fit. For teams that want structured multi-agent collaboration with higher-level abstractions around agents, crews, tasks, and flows, CrewAI can make sense. For model-provider-native agent stacks, OpenAI's current path is the Agents SDK on top of the Responses and tool ecosystem when the application wants the server to own orchestration, tool execution, approvals, and state. In Google's ecosystem, ADK is designed for building, debugging, and deploying reliable agents with support for workflow-style orchestration and multi-agent delegation, and can be paired with Google's managed agent runtime. In AWS, Bedrock Agents provide managed agent execution with action groups and knowledge bases, Bedrock Flows provide node-based workflow orchestration, and Bedrock AgentCore provides managed runtime and operational infrastructure for agents built with many frameworks. In practice, our selection logic is pragmatic: if the product needs maximum control and product-specific runtime behavior, we bias toward custom orchestration or lower-level frameworks; if the product benefits from managed infrastructure, provider-native tools, or enterprise hosting constraints, we use the platform that best matches those needs. Across all of these, the architecture still has to solve the same real problems: tool permissions, workflow state, retries, fallback behavior, memory, observability, evaluation, and human approval at the right moments.",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "offerings",
+      "topic": "agentic_architecture_stack_choices"
+    }
+  },
+  {
+    "content": "One of Nesterlabs' core design patterns is that prompts are not treated as static system text. In sophisticated production systems, prompts are assembled or regenerated from multiple layers of live context: base role and safety rules, current mode, user/session state, memory retrieval, active workflow stage, adaptation signals, and any transient runtime conditions that should influence the next turn. This matters because a production AI system usually has to behave differently as the interaction evolves. The hard part is not writing one good prompt. It is deciding what belongs in the stable system layer, what belongs in stateful context, what should be recomputed every turn, and how to keep the final prompt useful within a real token budget. A mature implementation usually includes prioritization, compression, and selective injection so the model receives the right context at the right time without becoming bloated or stale.",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "architecture_patterns",
+      "topic": "dynamic_prompt_regeneration"
+    }
+  },
+  {
+    "content": "Nesterlabs typically treats memory as layered rather than singular. In practice, that means separating immediate session context from persistent user memory, and separating user-specific memory from broader system or agent memory when needed. The point is not just retrieval. It is deciding what should persist, what should expire, what should be updated from the latest interaction, and what should remain scoped to a particular workflow or agent. In more adaptive systems, memory is used alongside live state and profile signals so the model is not only recalling facts, but responding in a way that reflects prior behavior, current goals, progress markers, and recent emotional or operational context. This is especially important in systems that need continuity without becoming repetitive or over-personalized in the wrong places.",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "architecture_patterns",
+      "topic": "layered_memory_design"
+    }
+  },
+  {
+    "content": "Nesterlabs' personalization approach goes beyond simple name insertion or preference recall. In stronger systems, we maintain structured user-state and profile signals that influence how the AI behaves, not just what it says. That can include communication style, confidence or comfort signals, role-specific context, pacing preferences, progress state, or other profile dimensions relevant to the workflow. The important design decision is that personality adaptation is bounded and intentional: the system can mirror tone, pacing, or explanation style, but it should not become unstable, manipulative, or inconsistent. In practice, this means profile-informed prompting, constrained adaptation layers, and clear separation between the AI's stable identity and the parts of delivery that can adapt per user or per situation.",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "architecture_patterns",
+      "topic": "profile_state_and_adaptation"
+    }
+  },
+  {
+    "content": "In Nesterlabs' agentic systems, orchestration is treated as a control problem, not just a tool-calling problem. A sophisticated agent runtime usually needs explicit workflow state, scoped permissions, approval checkpoints, retry rules, fallback paths, and observability around both successful and failed actions. That is why we often think in terms of state machines, step collectors, branching logic, action fencing, audit trails, and escalation boundaries. The framework matters, but the deeper question is always who owns state, who can do what, when human approval is required, how failures are recovered, and how the whole system remains inspectable. Without that layer of control, a multi-agent system may look impressive in a demo but becomes brittle under production pressure.",
+    "metadata": {
+      "source": "nester_labs",
+      "category": "architecture_patterns",
+      "topic": "agentic_control_model"
     }
   }
 ]

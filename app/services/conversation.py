@@ -63,8 +63,8 @@ class ConversationManager:
     to provide a seamless conversational experience.
     """
     
-    # 20 consultant-style thinking phrases — played during RAG latency.
-    # Sound like expert recall, not computer search. No "looking up" / "searching" language.
+    # Legacy thinking phrases kept for non-critical future use.
+    # Do not speak these during RAG calls; they make the assistant sound hesitant.
     THINKING_PHRASES = [
         "That's a nuanced one... let me get this right.",
         "I'm thinking through how we've handled this before.",
@@ -249,7 +249,13 @@ class ConversationManager:
                 logger.info(f"🔧 FUNCTION CALL START: {function_calls} at {time.time()}")
 
                 # Skip thinking phrase for certain functions that don't need "let me check"
-                skip_functions = ['end_conversation', 'start_appointment_booking', 'submit_appointment', 'cancel_appointment_booking']
+                skip_functions = [
+                    'call_rag_system',
+                    'end_conversation',
+                    'start_appointment_booking',
+                    'submit_appointment',
+                    'cancel_appointment_booking',
+                ]
                 if function_calls and any(func in str(call) for func in skip_functions for call in function_calls):
                     return
 
@@ -557,7 +563,7 @@ class ConversationManager:
         """
         rag_function = FunctionSchema(
             name="call_rag_system",
-            description="Search the knowledge base for detailed information. Use this function when: (1) User asks about specific project details, case studies, results, or architecture (e.g., 'tell me more about Sarah', 'what were the results?', 'explain the healthcare project'). (2) User asks to go deeper: 'tell me more', 'explain in detail', 'go deeper'. (3) User asks questions where showing a visual UI template would enhance the experience — project listings, team profiles, service details, contact information. (4) User asks about blog posts, technical deep-dives, or specific metrics. (5) User asks about design methodology, UX principles, discovery process, problem framing, user research, design systems, interaction design, developer handoff, or AI UX challenges. (6) User asks about how other products handle design (Stripe, Linear, Notion, Figma, Slack, etc.) or wants a real-world example to illustrate a design concept. (7) User asks about execution patterns, prototyping, usability testing, or information architecture. Do NOT use for basic company info, founder names, contact details, service overview, greetings, or farewells — answer those directly from your knowledge.",
+            description="Search the knowledge base for deeper or more specific information. Use this function when: (1) the user asks about specific project details, case studies, results, named architectures, or metrics; (2) the user asks to go deeper after a direct answer; (3) the question would benefit from a visual UI template; (4) the user asks about blog posts, technical deep-dives, or documented methodologies. Do NOT use for basic company info, greetings, farewells, or core Nesterlabs operating questions that should be answered directly from your knowledge first. Answer directly when the user asks high-level questions like how we build voice bots, whether we use accelerators or internal stack, how we ensure reliability, what our stack looks like at a high level, or how we work. Use RAG only if the user then asks for specifics, examples, metrics, or deeper detail.",
             properties={
                 "question": {
                     "type": "string",

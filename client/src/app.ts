@@ -2535,17 +2535,19 @@ class VoiceScannerApp {
     this.rtviClient.on(RTVIEvent.BotStoppedSpeaking, () => {
       this.log('Bot stopped speaking');
       this.botIsSpeaking = false;
-      // If subtitle display timers are still running, don't hide yet —
-      // schedule hide after remaining timers would have completed.
-      // Use a generous delay to ensure all PTS-timed words have been shown.
-      const pendingTimers = this.subtitleDisplayTimers.length > 0;
-      const hideDelay = pendingTimers ? 5000 : Math.min(Math.max(this.subtitleWordCount * 80, 1500), 4000);
+      // BotStoppedSpeaking can fire during short audio gaps while PTS-timed
+      // subtitle words are still queued. Keep the subtitle visible until no
+      // buffered/timed words remain, otherwise it briefly disappears mid-line.
+      const pendingSubtitleWork = this.hasPendingSubtitleWork();
+      const hideDelay = pendingSubtitleWork ? 5000 : Math.min(Math.max(this.subtitleWordCount * 80, 1500), 4000);
       this.subtitleWordCount = 0;
       if (this.subtitleClearTimeout) {
         clearTimeout(this.subtitleClearTimeout);
       }
       this.subtitleClearTimeout = setTimeout(() => {
-        this.liveSubtitle?.classList.remove('visible');
+        if (!this.botIsSpeaking && !this.hasPendingSubtitleWork()) {
+          this.liveSubtitle?.classList.remove('visible');
+        }
       }, hideDelay);
       if (this.isConnected) {
         this.setVoiceState('listening');
@@ -3027,6 +3029,7 @@ class VoiceScannerApp {
       this.displaySubtitleWord(word);
     } else {
       const timer = setTimeout(() => {
+        this.subtitleDisplayTimers = this.subtitleDisplayTimers.filter(t => t !== timer);
         this.displaySubtitleWord(word);
       }, delay * 1000);
       this.subtitleDisplayTimers.push(timer);
@@ -3038,6 +3041,7 @@ class VoiceScannerApp {
    */
   private displaySubtitleWord(word: string): void {
     this.subtitleDisplayedWords.push(word);
+    this.subtitleWordCount++;
 
     if (this.liveSubtitle && this.liveSubtitleText) {
       const fullText = this.subtitleDisplayedWords.join(' ');
@@ -3101,6 +3105,17 @@ class VoiceScannerApp {
       clearTimeout(this.subtitleBufferFlushTimer);
       this.subtitleBufferFlushTimer = null;
     }
+  }
+
+  /**
+   * True while subtitle words are still expected for the current bot utterance.
+   */
+  private hasPendingSubtitleWork(): boolean {
+    return (
+      this.subtitleDisplayTimers.length > 0 ||
+      this.subtitleWordBuffer.length > 0 ||
+      this.subtitleBufferFlushTimer !== null
+    );
   }
 
   /**
@@ -4048,4 +4063,3 @@ window.addEventListener('DOMContentLoaded', () => {
   const app = new VoiceScannerApp();
   (window as any).voiceScannerApp = app; // e.g. voiceScannerApp.setLoaderText('Planning next moves')
 });
-
