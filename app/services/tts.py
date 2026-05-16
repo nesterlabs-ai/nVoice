@@ -131,8 +131,15 @@ class TextToSpeechService:
                 voice_id=selected_voice_id,
                 model=model,
                 params=params,
+                # Disable internal sentence aggregation so LLM tokens stream
+                # directly to Cartesia's persistent WebSocket (continue=true).
+                # This eliminates the audible gaps between sentences.
+                aggregate_sentences=False,
             )
-            logger.info(f"Using Cartesia TTS model={model} voice_id={selected_voice_id} emotion={initial_emotion}")
+            logger.info(
+                f"Using Cartesia TTS model={model} voice_id={selected_voice_id} "
+                f"emotion={initial_emotion} aggregate_sentences=False"
+            )
 
         elif self.tts_provider == "chatterbox":
             api_key = self.config.get("api_key")

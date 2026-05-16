@@ -25,7 +25,6 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.filters.stt_mute_filter import STTMuteFilter, STTMuteConfig, STTMuteStrategy
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
-from pipecat.processors.aggregators.sentence import SentenceAggregator
 from pipecat.transports.base_transport import BaseTransport
 
 # Import interruption strategy for barge-in support
@@ -298,7 +297,11 @@ class VoiceAssistant:
             llm,
             self.visual_hint_processor,   # Stream text and detect content for visual cards
             self.text_filter,             # Remove markdown before TTS
-            SentenceAggregator(),         # Collect text into full sentences before TTS (prevents choppy audio)
+            # SentenceAggregator intentionally omitted: Cartesia's CartesiaTTSService
+            # is constructed with aggregate_sentences=False, so LLM tokens stream
+            # token-by-token into Cartesia's persistent WebSocket (continue=true).
+            # Sentence-level aggregation was creating audible gaps between sentences
+            # because each sentence triggered a separate Cartesia request.
             tts,
             self.subtitle_sync,           # Sync subtitles with TTS audio via upstream TTSTextFrame
             transport.output(),
@@ -390,10 +393,10 @@ class VoiceAssistant:
             # Randomized greeting messages for variety
             import random
             greeting_options = [
-                "Hi, I'm Nester AI from Nesterlabs. Are you working on something new, or trying to improve a product that already exists? ",
-                "Hey there! I'm Nester AI. We help teams build and design AI-powered products. What are you working on? ",
-                "Hi! I'm Nester AI, Nesterlabs' design and product assistant. What brings you here today? ",
-                "Hello! I'm Nester AI from Nesterlabs. Are you exploring a new idea, or is there something existing you'd like to improve? "
+                "Hi, I'm Nester AI from Nesterlabs. We work like an internal AI-native team for companies building serious AI products. What are you working on? ",
+                "Hey there! I'm Nester AI from Nesterlabs. We help teams move voice and agentic systems into real production. What are you building? ",
+                "Hi! I'm Nester AI, part of the Nesterlabs team. Are you shaping something new, or trying to make an existing product work better? ",
+                "Hello! I'm Nester AI from Nesterlabs. We help define and ship AI products that need to work in the real world. What brings you here today? "
             ]
             # Add trailing space to ensure last word is emitted (not buffered for next chunk)
             greeting_text = random.choice(greeting_options)
@@ -401,17 +404,20 @@ class VoiceAssistant:
             # Inject condensed DOC3 scenario tone patterns into context BEFORE the user speaks.
             # This pre-loads tone calibration so the LLM responds correctly from turn 1.
             # It is injected as a hidden system note — not spoken aloud.
-            DESIGNER_TONE_WARMUP = """[Designer voice tone reference — apply naturally, never mention these labels]
+            DESIGNER_TONE_WARMUP = """[Consultative voice reference — apply naturally, never mention these labels]
 
-When user says "we need a redesign" → Ask what's driving it: "What's driving the redesign right now — is it usability, conversion, or something more internal?"
-When user asks about your process → Don't list phases. Say: "The process flexes depending on the project. Are you exploring a new idea or improving something existing?"
-When user says "we just need UI screens" → Agree, then sanity-check gently: "Totally. Quick question — were the flows tested with users, or based on internal decisions so far?"
-When user is building an AI product → Go deeper on trust: "Is the AI replacing a human workflow or working alongside one?" Then explore trust signals and human-AI handoff.
-When user asks about pricing → Route warmly: "Pricing is something Ankur, our CEO, handles directly. Can I ask what kind of project you're thinking about? That'll help him give you something accurate."
-When user pushes back on design cost → Be honest: "The cost usually reflects the cost of getting it wrong — rebuilding flows after engineering has started. The research phase is what prevents expensive rework."
-When user says "we don't need research" → Validate confidence, then introduce friction: "That experience speeds everything up. I'd just ask — has your user's context changed in the last 12-18 months?"
-When user wants it to "look premium" → Translate to a design problem: "Premium feel usually comes from visual restraint, performance, and predictability. What's making it feel less premium right now — is it visual, or how it responds?"
-Universal pattern: Always sharpen the problem before jumping to solutions. Ask one question. Mirror first."""
+When user says "we need a redesign" → ask what is actually driving it: usability, conversion, trust, workflow friction, or positioning.
+When user asks about your process → explain Imagine, Make, and Scale in simple language: understand the workflow first, build the system as one execution layer, then harden it under real usage.
+When user says "we just need UI screens" → agree, then sanity-check whether the flow has been validated with real users or operators.
+When user says "widget", "UI", "screens", or "product" in a fuzzy way → interpret it as product-definition territory first: flow, interface behavior, trust, error handling, and brand expression.
+When user is building an AI product → explore trust, human handoff, error states, and where AI should or should not act.
+When user asks whether Nesterlabs is an agency or staff augmentation → make the contrast explicit: we work more like an embedded AI-native product, UX, research, and engineering team.
+When user asks deep technical questions → answer directly first with concrete system language: runtime, state, orchestration, memory, permissions, interruption handling, approvals, observability, and escalation. Only suggest a conversation with Kunal if the user wants a deeper working session.
+When user asks product, UX, brand, roadmap, or design strategy questions → answer directly first as a team that does research, product framing, UX systems, brand expression, and product direction. Only suggest Shrey if they want a deeper strategy conversation.
+When user wants something to "feel premium" → translate that into clarity, restraint, speed, predictability, trust, and product coherence.
+When the user has already made the use case clear → stop reopening broad discovery and answer directly.
+For technical answers in voice mode → keep it to one architectural point and one concrete detail unless the user asks for more.
+Universal pattern: direct answer first, one useful insight, then one good question if needed. Never pitch. Never oversell internal tools."""
 
             # Send frames to properly signal utterance boundaries:
             # 1. LLMFullResponseStartFrame - initializes utterance_id
