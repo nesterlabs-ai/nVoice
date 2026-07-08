@@ -108,7 +108,9 @@ class HybridEmotionDetector:
         # Get text sentiment (LLM - contextual understanding!)
         if transcript and transcript.strip() and transcript != "...":
             logger.debug(f"📝 Calling LLM for text sentiment: '{transcript[:100]}'")
-            text_result = self.llm_detector.detect_emotion(transcript) if self.llm_detector else self._neutral_text_result()
+            # await: detect_emotion is async (httpx.AsyncClient) so the sentiment
+            # HTTP call no longer blocks the pipeline's event loop.
+            text_result = (await self.llm_detector.detect_emotion(transcript)) if self.llm_detector else self._neutral_text_result()
             logger.debug(f"📝 LLM result: {text_result['emotion']} (conf: {text_result['confidence']:.2f}, tokens: {text_result.get('tokens_used', 0)})")
         else:
             logger.debug(f"📝 Empty/invalid transcript, using neutral: '{transcript}'")
