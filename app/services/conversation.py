@@ -810,7 +810,11 @@ CRITICAL RAG RULES (SPEED IS IMPORTANT):
             # Deepgram Flux path: the STT model broadcasts start/stop-of-turn
             # itself (and drives interruption when native_interruption=true), so
             # the aggregator defers to external signals. VAD/SmartTurn unused.
-            stop_strategies = [ExternalUserTurnStopStrategy()]
+            # timeout: the strategy's default 0.5s debounce (waiting for late
+            # transcripts) was consumed in FULL on every observed Flux turn even
+            # though Flux delivers the transcript together with its EOT event —
+            # 0.2s reclaims ~300ms/turn with the marker gate still guarding.
+            stop_strategies = [ExternalUserTurnStopStrategy(timeout=0.2)]
         else:
             stop_strategies = (
                 [TurnAnalyzerUserTurnStopStrategy(turn_analyzer=turn_analyzer)]
