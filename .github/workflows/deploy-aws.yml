@@ -61,6 +61,7 @@ jobs:
             deployment:
               - 'deployment/docker/docker-compose.prod.yml'
               - 'deployment/docker/Caddyfile.prod'
+              - 'deployment/docker/configure-docker-cloudwatch.sh'
 
   # Build and push backend image
   build-backend:
@@ -134,16 +135,31 @@ jobs:
             CACHEBUST=${{ github.sha }}
           no-cache: true
 
+  # Config sync indicator (for visibility in Actions UI)
+  sync-config:
+    name: Sync Config
+    needs: changes
+    if: needs.changes.outputs.deployment == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Config changes detected
+        run: |
+          echo "::notice::Deployment config files changed - will sync to server"
+          echo "Files that trigger this job:"
+          echo "  - deployment/docker/docker-compose.prod.yml"
+          echo "  - deployment/docker/Caddyfile.prod"
+
   # Deploy to Lightsail
   deploy:
     name: Deploy to Lightsail
-    needs: [changes, build-backend, build-frontend]
+    needs: [changes, build-backend, build-frontend, sync-config]
     if: |
       always() &&
       github.event.inputs.skip_deploy != 'true' &&
       (needs.build-backend.result == 'success' || needs.build-backend.result == 'skipped') &&
       (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'skipped') &&
-      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success' || needs.changes.outputs.deployment == 'true')
+      (needs.sync-config.result == 'success' || needs.sync-config.result == 'skipped') &&
+      (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success' || needs.sync-config.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -155,7 +171,7 @@ jobs:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ec2-user
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          source: "deployment/docker/docker-compose.prod.yml,deployment/docker/Caddyfile.prod"
+          source: "deployment/docker/docker-compose.prod.yml,deployment/docker/Caddyfile.prod,deployment/docker/configure-docker-cloudwatch.sh"
           target: "/tmp/deploy"
           strip_components: 2
 
@@ -181,6 +197,14 @@ jobs:
               sudo cp /tmp/deploy/Caddyfile.prod /opt/nester/Caddyfile
             fi
 
+            # Update CloudWatch config script (if exists)
+            if [ -f /tmp/deploy/configure-docker-cloudwatch.sh ]; then
+              echo "Updating configure-docker-cloudwatch.sh..."
+              sudo cp /tmp/deploy/configure-docker-cloudwatch.sh /opt/nester/configure-docker-cloudwatch.sh
+              sudo chmod +x /opt/nester/configure-docker-cloudwatch.sh
+              sudo chown ec2-user:ec2-user /opt/nester/configure-docker-cloudwatch.sh
+            fi
+
             # Clean up
             rm -rf /tmp/deploy
 
@@ -194,26 +218,43 @@ jobs:
             echo "=== Deployment complete ==="
 
   # Verify deployment
+  # Health check is mandatory - workflow fails if this fails
   verify:
     name: Health Check
-    needs: deploy
-    if: needs.deploy.result == 'success'
+    needs: [deploy]
+    if: always() && needs.deploy.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Wait for services to stabilize
         run: sleep 30
 
-      - name: Health check
+      - name: Backend health check
         run: |
-          echo "Verifying deployment at ${{ env.PUBLIC_URL }}..."
-          curl -f --retry 3 --retry-delay 10 ${{ env.PUBLIC_URL }}/health || \
-          curl -f --retry 3 --retry-delay 10 http://${{ secrets.LIGHTSAIL_HOST }}:7860/health
-          echo "Health check passed!"
+          echo "Checking backend at ${{ env.PUBLIC_URL }}/health..."
+          curl -f --retry 5 --retry-delay 10 --retry-all-errors ${{ env.PUBLIC_URL }}/health
+          echo "Backend health check passed!"
+
+      - name: Frontend health check
+        run: |
+          echo "Checking frontend at ${{ env.PUBLIC_URL }}..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 10 ${{ env.PUBLIC_URL }}/)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Frontend returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "Frontend health check passed!"
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## Deployment Health Check Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: ${{ env.PUBLIC_URL }}/health ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: ${{ env.PUBLIC_URL }}/ ✅" >> $GITHUB_STEP_SUMMARY
 
   # Notify on failure
   notify:
     name: Notify on Failure
-    needs: [build-backend, build-frontend, deploy, verify]
+    needs: [build-backend, build-frontend, sync-config, deploy, verify]
     if: failure()
     runs-on: ubuntu-latest
     steps:
