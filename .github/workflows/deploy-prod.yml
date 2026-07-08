@@ -52,6 +52,11 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: changes
         with:
+          # Compare against the previous push on THIS branch. Without this,
+          # dorny/paths-filter defaults to diffing against the repo default
+          # branch (main) — which silently skipped a production deploy the
+          # moment main was synced with release/v1.0 (July 8 outage fix).
+          base: ${{ github.ref_name }}
           filters: |
             backend:
               - 'app/**'
