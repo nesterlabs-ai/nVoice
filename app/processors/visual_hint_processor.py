@@ -284,7 +284,9 @@ class VisualHintProcessor(FrameProcessor):
                 raw_text = frame.text if hasattr(frame, 'text') else str(frame)
                 # Strip Llama-native function call syntax before emitting to frontend
                 text = self._strip_function_calls(raw_text)
-                logger.debug(f"📝 [SUBTITLE] TextFrame received: '{raw_text[:80]}...' (len={len(raw_text)}, stream_words={self.stream_words})")
+                # TRACE: fires once per streamed token — at debug it floods the
+                # sink hard enough to stall the event loop on long answers.
+                logger.trace(f"📝 [SUBTITLE] TextFrame received: '{raw_text[:80]}...' (len={len(raw_text)}, stream_words={self.stream_words})")
                 if text and text.strip():
                     if self.stream_words:
                         logger.debug(f"📤 [SUBTITLE] Emitting streaming text for: '{text[:50]}...'")
@@ -296,9 +298,9 @@ class VisualHintProcessor(FrameProcessor):
                     if self.detect_content:
                         await self._detect_and_emit_hints()
 
-        # Always pass frame downstream to TTS
+        # Always pass frame downstream to TTS (trace: once per streamed token)
         if isinstance(frame, TextFrame):
-            logger.debug(f"➡️ [SUBTITLE] Passing TextFrame downstream to TTS: '{frame.text[:50] if hasattr(frame, 'text') else str(frame)[:50]}...'")
+            logger.trace(f"➡️ [SUBTITLE] Passing TextFrame downstream to TTS: '{frame.text[:50] if hasattr(frame, 'text') else str(frame)[:50]}...'")
         await self.push_frame(frame, direction)
 
     def _strip_function_calls(self, text: str) -> str:

@@ -7,6 +7,7 @@ FastAPI HTTP endpoints and WebSocket server for real-time voice communication.
 
 import asyncio
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
@@ -14,6 +15,16 @@ import uvicorn
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+
+# Reconfigure loguru BEFORE importing app modules (they log at import time).
+# The default sink is a SYNCHRONOUS stderr write at DEBUG level: during long
+# bot answers the per-word debug flood blocked the asyncio event loop whenever
+# the terminal fell behind, stalling WebSocket audio receive (observed live:
+# Flux "No audio received for 500 ms" watchdogs, mic frames at half rate, then
+# a burst of queued turns interrupting the bot). enqueue=True moves writes to a
+# background thread; INFO default kills the flood. LOG_LEVEL=DEBUG re-enables.
+logger.remove()
+logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"), enqueue=True)
 
 from app.api.routes import router
 from app.api.websocket import websocket_endpoint

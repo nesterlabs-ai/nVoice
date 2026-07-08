@@ -143,25 +143,32 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             # No filters
             logger.warning(f"[Session {session_id}] ⚠️ No audio filters enabled - raw audio will be used")
 
+        is_flux = full_config.get("stt", {}).get("provider") == "deepgram_flux"
+
         # VAD tuning lives in config.yaml (server.vad); these are only fallbacks if
         # a key is missing. Kept in sync with the relaxed config values — barge-in
         # noise rejection is handled by MinWordsUserTurnStartStrategy on the aggregator.
-        vad_params = VADParams(
-            confidence=vad_config.get("confidence", 0.75),
-            start_secs=vad_config.get("start_secs", 0.2),
-            stop_secs=vad_config.get("stop_secs", 0.5),
-            min_volume=vad_config.get("min_volume", 0.65),
-        )
-        vad_analyzer = SileroVADAnalyzer(params=vad_params)
+        vad_analyzer = None
+        if is_flux:
+            # Flux detects speech start/stop model-side — no local VAD needed.
+            logger.info(f"[Session {session_id}] 🎤 VAD: SKIPPED (Deepgram Flux owns speech detection)")
+        else:
+            vad_params = VADParams(
+                confidence=vad_config.get("confidence", 0.75),
+                start_secs=vad_config.get("start_secs", 0.2),
+                stop_secs=vad_config.get("stop_secs", 0.5),
+                min_volume=vad_config.get("min_volume", 0.65),
+            )
+            vad_analyzer = SileroVADAnalyzer(params=vad_params)
 
-        # Barge-in gating is configured on the user aggregator
-        # (MinWordsUserTurnStartStrategy), not at the transport/pipeline level.
+            # Barge-in gating is configured on the user aggregator
+            # (MinWordsUserTurnStartStrategy), not at the transport/pipeline level.
 
-        logger.info(
-            f"[Session {session_id}] 🎤 VAD configured: confidence={vad_params.confidence}, "
-            f"start_secs={vad_params.start_secs}, stop_secs={vad_params.stop_secs}, "
-            f"min_volume={vad_params.min_volume}"
-        )
+            logger.info(
+                f"[Session {session_id}] 🎤 VAD configured: confidence={vad_params.confidence}, "
+                f"start_secs={vad_params.start_secs}, stop_secs={vad_params.stop_secs}, "
+                f"min_volume={vad_params.min_volume}"
+            )
 
         # ===== SMARTTURN V3 - built here, attached to the user aggregator =====
         # (pipecat 1.x: end-of-turn detection moved off the transport; the
@@ -169,7 +176,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # aggregator via TurnAnalyzerUserTurnStopStrategy.)
         smart_turn_config = server_config.get("smart_turn", {})
         turn_analyzer = None
-        is_flux = full_config.get("stt", {}).get("provider") == "deepgram_flux"
         if is_flux:
             # Deepgram Flux owns end-of-turn detection — skip loading the
             # SmartTurn ONNX model entirely for this session.
