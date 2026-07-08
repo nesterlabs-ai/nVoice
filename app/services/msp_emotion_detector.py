@@ -408,8 +408,9 @@ class MSPEmotionDetector:
                 gc.collect()
                 logger.debug(f"🧹 GC after {self._inference_count} inferences")
 
-            # Log detection
-            logger.info(
+            # Audio-model detail at debug; the fused hybrid emotion event is
+            # the INFO-level per-turn signal.
+            logger.debug(
                 f"MSP: A={arousal:.2f} D={dominance:.2f} V={valence:.2f} -> "
                 f"{emotion}({confidence:.0%}) -> {tone}"
             )

@@ -91,9 +91,9 @@ class STTCorrectionsMixin:
             frame: Frame to push
             direction: Frame direction
         """
-        # Log and normalize TranscriptionFrames
+        # Normalize TranscriptionFrames and record the user turn in the
+        # conversation transcript (console + logs/transcript.log).
         if isinstance(frame, TranscriptionFrame):
-            logger.info(f"🎤 STT push_frame: TranscriptionFrame text='{frame.text}'")
             if frame.text:
                 corrected = self._apply_corrections(self._normalize_text(frame.text))
                 if corrected != frame.text:
@@ -104,21 +104,9 @@ class STTCorrectionsMixin:
                         timestamp=frame.timestamp,
                         language=getattr(frame, "language", None),
                     )
+            logger.bind(transcript=True).info(f"🗣️ USER: {frame.text}")
 
         await super().push_frame(frame, direction)
-
-    async def queue_frame(self, frame: Frame, direction: FrameDirection = FrameDirection.DOWNSTREAM) -> None:
-        """Override queue_frame to log transcription frames.
-
-        Args:
-            frame: Frame to queue
-            direction: Frame direction
-        """
-        # Log TranscriptionFrames
-        if isinstance(frame, TranscriptionFrame):
-            logger.info(f"🎤 STT queue_frame: TranscriptionFrame text='{frame.text}'")
-
-        await super().queue_frame(frame, direction)
 
 
 class TextNormalizedDeepgramSTTService(STTCorrectionsMixin, DeepgramSTTService):

@@ -26,6 +26,21 @@ from loguru import logger
 logger.remove()
 logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"), enqueue=True)
 
+# Dedicated conversation transcript: records logged via
+# logger.bind(transcript=True) (see STT user turns and SubtitleSyncProcessor
+# bot turns) land BOTH on the console and in logs/transcript.log, giving a
+# clean spoken-dialogue record per run without the pipeline noise.
+os.makedirs("logs", exist_ok=True)
+logger.add(
+    "logs/transcript.log",
+    level="INFO",
+    enqueue=True,
+    rotation="10 MB",
+    retention=10,
+    filter=lambda record: record["extra"].get("transcript", False),
+    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {message}",
+)
+
 from app.api.routes import router
 from app.api.websocket import websocket_endpoint
 from app.config.loader import get_assistant_config

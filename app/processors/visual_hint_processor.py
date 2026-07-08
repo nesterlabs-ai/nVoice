@@ -267,7 +267,7 @@ class VisualHintProcessor(FrameProcessor):
                 # Reset function-call leak filter for the new turn
                 self._fn_active = False
                 self._fn_partial = ""
-                logger.info(f"📝 LLMFullResponseStart → new utterance: {self._current_utterance_id}")
+                logger.debug(f"📝 LLMFullResponseStart → new utterance: {self._current_utterance_id}")
 
             # LLM response finished — flush any partial word and finalize
             elif isinstance(frame, LLMFullResponseEndFrame):
@@ -277,16 +277,13 @@ class VisualHintProcessor(FrameProcessor):
                     await self._emit_word(self._word_buffer, self._sequence_counter)
                     self._word_buffer = ""
                 await self.finalize_utterance()
-                logger.info(f"📝 LLMFullResponseEnd → utterance finalized")
+                logger.debug(f"📝 LLMFullResponseEnd → utterance finalized")
 
             # Stream text chunks word-by-word
             elif isinstance(frame, TextFrame):
                 raw_text = frame.text if hasattr(frame, 'text') else str(frame)
                 # Strip Llama-native function call syntax before emitting to frontend
                 text = self._strip_function_calls(raw_text)
-                # TRACE: fires once per streamed token — at debug it floods the
-                # sink hard enough to stall the event loop on long answers.
-                logger.trace(f"📝 [SUBTITLE] TextFrame received: '{raw_text[:80]}...' (len={len(raw_text)}, stream_words={self.stream_words})")
                 if text and text.strip():
                     if self.stream_words:
                         logger.debug(f"📤 [SUBTITLE] Emitting streaming text for: '{text[:50]}...'")
@@ -298,9 +295,7 @@ class VisualHintProcessor(FrameProcessor):
                     if self.detect_content:
                         await self._detect_and_emit_hints()
 
-        # Always pass frame downstream to TTS (trace: once per streamed token)
-        if isinstance(frame, TextFrame):
-            logger.trace(f"➡️ [SUBTITLE] Passing TextFrame downstream to TTS: '{frame.text[:50] if hasattr(frame, 'text') else str(frame)[:50]}...'")
+        # Always pass frame downstream to TTS
         await self.push_frame(frame, direction)
 
     def _strip_function_calls(self, text: str) -> str:

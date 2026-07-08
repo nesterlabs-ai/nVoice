@@ -345,19 +345,6 @@ class ToneAwareProcessor(FrameProcessor):
             await self.push_frame(frame, direction)
             return
 
-        # Periodic frame type logging (every 500 audio frames)
-        if isinstance(frame, AudioRawFrame):
-            if not hasattr(self, '_frame_count'):
-                self._frame_count = 0
-            self._frame_count += 1
-            if self._frame_count % 500 == 1:
-                logger.debug(
-                    f"[EMOTION-DIAG] AudioRawFrame #{self._frame_count}: "
-                    f"direction={direction}, audio_len={len(frame.audio)}, "
-                    f"sample_rate={getattr(frame, 'sample_rate', 'N/A')}, "
-                    f"detector_connected={self.emotion_detector.is_connected}"
-                )
-
         # Track bot speaking state to avoid interrupting speech
         if isinstance(frame, BotStartedSpeakingFrame):
             self._bot_is_speaking = True
@@ -418,9 +405,10 @@ class ToneAwareProcessor(FrameProcessor):
             text = getattr(frame, "text", "")
             is_final = isinstance(frame, TranscriptionFrame)
 
-            # Only log final transcriptions at INFO; interim at DEBUG
+            # User turns are recorded in the transcript by the STT service;
+            # here only debug-level plumbing detail.
             if is_final:
-                logger.info(f"📥 TranscriptionFrame: '{text}'")
+                logger.debug(f"📥 TranscriptionFrame: '{text}'")
                 # Start the turn-latency clock (stopped on BotStartedSpeakingFrame)
                 self._turn_latency_t0 = time.time()
             else:
@@ -429,8 +417,6 @@ class ToneAwareProcessor(FrameProcessor):
             # Store transcript for hybrid mode
             if text and text.strip():
                 self._latest_transcript = text
-                if is_final:
-                    logger.info(f"💾 Stored transcript for hybrid: '{text[:50]}'...")
 
                 # Forward to VisualHintProcessor for A2UI query capture
                 if self._visual_hint_processor is not None:
@@ -538,13 +524,12 @@ class ToneAwareProcessor(FrameProcessor):
                 )
 
                 if audio_result is None:
-                    logger.warning(
-                        f"[EMOTION-DIAG] process_audio returned None! "
-                        f"enabled={self.emotion_detector.enabled}, "
-                        f"is_connected={self.emotion_detector.is_connected}, "
-                        f"model={self.emotion_detector.model is not None}, "
-                        f"buffer_len={len(audio_buffer)}, "
-                        f"min_bytes_needed={int(sample_rate * 2 * 0.5)}"
+                    # Expected for very short utterances (<0.5s of audio) —
+                    # not a fault, so debug rather than warning.
+                    logger.debug(
+                        f"[EMOTION-DIAG] process_audio returned None "
+                        f"(buffer_len={len(audio_buffer)}, "
+                        f"min_bytes_needed={int(sample_rate * 2 * 0.5)})"
                     )
                     return
 
@@ -564,21 +549,18 @@ class ToneAwareProcessor(FrameProcessor):
                         transcript=transcript
                     )
 
-                    # Log detailed hybrid results
-                    logger.info(
-                        f"🎯 [BG] HYBRID RESULT:\n"
-                        f"  Primary Emotion: {hybrid_result['primary_emotion']} "
-                        f"(confidence: {hybrid_result['overall_confidence']:.0%})\n"
-                        f"  Audio: {audio_dict['emotion']} ({audio_dict['confidence']:.0%}) "
-                        f"× {hybrid_result['weights']['audio']:.0%}\n"
-                        f"  Text:  {hybrid_result['components']['text']['emotion']} "
-                        f"({hybrid_result['components']['text']['confidence']:.0%}) "
-                        f"× {hybrid_result['weights']['text']:.0%}\n"
-                        f"  Mismatch: {hybrid_result['mismatch_detected']} "
-                        f"{hybrid_result.get('interpretation', '')}\n"
-                        f"  Fused A/V/D: {hybrid_result['arousal']:.2f}/"
-                        f"{hybrid_result['valence']:.2f}/{hybrid_result['dominance']:.2f}\n"
-                        f"  Tokens Used: {hybrid_result['tokens_used']}"
+                    # Detailed breakdown at debug; the one-line hybrid emotion
+                    # event below is the INFO-level per-turn signal.
+                    logger.debug(
+                        f"🎯 [BG] HYBRID RESULT: "
+                        f"{hybrid_result['primary_emotion']} "
+                        f"({hybrid_result['overall_confidence']:.0%}) | "
+                        f"audio={audio_dict['emotion']}/{audio_dict['confidence']:.0%} "
+                        f"text={hybrid_result['components']['text']['emotion']}/"
+                        f"{hybrid_result['components']['text']['confidence']:.0%} | "
+                        f"mismatch={hybrid_result['mismatch_detected']} | "
+                        f"A/V/D={hybrid_result['arousal']:.2f}/"
+                        f"{hybrid_result['valence']:.2f}/{hybrid_result['dominance']:.2f}"
                     )
 
                     # Update state with hybrid results (thread-safe for asyncio)
@@ -722,7 +704,7 @@ class ToneAwareProcessor(FrameProcessor):
             is_stable = self._is_tone_stable(tone, confidence)
             has_tts = self.tts_service is not None
 
-            logger.info(
+            logger.debug(
                 f"VOICE SWITCH CHECK: tone={tone}, stable={is_stable}, "
                 f"tts_connected={has_tts}, current={current_tone}"
             )
