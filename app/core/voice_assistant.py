@@ -247,15 +247,20 @@ class VoiceAssistant:
         # mute are configured here (on the user aggregator) rather than on the
         # transport, so pass the analyzers built by the transport layer.
         idle_cfg = self.config.get("server", {}).get("idle_reengage", {})
+        # Deepgram Flux owns turn detection (model-native EOT + interruption),
+        # so the aggregator switches to external strategies and VAD/SmartTurn
+        # are not attached.
+        is_flux = self.config.get("stt", {}).get("provider") == "deepgram_flux"
         context_aggregator = self.conversation_manager.create_context_aggregator(
-            vad_analyzer=getattr(self, "_vad_analyzer", None),
-            turn_analyzer=getattr(self, "_turn_analyzer", None),
+            vad_analyzer=None if is_flux else getattr(self, "_vad_analyzer", None),
+            turn_analyzer=None if is_flux else getattr(self, "_turn_analyzer", None),
             interruption_config=self.config.get("server", {}).get("interruption", {}),
             user_idle_timeout=(
                 float(idle_cfg.get("timeout_secs", 25))
                 if idle_cfg.get("enabled", True)
                 else 0
             ),
+            external_turn_control=is_flux,
         )
 
         # Gentle re-engagement when the caller goes quiet (native 1.4.0

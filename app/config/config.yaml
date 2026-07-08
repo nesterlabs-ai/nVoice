@@ -9,12 +9,31 @@ language:
   auto_detect: false
 
 stt:
-  provider: "deepgram"
+  # "deepgram_flux": conversational STT with model-native turn detection —
+  #   replaces the whole VAD-stop_secs / SmartTurn / endpointing tuning surface
+  #   with one prosody-aware EOT decision, and interruption is driven by the
+  #   model's StartOfTurn (trained to ignore noise/backchannels).
+  # "deepgram": the previous Nova-3 + Silero VAD + SmartTurn v3 stack —
+  #   one-line revert if Flux turn-feel disappoints on live calls.
+  provider: "deepgram_flux"
   config:
     device: "cpu"  # CPU for Lightsail/EC2 deployments
-    model: "nova-3"  # Nova 3 - Latest and most accurate Deepgram STT model
+    model: "nova-3"  # Nova 3 - used by the "deepgram" (non-flux) provider
     api_key: "${DEEPGRAM_API_KEY}"
     language: "en"  # English only
+
+    # Flux-only settings (ignored by the "deepgram" provider)
+    flux:
+      model: "flux-general-en"
+      eot_threshold: 0.7        # EOT confidence to finish a turn. Lower = snappier,
+                                # higher = waits longer for multi-clause speakers.
+      # eot_timeout_ms: 3000    # hard cap on post-speech silence (Flux default if unset)
+      # eager_eot_threshold: 0.5  # OFF by default. Enables EagerEndOfTurn: speculative
+                                  # LLM calls before EOT confirms (TurnResumed cancels).
+                                  # Next latency lever — costs extra LLM calls.
+      native_interruption: true # Flux StartOfTurn barges in directly. Set false AND
+                                # server.interruption.flux_min_words_gate: true to
+                                # fall back to the MinWords word-count gate instead.
 
     # Tuned to give natural multi-clause speakers room before finalizing a transcript.
     # CloudWatch evidence (Patricia session, May 20): with endpointing=300ms, a single
@@ -361,6 +380,8 @@ server:
   interruption:
     enabled: true          # false → fall back to pipecat default start strategies (VAD + transcription)
     min_words: 2           # words required to barge in DURING bot speech (idle turns need only 1)
+    flux_min_words_gate: false  # Flux hybrid: true (+ stt.config.flux.native_interruption: false)
+                                # keeps the MinWords barge-in gate while Flux drives EOT
 
   # Smart interruption - Context-aware validation
   # Prevents false interruptions from background conversations/TV/music

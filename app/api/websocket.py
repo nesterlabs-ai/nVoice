@@ -169,7 +169,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # aggregator via TurnAnalyzerUserTurnStopStrategy.)
         smart_turn_config = server_config.get("smart_turn", {})
         turn_analyzer = None
-        if smart_turn_config.get("enabled", False):
+        is_flux = full_config.get("stt", {}).get("provider") == "deepgram_flux"
+        if is_flux:
+            # Deepgram Flux owns end-of-turn detection — skip loading the
+            # SmartTurn ONNX model entirely for this session.
+            logger.info(f"[Session {session_id}] 🧠 SmartTurn v3: SKIPPED (Deepgram Flux owns turn detection)")
+        elif smart_turn_config.get("enabled", False):
             try:
                 from app.processors.logging_turn_analyzer import LoggingSmartTurnAnalyzer
                 cpu_count = smart_turn_config.get("cpu_count", 1)

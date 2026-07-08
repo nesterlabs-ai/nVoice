@@ -37,6 +37,14 @@ from pipecat.turns.user_turn_completion_mixin import UserTurnCompletionConfig
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
 )
+# Deepgram Flux path: the STT model owns turn detection and broadcasts
+# UserStarted/StoppedSpeaking itself, so the aggregator uses external strategies.
+from pipecat.turns.user_start.external_user_turn_start_strategy import (
+    ExternalUserTurnStartStrategy,
+)
+from pipecat.turns.user_stop.external_user_turn_stop_strategy import (
+    ExternalUserTurnStopStrategy,
+)
 # Barge-in gating: min_words applies ONLY while the bot is speaking (blocks
 # "yeah"/"okay" backchannels from interrupting), and drops to 1 word when the bot
 # is idle (so a 1-word answer like "yes" still registers). Transcription-based, so
@@ -766,6 +774,7 @@ CRITICAL RAG RULES (SPEED IS IMPORTANT):
         turn_analyzer: Any = None,
         interruption_config: Optional[Dict[str, Any]] = None,
         user_idle_timeout: float = 0,
+        external_turn_control: bool = False,
     ) -> Any:
         """Create the context aggregator for the conversation.
 
@@ -797,11 +806,17 @@ CRITICAL RAG RULES (SPEED IS IMPORTANT):
         # Only ✓ finalizes the turn; ○/◐ keep it open so multi-clause speakers are
         # not cut off mid-thought. This is a semantic fix for the fragmented long
         # turns seen in CloudWatch, layered on top of the SmartTurn detector.
-        stop_strategies = (
-            [TurnAnalyzerUserTurnStopStrategy(turn_analyzer=turn_analyzer)]
-            if turn_analyzer is not None
-            else None
-        )
+        if external_turn_control:
+            # Deepgram Flux path: the STT model broadcasts start/stop-of-turn
+            # itself (and drives interruption when native_interruption=true), so
+            # the aggregator defers to external signals. VAD/SmartTurn unused.
+            stop_strategies = [ExternalUserTurnStopStrategy()]
+        else:
+            stop_strategies = (
+                [TurnAnalyzerUserTurnStopStrategy(turn_analyzer=turn_analyzer)]
+                if turn_analyzer is not None
+                else None
+            )
 
         # Barge-in START strategy. MinWordsUserTurnStartStrategy is used ALONE (no
         # extra VAD/Transcription start strategy) because start strategies are OR'd
@@ -813,7 +828,24 @@ CRITICAL RAG RULES (SPEED IS IMPORTANT):
         # backchannel/background-voice rejection) — requires the krisp_audio SDK.
         interruption_config = interruption_config or {}
         start_strategies = None
-        if interruption_config.get("enabled", True):
+        if external_turn_control:
+            if interruption_config.get("flux_min_words_gate", False):
+                # Hybrid: Flux drives EOT but barge-in stays word-count gated
+                # (pair with stt.config.flux.native_interruption: false).
+                barge_in_min_words = int(interruption_config.get("min_words", 2))
+                start_strategies = [
+                    MinWordsUserTurnStartStrategy(min_words=barge_in_min_words, use_interim=True)
+                ]
+                logger.info(
+                    f"🎤 Barge-in: HYBRID — Flux EOT + MinWords gate "
+                    f"(min_words={barge_in_min_words} during bot speech)"
+                )
+            else:
+                start_strategies = [ExternalUserTurnStartStrategy()]
+                logger.info(
+                    "🎤 Barge-in: Flux-native (model StartOfTurn drives turn + interruption)"
+                )
+        elif interruption_config.get("enabled", True):
             barge_in_min_words = int(interruption_config.get("min_words", 2))
             start_strategies = [
                 MinWordsUserTurnStartStrategy(min_words=barge_in_min_words, use_interim=True)
