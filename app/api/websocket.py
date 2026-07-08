@@ -253,17 +253,28 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
 
         # Log complete audio processing pipeline
-        smart_turn_desc = "SmartTurn v3 (transport)" if turn_analyzer else "Transcription-based"
+        # (vad_analyzer/vad_params only exist on the non-Flux path — referencing
+        # vad_params unconditionally here killed every session in prod)
+        if is_flux:
+            vad_desc = "Flux model-native (no local VAD)"
+            turn_desc = "Deepgram Flux EOT + LLM markers"
+            stt_desc = "Deepgram Flux (flux-general-en)"
+        else:
+            vad_desc = (
+                f"Silero (conf={vad_params.confidence}, "
+                f"start={vad_params.start_secs}s, vol={vad_params.min_volume})"
+            )
+            turn_desc = "SmartTurn v3 (aggregator)" if turn_analyzer else "Transcription-based"
+            stt_desc = "Deepgram Nova-3"
         logger.info(
             f"[Session {session_id}] 📊 AUDIO PIPELINE SUMMARY:\n"
             f"  ┌─ Input: Microphone (16kHz)\n"
             f"  ├─ Filters: {filter_desc}\n"
-            f"  ├─ VAD: Silero (conf={vad_params.confidence}, start={vad_params.start_secs}s, vol={vad_params.min_volume})\n"
-            f"  ├─ Turn Detection: {smart_turn_desc}\n"
-            f"  ├─ STT Mute: ALWAYS (blocks VAD/STT during bot speech)\n"
-            f"  ├─ STT: Deepgram Nova-3\n"
-            f"  ├─ LLM: Groq Llama-3.3-70b\n"
-            f"  └─ TTS: ElevenLabs (24kHz)"
+            f"  ├─ VAD: {vad_desc}\n"
+            f"  ├─ Turn Detection: {turn_desc}\n"
+            f"  ├─ STT: {stt_desc}\n"
+            f"  ├─ LLM: OpenAI gpt-5.5 (Responses WS)\n"
+            f"  └─ TTS: Cartesia sonic-3.5 (24kHz)"
         )
 
         # Run the voice assistant pipeline for this connection
