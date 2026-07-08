@@ -10,12 +10,16 @@ import re
 import unicodedata
 from typing import Any, Dict, List, Tuple
 
-from deepgram import LiveOptions
+# deepgram-sdk 7.x removed the top-level `LiveOptions`. Pipecat 1.4.0 ships a
+# compatibility shim mirroring the old class; import it from there.
+from pipecat.services.deepgram.stt import LiveOptions
 from loguru import logger
 from pipecat.frames.frames import Frame, TranscriptionFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.whisper.stt import WhisperSTTService
+# WhisperSTTService (and its faster_whisper dependency) is imported lazily in
+# _initialize_service() only when the whisper provider is selected. Deepgram is
+# the production provider and faster_whisper is not installed in that path.
 from pipecat.transcriptions.language import Language
 
 
@@ -156,6 +160,7 @@ class SpeechToTextService:
             ValueError: If provider is unsupported or API key is missing
         """
         if self.stt_provider == "whisper":
+            from pipecat.services.whisper.stt import WhisperSTTService
             self.stt_service = WhisperSTTService(
                 device=self.config.get("device", "cpu"),
                 model=self.config.get("model", "small"),
@@ -172,16 +177,28 @@ class SpeechToTextService:
             live_options_config = {
                 "model": self.config.get("model", "nova-2"),
                 "smart_format": self.config.get("smart_format", True),
-                "filler_words": self.config.get("filler_words", False),
                 "punctuate": self.config.get("punctuate", True),
                 "endpointing": self.config.get("endpointing", 500),
                 "utterance_end_ms": self.config.get("utterance_end_ms", 1200),
                 "interim_results": self.config.get("interim_results", True),
-                # CRITICAL: Disable Deepgram VAD events to prevent false interruptions
-                # The local Silero VAD handles speech detection with tuned parameters
-                # Deepgram VAD was causing bot to be cut off on deployed version
-                "vad_events": self.config.get("vad_events", False),
             }
+            # Nova-3 keyterm prompting: bias recognition toward brand/founder terms
+            # at DECODE time, so "Nesterlabs" doesn't come out as "Nestle labs" in
+            # the first place. Complements (and should shrink) the regex
+            # corrections below, which only patch mistakes after the fact.
+            keyterms = self.config.get("keyterms")
+            if keyterms:
+                live_options_config["keyterm"] = list(keyterms)
+                logger.info(f"Deepgram keyterm boosting: {len(keyterms)} terms")
+
+            # NOTE: `filler_words` and `vad_events` are intentionally NOT passed.
+            # deepgram-sdk 7.x (pulled in by pipecat 1.4.0) removed them from
+            # AsyncV1Client.connect(); pipecat's LiveOptions shim forwards unknown
+            # options as raw kwargs, so passing either raises
+            # "connect() got an unexpected keyword argument 'filler_words'" and the
+            # STT socket retries forever. Both default to False in Deepgram anyway
+            # (no filler words returned; local Silero VAD handles speech detection),
+            # so omitting them preserves the previous behavior.
 
             # NOTE: Deepgram's `keywords` param breaks Nova-3 WebSocket connections.
             # Proper noun correction is handled via config-driven post-processing

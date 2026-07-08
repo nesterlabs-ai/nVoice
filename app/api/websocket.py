@@ -52,7 +52,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         from pipecat.serializers.protobuf import ProtobufFrameSerializer
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.audio.vad.vad_analyzer import VADParams
-        # MinWordsInterruptionStrategy moved to voice_assistant.py (PipelineParams level)
+        # Barge-in is a user-turn-start strategy on the aggregator (pipecat 1.x),
+        # configured in ConversationManager.create_context_aggregator.
 
         # Get configuration from config.yaml
         # Note: server_config from voice_assistant_server may not have all keys if initialized
@@ -142,18 +143,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             # No filters
             logger.warning(f"[Session {session_id}] ⚠️ No audio filters enabled - raw audio will be used")
 
-        # Stricter VAD settings to prevent false barge-ins from background noise
-        # MinWordsInterruptionStrategy (below) provides additional filtering
+        # VAD tuning lives in config.yaml (server.vad); these are only fallbacks if
+        # a key is missing. Kept in sync with the relaxed config values — barge-in
+        # noise rejection is handled by MinWordsUserTurnStartStrategy on the aggregator.
         vad_params = VADParams(
-            confidence=vad_config.get("confidence", 0.7),     # HIGHER - only trigger on clear speech
-            start_secs=vad_config.get("start_secs", 0.5),      # SLOWER - require 500ms of speech (filters noise)
-            stop_secs=vad_config.get("stop_secs", 1.0),        # Wait 1s of silence before ending utterance
-            min_volume=vad_config.get("min_volume", 0.65),     # HIGHER - ignore quiet background noise
+            confidence=vad_config.get("confidence", 0.75),
+            start_secs=vad_config.get("start_secs", 0.2),
+            stop_secs=vad_config.get("stop_secs", 0.5),
+            min_volume=vad_config.get("min_volume", 0.65),
         )
         vad_analyzer = SileroVADAnalyzer(params=vad_params)
 
-        # Interruption strategy is configured in voice_assistant.py via PipelineParams
-        # (MinWordsInterruptionStrategy is a pipeline-level param, not transport-level)
+        # Barge-in gating is configured on the user aggregator
+        # (MinWordsUserTurnStartStrategy), not at the transport/pipeline level.
 
         logger.info(
             f"[Session {session_id}] 🎤 VAD configured: confidence={vad_params.confidence}, "
@@ -161,18 +163,25 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             f"min_volume={vad_params.min_volume}"
         )
 
-        # ===== SMARTTURN V3 - Configured at transport level (pipecat 0.0.98) =====
+        # ===== SMARTTURN V3 - built here, attached to the user aggregator =====
+        # (pipecat 1.x: end-of-turn detection moved off the transport; the
+        # analyzer is passed to voice_assistant.run() and wired into the
+        # aggregator via TurnAnalyzerUserTurnStopStrategy.)
         smart_turn_config = server_config.get("smart_turn", {})
         turn_analyzer = None
         if smart_turn_config.get("enabled", False):
             try:
                 from app.processors.logging_turn_analyzer import LoggingSmartTurnAnalyzer
                 cpu_count = smart_turn_config.get("cpu_count", 1)
+                # `timeout` (silence settle window before end-of-turn) maps onto
+                # pipecat 1.x SmartTurnParams.stop_secs. Preserves the tuned value.
+                stop_secs = smart_turn_config.get("timeout")
                 turn_analyzer = LoggingSmartTurnAnalyzer(
                     cpu_count=cpu_count,
-                    session_id=session_id
+                    session_id=session_id,
+                    stop_secs=stop_secs,
                 )
-                logger.info(f"[Session {session_id}] 🧠 SmartTurn v3: ENABLED at transport level (ONNX ML model)")
+                logger.info(f"[Session {session_id}] 🧠 SmartTurn v3: ENABLED on user aggregator (ONNX ML model)")
             except Exception as e:
                 logger.error(f"[Session {session_id}] 🧠 SmartTurn v3: Failed to initialize: {e}")
                 logger.info(f"[Session {session_id}] 🧠 Falling back to transcription-based detection")
@@ -180,18 +189,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             logger.info(f"[Session {session_id}] 🧠 SmartTurn v3: DISABLED (using transcription-based detection)")
 
         # Create transport parameters for this connection
+        # pipecat 1.x: vad_analyzer / turn_analyzer moved OFF the transport and
+        # onto the user aggregator. They are now passed to voice_assistant.run()
+        # below and wired in ConversationManager.create_context_aggregator().
         transport_params = FastAPIWebsocketParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
             add_wav_header=False,
-            vad_enabled=True,
-            vad_analyzer=vad_analyzer,
-            vad_audio_passthrough=True,
             serializer=ProtobufFrameSerializer(),
             audio_in_filter=audio_in_filter,  # AIC or Koala (single filter only)
             audio_in_sample_rate=16000,  # Koala/AIC require 16 kHz input
             audio_out_sample_rate=24000,  # Chatterbox TTS outputs 24 kHz
-            turn_analyzer=turn_analyzer,  # SmartTurn v3 ML-based end-of-turn detection
         )
 
         # Build filter description for logging
@@ -249,7 +257,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
         # Run the voice assistant pipeline for this connection
         # This will block until the connection closes
-        await voice_assistant.run(transport, handle_sigint=False)
+        await voice_assistant.run(
+            transport,
+            handle_sigint=False,
+            vad_analyzer=vad_analyzer,
+            turn_analyzer=turn_analyzer,
+        )
 
         logger.info(f"[Session {session_id}] Session completed normally")
 

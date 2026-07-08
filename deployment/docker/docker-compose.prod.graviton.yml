@@ -82,8 +82,15 @@ services:
     restart: always
     expose:
       - "80"
+    env_file:
+      - .env  # Pass through LIGHTRAG_API_KEY etc. from the EC2 instance .env
     environment:
       - BACKEND_URL=${PUBLIC_URL:-https://ai.nesterlabs.com}
+      # Knowledge graph widget — must be passed in so docker-entrypoint.sh writes
+      # them into runtime config.js. Without these, the entrypoint falls back to a
+      # stale default key and the widget returns {"detail":"Invalid API Key"}.
+      - LIGHTRAG_URL=${LIGHTRAG_BASE_URL:-https://lightrag.nesterlabs.com}
+      - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY}
     depends_on:
       backend:
         condition: service_healthy

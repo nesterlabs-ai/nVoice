@@ -23,17 +23,17 @@ from pipecat.frames.frames import (
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
-from pipecat.processors.filters.stt_mute_filter import STTMuteFilter, STTMuteConfig, STTMuteStrategy
-from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
+# STTMuteFilter was removed in pipecat 1.x; muting is now a user-mute strategy
+# on the context aggregator (see ConversationManager.create_context_aggregator).
+# RTVI 2.0 (pipecat 1.4.0) removed RTVIConfig; RTVIProcessor no longer takes a
+# config= (or transport=) argument.
+from pipecat.processors.frameworks.rtvi import RTVIObserver, RTVIProcessor
 from pipecat.transports.base_transport import BaseTransport
 
-# Import interruption strategy for barge-in support
-try:
-    from pipecat.audio.interruptions.min_words_interruption_strategy import MinWordsInterruptionStrategy
-    INTERRUPTION_STRATEGY_AVAILABLE = True
-except ImportError:
-    INTERRUPTION_STRATEGY_AVAILABLE = False
-    logger.warning("MinWordsInterruptionStrategy not available - interruptions may not work correctly")
+# Barge-in / interruption is handled in pipecat 1.x by user-turn-START strategies
+# on the context aggregator (see ConversationManager.create_context_aggregator),
+# not by a PipelineParams interruption strategy. The old
+# `pipecat.audio.interruptions.MinWordsInterruptionStrategy` was removed in 1.x.
 
 from app.services.conversation import ConversationManager
 from app.services.input_analyzer import InputAnalyzer
@@ -46,6 +46,7 @@ from app.processors.text_filter_processor import TextFilterProcessor
 from app.processors.visual_hint_processor import VisualHintProcessor
 from app.processors.smart_interruption_processor import SmartInterruptionProcessor
 from app.processors.subtitle_sync_processor import SubtitleSyncProcessor
+from app.processors.question_card_context_processor import QuestionCardContextProcessor
 
 
 class VoiceAssistant:
@@ -86,7 +87,7 @@ class VoiceAssistant:
         self.pipeline = None
         self.task = None
         self.runner = None
-        self.rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
+        self.rtvi = RTVIProcessor()
         self.latency_analyzer = LatencyAnalyzer()
 
         # STT mute filter - mutes STT only during the first bot greeting
@@ -95,9 +96,9 @@ class VoiceAssistant:
         # Self-interruption prevention relies on:
         #   1. Client-side echoCancellation: true (getUserMedia constraint)
         #   2. VAD params (confidence=0.7, min_volume=0.5, start_secs=0.2)
-        self.stt_mute_filter = STTMuteFilter(
-            config=STTMuteConfig(strategies={STTMuteStrategy.MUTE_UNTIL_FIRST_BOT_COMPLETE})
-        )
+        # STT muting until the first bot turn completes is now handled by
+        # MuteUntilFirstBotCompleteUserMuteStrategy inside the context aggregator
+        # (pipecat 1.x removed the standalone STTMuteFilter processor).
 
         # Tone-aware processor for dynamic voice selection using MSP-PODCAST + LLM text sentiment
         # Uses Google API key for Gemini-based text sentiment detection
@@ -159,6 +160,9 @@ class VoiceAssistant:
         # Track if greeting has been sent (with timestamp to prevent duplicates within 5 seconds)
         self._greeting_sent_at = 0
 
+        # Injects compact per-turn house-answer guidance based on the latest user question.
+        self.question_card_processor = None
+
         logger.info("Initialized Voice Assistant")
 
     def initialize_services(self) -> None:
@@ -208,6 +212,14 @@ class VoiceAssistant:
             a2ui_enabled=a2ui_enabled,
             smart_turn_config=smart_turn_config,  # SmartTurn v3 config for ML-based turn detection
         )
+        self.question_card_processor = QuestionCardContextProcessor(
+            conversation_manager=self.conversation_manager,
+            enabled=conversation_config.get("question_cards_enabled", True),
+        )
+
+        # Detected caller emotion steers the LLM's wording (system-note upsert),
+        # not just the TTS voice.
+        self.tone_processor.set_conversation_manager(self.conversation_manager)
 
         logger.info("All services initialized successfully")
 
@@ -231,8 +243,41 @@ class VoiceAssistant:
         tts = self.tts_service.get_service()
         llm = self.conversation_manager.get_llm_service()
 
-        # Get context aggregator (SmartTurn v3 is now configured here via UserTurnStrategies)
-        context_aggregator = self.conversation_manager.get_context_aggregator()
+        # Get context aggregator. In pipecat 1.x, VAD + SmartTurn v3 + greeting
+        # mute are configured here (on the user aggregator) rather than on the
+        # transport, so pass the analyzers built by the transport layer.
+        idle_cfg = self.config.get("server", {}).get("idle_reengage", {})
+        context_aggregator = self.conversation_manager.create_context_aggregator(
+            vad_analyzer=getattr(self, "_vad_analyzer", None),
+            turn_analyzer=getattr(self, "_turn_analyzer", None),
+            interruption_config=self.config.get("server", {}).get("interruption", {}),
+            user_idle_timeout=(
+                float(idle_cfg.get("timeout_secs", 25))
+                if idle_cfg.get("enabled", True)
+                else 0
+            ),
+        )
+
+        # Gentle re-engagement when the caller goes quiet (native 1.4.0
+        # on_user_turn_idle event — replaces relying solely on the 10-min timeout).
+        self._idle_nudges_sent = 0
+        max_nudges = int(idle_cfg.get("max_nudges", 2))
+        nudge_text = idle_cfg.get(
+            "prompt", "Still with me? Happy to dig into anything else about what we build."
+        )
+
+        @context_aggregator.user().event_handler("on_user_turn_idle")
+        async def on_user_turn_idle(aggregator):
+            # Don't nudge over the bot's own speech, and cap nudges per session.
+            if self.tone_processor and getattr(self.tone_processor, "_bot_is_speaking", False):
+                return
+            if self._idle_nudges_sent >= max_nudges:
+                return
+            self._idle_nudges_sent += 1
+            logger.info(f"💤 User idle — re-engaging ({self._idle_nudges_sent}/{max_nudges})")
+            await self.task.queue_frame(LLMFullResponseStartFrame())
+            await self.task.queue_frame(TextFrame(nudge_text))
+            await self.task.queue_frame(LLMFullResponseEndFrame())
 
         # Store LLM, TTS and context for greeting injection
         self.llm = llm
@@ -287,11 +332,11 @@ class VoiceAssistant:
             logger.info("🛡️ SmartInterruptionProcessor DISABLED - not added to pipeline")
 
         # Continue with rest of pipeline
-        # STTMuteFilter MUST be before context_aggregator.user() to block
-        # VAD/transcription frames during bot speech (prevents self-interruption)
+        # Greeting-mute is now enforced inside context_aggregator.user() via
+        # MuteUntilFirstBotCompleteUserMuteStrategy (pipecat 1.x).
         pipeline_processors.extend([
             self.tone_processor,          # AFTER STT to receive both audio AND transcriptions for hybrid mode
-            self.stt_mute_filter,         # Mute BEFORE context - blocks VAD/STT frames during bot speech
+            self.question_card_processor,  # Inject latest-question house answer guidance before LLM context
             context_aggregator.user(),    # Context aggregator (receives only unmuted frames)
             self.rtvi,
             llm,
@@ -337,21 +382,9 @@ class VoiceAssistant:
             allow_interruptions=True,  # Enable barge-in - user can interrupt bot speech
         )
 
-        # Interruption strategy configuration
-        # When interruption_strategies is set, pipecat DEFERS interruption to the
-        # LLM aggregator (waits for word count check). When empty, pipecat sends
-        # InterruptionFrame IMMEDIATELY on any UserStartedSpeakingFrame during bot speech.
-        # Using immediate interruption for reliable barge-in behavior.
-        server_config = self.config.get("server", {})
-        interruption_config = server_config.get("interruption", {})
-        min_words = interruption_config.get("min_words", 0)
-
-        if INTERRUPTION_STRATEGY_AVAILABLE and min_words > 0:
-            pipeline_params.interruption_strategies = [MinWordsInterruptionStrategy(min_words=min_words)]
-            logger.info(f"🎤 Interruption: DEFERRED mode (MinWords={min_words})")
-        else:
-            # No strategies = immediate interruption on any speech during bot output
-            logger.info(f"🎤 Interruption: IMMEDIATE mode (any speech stops TTS)")
+        # Barge-in gating (min-words) is configured on the user aggregator via
+        # MinWordsUserTurnStartStrategy (see create_context_aggregator), not here.
+        # allow_interruptions=True lets the aggregator emit interruption frames.
 
         self.task = PipelineTask(
             self.pipeline,
@@ -381,14 +414,17 @@ class VoiceAssistant:
             # Start 10-minute session timeout
             asyncio.create_task(self._session_timeout(timeout_secs=600))
 
-            # Wait for pipeline to be fully ready (StartFrame must be processed)
-            await asyncio.sleep(1.5)
+            # Brief settle before greeting. pipecat 1.x's PipelineTask already
+            # blocks until StartFrame traverses the whole pipeline ("pipeline is
+            # now ready" in logs), so the old 1.5s wait double-counted that.
+            await asyncio.sleep(0.5)
             logger.info("🎤 Pipeline ready, sending greeting...")
 
-            # Queue greeting through the TASK so it flows through the full pipeline
-            # This is critical: STTMuteFilter needs to see TTS start/stop frames
-            # to know when bot speech begins/ends. Pushing directly to self.tts
-            # bypasses the pipeline and the mute filter never unmutes.
+            # Queue greeting through the TASK so it flows through the full pipeline.
+            # This is critical: the MuteUntilFirstBotComplete user-mute strategy
+            # needs to see TTS start/stop frames to know when the bot's first
+            # speech begins/ends. Pushing directly to self.tts bypasses the
+            # pipeline and the user is never unmuted.
 
             # Randomized greeting messages for variety
             import random
@@ -435,10 +471,12 @@ Universal pattern: direct answer first, one useful insight, then one good questi
                 self.conversation_manager.context.messages.append(
                     {"role": "system", "content": DESIGNER_TONE_WARMUP}
                 )
-                self.conversation_manager.context.messages.append(
-                    {"role": "assistant", "content": greeting_text}
-                )
-                logger.info("📝 Designer tone warmup + greeting added to conversation context")
+                # The greeting is intentionally NOT appended here: it flows through
+                # the pipeline as TTS and the assistant context aggregator captures
+                # it automatically. Appending it manually duplicated the greeting as
+                # two assistant turns in the LLM context (wasted tokens, confusing
+                # history).
+                logger.info("📝 Designer tone warmup added to conversation context")
 
         @transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
@@ -451,14 +489,28 @@ Universal pattern: direct answer first, one useful insight, then one good questi
 
         logger.info("Transport handlers set up successfully")
 
-    async def run(self, transport: BaseTransport, handle_sigint: bool = True) -> None:
+    async def run(
+        self,
+        transport: BaseTransport,
+        handle_sigint: bool = True,
+        vad_analyzer: Any = None,
+        turn_analyzer: Any = None,
+    ) -> None:
         """Run the voice assistant.
 
         Args:
             transport: The transport layer for audio input/output
             handle_sigint: Whether to handle SIGINT for graceful shutdown
+            vad_analyzer: Silero VAD instance. In pipecat 1.x this attaches to
+                the user aggregator, not the transport.
+            turn_analyzer: SmartTurn v3 end-of-turn analyzer (or None), also
+                attached to the user aggregator in pipecat 1.x.
         """
         logger.info("Starting Voice Assistant...")
+
+        # Stored so create_pipeline() can wire them into the context aggregator.
+        self._vad_analyzer = vad_analyzer
+        self._turn_analyzer = turn_analyzer
 
         # Initialize services if not already done
         if not self.conversation_manager:

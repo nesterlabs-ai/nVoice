@@ -14,8 +14,9 @@
  */
 
 import {
-  RTVIClient,
-  RTVIClientOptions,
+  // client-js 1.x: RTVIClient -> PipecatClient, RTVIClientOptions -> PipecatClientOptions
+  PipecatClient,
+  PipecatClientOptions,
   RTVIEvent,
 } from '@pipecat-ai/client-js';
 import {
@@ -41,7 +42,7 @@ import { USE_LOCAL_BACKEND, LOCAL_BACKEND_URL, REMOTE_BACKEND_URL } from './conf
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 class VoiceScannerApp {
-  private rtviClient: RTVIClient | null = null;
+  private rtviClient: PipecatClient | null = null;
   private transport: WebSocketTransport | null = null;
   private botPlayerAnalyser: AnalyserNode | null = null;
   private botPlayerDataArray: Uint8Array | null = null;
@@ -133,6 +134,14 @@ class VoiceScannerApp {
   private currentUtteranceId: string | null = null;
   private streamingWords: string[] = [];
   private streamingTextActiveForSubtitle: boolean = false;  // Track if streaming_text is handling subtitle
+  // RTVI 2.0 native subtitle sync: when the server sends bot-output with
+  // spoken_progress (audio-clock accurate), it drives the live subtitle and the
+  // legacy PTS-timer path below is suppressed. Falls back automatically if no
+  // progress arrives. Toggle off via window.__USE_NATIVE_SUBTITLES__ = false.
+  private useNativeSubtitles: boolean = (window as any).__USE_NATIVE_SUBTITLES__ !== false;
+  private nativeSubtitleActive: boolean = false;  // set once bot-output spoken_progress is seen
+  private nativeSubtitleSegmentId: number = -1;   // current bot-output segment being rendered
+  private nativeSubtitleSegmentWords: number = 0; // words of the current segment already shown
   /** Skip the next onBotTranscript add (same content as the streaming bubble we just finalized). */
   private skipNextBotTranscriptAdd: boolean = false;
 
@@ -1493,8 +1502,9 @@ class VoiceScannerApp {
         wordSpan.textContent = word + ' ';
         textSpan.appendChild(wordSpan);
 
-        // Live subtitle: show full text as it comes (no typewriter effect)
-        if (!this.streamingTextActiveForSubtitle) {
+        // Live subtitle: show full text as it comes (no typewriter effect).
+        // Suppressed when RTVI 2.0 native bot-output is driving the subtitle.
+        if (!this.streamingTextActiveForSubtitle && !this.nativeSubtitleActive) {
           this.setBotSubtitleFromText((textSpan.textContent || '').trim());
         }
 
@@ -2521,6 +2531,13 @@ class VoiceScannerApp {
         clearTimeout(this.subtitleClearTimeout);
         this.subtitleClearTimeout = null;
       }
+      // Native subtitle path: start each bot turn with a fresh rolling window.
+      if (this.nativeSubtitleActive) {
+        this.subtitleDisplayedWords = [];
+        this.subtitleWordCount = 0;
+        this.nativeSubtitleSegmentId = -1;
+        this.nativeSubtitleSegmentWords = 0;
+      }
       this.setVoiceState('speaking');
 
       // Audio is now playing — schedule buffered subtitle words based on PTS timing
@@ -2623,12 +2640,10 @@ class VoiceScannerApp {
       this.log(`Connecting to ${backendUrl}...`);
 
       this.transport = new WebSocketTransport();
-      const config: RTVIClientOptions = {
+      // client-js 1.x: `params`/`endpoints` are gone; the /connect endpoint is
+      // now passed to startBotAndConnect() below instead.
+      const config: PipecatClientOptions = {
         transport: this.transport,
-        params: {
-          baseUrl: backendUrl,
-          endpoints: { connect: '/connect' },
-        },
         enableMic: true,
         enableCam: false,
         callbacks: {
@@ -2665,6 +2680,9 @@ class VoiceScannerApp {
             this.subtitleWordBuffer = [];
             this.subtitleDisplayedWords = [];
             this.subtitleAudioStartTime = 0;
+            this.nativeSubtitleActive = false;  // re-detect bot-output support next session
+            this.nativeSubtitleSegmentId = -1;
+            this.nativeSubtitleSegmentWords = 0;
             if (this.subtitleClearTimeout) {
               clearTimeout(this.subtitleClearTimeout);
               this.subtitleClearTimeout = null;
@@ -2739,6 +2757,32 @@ class VoiceScannerApp {
             this.addTerminalMessage(errorMsg, 'error');
             console.error('RTVI Error:', error);
           },
+          // RTVI 2.0 native bot output: spoken_progress.accumulated_text grows in
+          // sync with the transport's audio clock, so it drives the live subtitle
+          // far more accurately than client-side PTS timers. When present, it
+          // takes over subtitle rendering (see nativeSubtitleActive guards).
+          onBotOutput: (data) => {
+            if (!this.useNativeSubtitles) return;
+            const progress = data.spoken_progress;
+            if (!progress || typeof progress.accumulated_text !== 'string') return;
+            this.nativeSubtitleActive = true;
+
+            const words = progress.accumulated_text.trim().split(/\s+/).filter(w => w.length > 0);
+            const segId = typeof data.segment_id === 'number' ? data.segment_id : 0;
+            // New segment within this bot turn → its words are all fresh.
+            if (segId !== this.nativeSubtitleSegmentId) {
+              this.nativeSubtitleSegmentId = segId;
+              this.nativeSubtitleSegmentWords = 0;
+            }
+            // Append only newly-spoken words through the existing 2-line + glow
+            // renderer (displaySubtitleWord), so the design is unchanged — only the
+            // timing source is now the transport audio clock instead of PTS timers.
+            for (let i = this.nativeSubtitleSegmentWords; i < words.length; i++) {
+              this.displaySubtitleWord(words[i]);
+            }
+            this.nativeSubtitleSegmentWords = Math.max(this.nativeSubtitleSegmentWords, words.length);
+            // 'completed' → segment fully spoken; BotStoppedSpeaking handles hide.
+          },
           onServerMessage: (message) => {
             try {
               let messageData = null;
@@ -2800,11 +2844,13 @@ class VoiceScannerApp {
         },
       };
 
-      this.rtviClient = new RTVIClient(config);
+      this.rtviClient = new PipecatClient(config);
       this.setupTrackListeners();
 
       await this.rtviClient.initDevices();
-      await this.rtviClient.connect();
+      // client-js 1.x: POST to /connect (returns { ws_url }) and connect in one
+      // step. The websocket transport consumes the ws_url from the response.
+      await this.rtviClient.startBotAndConnect({ endpoint: `${backendUrl}/connect` });
 
     } catch (error) {
       this.isConnecting = false;
@@ -2939,6 +2985,10 @@ class VoiceScannerApp {
     // Add word to transcript bubble immediately (transcript is a log, no timing needed)
     this.addWordToTranscriptBubble(word, data.sequence_id);
 
+    // RTVI 2.0 native bot-output owns the live subtitle when available; skip the
+    // legacy PTS-timer buffering below (transcript bubble above still updates).
+    if (this.nativeSubtitleActive) return;
+
     // Buffer word for timed subtitle display
     if (this.subtitleAudioStartTime > 0) {
       // Audio already playing — schedule this word immediately
@@ -2975,8 +3025,9 @@ class VoiceScannerApp {
 
     const interval = data.audio_duration / words.length;
 
-    // Convert to buffered words with evenly-spaced PTS offsets
-    for (let i = 0; i < words.length; i++) {
+    // Convert to buffered words with evenly-spaced PTS offsets.
+    // Skipped when RTVI 2.0 native bot-output is driving the live subtitle.
+    for (let i = 0; i < words.length && !this.nativeSubtitleActive; i++) {
       const ptsOffset = i * interval;
       if (this.subtitleAudioStartTime > 0) {
         this.scheduleSubtitleWord(words[i], ptsOffset);

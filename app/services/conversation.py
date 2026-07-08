@@ -20,12 +20,45 @@ from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.services.llm_service import FunctionCallParams, LLMService
 
-# Universal context system (pipecat 0.0.98)
+# Universal context system (pipecat 1.x)
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
     LLMAssistantAggregatorParams,
+)
+# pipecat 1.x: VAD, end-of-turn, and STT-mute all moved off the transport and
+# onto the user aggregator via strategy objects.
+from pipecat.turns.user_turn_strategies import (
+    UserTurnStrategies,
+    FilterIncompleteUserTurnStrategies,
+)
+from pipecat.turns.user_turn_completion_mixin import UserTurnCompletionConfig
+from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
+    TurnAnalyzerUserTurnStopStrategy,
+)
+# Barge-in gating: min_words applies ONLY while the bot is speaking (blocks
+# "yeah"/"okay" backchannels from interrupting), and drops to 1 word when the bot
+# is idle (so a 1-word answer like "yes" still registers). Transcription-based, so
+# it ignores background noise that never produces a clean transcript.
+from pipecat.turns.user_start.min_words_user_turn_start_strategy import (
+    MinWordsUserTurnStartStrategy,
+)
+from pipecat.turns.user_mute.mute_until_first_bot_complete_user_mute_strategy import (
+    MuteUntilFirstBotCompleteUserMuteStrategy,
+)
+
+# Concise replacement for pipecat's default turn-completion instruction (~2000
+# tokens). That default is verbose and sent on EVERY turn; this ~130-token
+# version keeps the ✓/○/◐ contract and cuts per-turn prompt cost/latency.
+TURN_COMPLETION_INSTRUCTIONS = (
+    "Begin EVERY reply with a turn-completion marker as the very first character:\n"
+    "  ✓  — the user finished a complete thought or question. Output ✓, then a space, then your full spoken answer.\n"
+    "  ○  — the user was cut off mid-sentence and will resume in a moment. Output ONLY the single character ○, nothing else.\n"
+    "  ◐  — the user is still thinking or asked for a moment (\"hmm\", \"let me think\", \"hold on\"). Output ONLY the single character ◐, nothing else.\n"
+    "Grammatically complete is not always conversationally complete: \"That's a good question.\" alone → ◐; "
+    "\"I'd go with the second one because\" (trailing off) → ○; a full question or statement → ✓ plus your answer.\n"
+    "Never explain the marker; never output anything besides the single character for ○ or ◐."
 )
 
 from app.services.input_analyzer import InputAnalyzer
@@ -160,11 +193,75 @@ class ConversationManager:
 
         if provider == "openai":
             model = self.llm_config.get("model", "gpt-4o")
-            self.llm_service = OpenAILLMService(
-                api_key=api_key,
-                model=model
-            )
-            logger.info(f"Initialized OpenAI LLM service with model: {model}")
+            temperature = self.llm_config.get("temperature", 0.7)
+            max_tokens = self.llm_config.get("max_tokens", 300)
+            reasoning_effort = self.llm_config.get("reasoning_effort")
+
+            if reasoning_effort:
+                # GPT-5.x reasoning models REJECT reasoning_effort + function tools
+                # on /v1/chat/completions ("Please use /v1/responses instead").
+                # OpenAIResponsesLLMService speaks /v1/responses over a persistent
+                # WebSocket with incremental context — validated live:
+                # gpt-5.5 + tools + reasoning.effort=none → warm TTFB ~0.85s
+                # (vs 1.9s for gpt-5.5-with-tools on chat completions).
+                from pipecat.services.openai.responses.llm import (
+                    OpenAIResponsesLLMService,
+                    OpenAIResponsesLLMSettings,
+                )
+
+                class NesterResponsesLLMService(OpenAIResponsesLLMService):
+                    """Cancels stale ○/◐ re-prompt timeouts once a ✓ answer lands.
+
+                    Upstream mixin bug (observed live): a pending
+                    incomplete-turn timeout started by an earlier ○ fragment is
+                    NOT cancelled when a later turn completes with ✓ — it fires
+                    after the real answer and speaks a leftover nudge like
+                    "Tell me what the repo does today..." out of nowhere.
+                    """
+
+                    async def _push_turn_text(self, text):
+                        had_pending = (
+                            getattr(self, "_incomplete_timeout_task", None) is not None
+                        )
+                        await super()._push_turn_text(text)
+                        # ✓ just resolved this turn — any timeout left over from a
+                        # previous ○ fragment is now stale; kill it.
+                        if had_pending and getattr(self, "_turn_complete_found", False):
+                            try:
+                                await self._cancel_incomplete_timeout()
+                                logger.debug(
+                                    "Cancelled stale incomplete-turn timeout after ✓ answer"
+                                )
+                            except Exception as e:
+                                logger.debug(f"Stale timeout cancel skipped: {e}")
+
+                settings = OpenAIResponsesLLMSettings(
+                    model=model,
+                    temperature=temperature,
+                    max_completion_tokens=max_tokens,  # mapped to max_output_tokens
+                    extra={"reasoning": {"effort": reasoning_effort}},
+                )
+                self.llm_service = NesterResponsesLLMService(
+                    api_key=api_key, settings=settings
+                )
+                logger.info(
+                    f"Initialized OpenAI Responses LLM service (WebSocket): model={model}, "
+                    f"max_output_tokens={max_tokens}, reasoning_effort={reasoning_effort}"
+                )
+            else:
+                # Plain chat-completions path (non-reasoning models like gpt-4.1).
+                # NOTE: previously only api_key+model were passed, so config
+                # temperature/max_tokens were silently ignored. Now wired via Settings.
+                settings = OpenAILLMService.Settings(
+                    model=model,
+                    temperature=temperature,
+                    max_completion_tokens=max_tokens,
+                )
+                self.llm_service = OpenAILLMService(api_key=api_key, settings=settings)
+                logger.info(
+                    f"Initialized OpenAI LLM service: model={model}, "
+                    f"max_completion_tokens={max_tokens}"
+                )
         elif provider == "groq":
             # Groq — uses GroqLLMService which merges consecutive user
             # messages to prevent intermittent "Failed to call a function" errors
@@ -423,13 +520,11 @@ class ConversationManager:
             return
         self._conversation_ending = True
 
-        # Disable interruptions so farewell TTS cannot be cut off by background noise
-        if self._task:
-            try:
-                self._task.params.allow_interruptions = False
-                logger.info("🔇 Interruptions disabled for farewell TTS")
-            except Exception as e:
-                logger.warning(f"Could not disable interruptions: {e}")
+        # NOTE: pipecat 1.x PipelineParams is immutable (pydantic), so runtime
+        # toggling of allow_interruptions is no longer possible. Farewell
+        # protection now comes from MinWordsUserTurnStartStrategy (2 real words
+        # needed to barge in during bot speech), which filters the background
+        # noise this toggle used to guard against.
 
         # Signal frontend that session is ending so it can show the "session ended" UI
         if self._rtvi_processor:
@@ -665,11 +760,27 @@ CRITICAL RAG RULES (SPEED IS IMPORTANT):
         context = LLMContext(messages=messages, tools=tools)
         return context
 
-    def create_context_aggregator(self) -> Any:
+    def create_context_aggregator(
+        self,
+        vad_analyzer: Any = None,
+        turn_analyzer: Any = None,
+        interruption_config: Optional[Dict[str, Any]] = None,
+        user_idle_timeout: float = 0,
+    ) -> Any:
         """Create the context aggregator for the conversation.
 
-        Uses LLMContextAggregatorPair (pipecat 0.0.98).
-        SmartTurn v3 is configured at the transport level via turn_analyzer param.
+        Uses LLMContextAggregatorPair (pipecat 1.x). In 1.x the transport no
+        longer owns VAD, end-of-turn detection, or STT muting — they are
+        attached here on the user aggregator:
+          - vad_analyzer: Silero VAD instance (moved off transport params).
+          - turn_analyzer: SmartTurn v3 ML analyzer, wrapped in a
+            TurnAnalyzerUserTurnStopStrategy (replaces transport turn_analyzer).
+          - user_mute_strategies: MuteUntilFirstBotCompleteUserMuteStrategy
+            replaces the removed STTMuteFilter (mute until first bot turn done).
+
+        Args:
+            vad_analyzer: VAD analyzer built by the transport layer.
+            turn_analyzer: SmartTurn v3 end-of-turn analyzer (or None).
 
         Returns:
             The context aggregator pair instance
@@ -679,12 +790,87 @@ CRITICAL RAG RULES (SPEED IS IMPORTANT):
 
         self.context = self.create_context()  # Store for greeting access
 
-        # Create user params (pipecat 0.0.98 - no user_turn_strategies or user_mute_strategies)
-        user_params = LLMUserAggregatorParams()
+        # SmartTurn v3 end-of-turn now attaches as a user-turn stop strategy.
+        # Optionally gate finalization on the LLM's turn-completion verdict
+        # (pipecat 1.x FilterIncompleteUserTurnStrategies): the LLM prefixes each
+        # response with ✓ (complete) / ○ (incomplete short) / ◐ (incomplete long).
+        # Only ✓ finalizes the turn; ○/◐ keep it open so multi-clause speakers are
+        # not cut off mid-thought. This is a semantic fix for the fragmented long
+        # turns seen in CloudWatch, layered on top of the SmartTurn detector.
+        stop_strategies = (
+            [TurnAnalyzerUserTurnStopStrategy(turn_analyzer=turn_analyzer)]
+            if turn_analyzer is not None
+            else None
+        )
 
-        # Create assistant params (default)
+        # Barge-in START strategy. MinWordsUserTurnStartStrategy is used ALONE (no
+        # extra VAD/Transcription start strategy) because start strategies are OR'd
+        # and the earliest wins — a plain transcription strategy would fire on word
+        # one and bypass the min-words gate during bot speech. This single strategy
+        # already needs `min_words` words to barge in while the bot speaks, but only
+        # 1 word when the bot is idle (so short answers like "yes" still register).
+        # Future upgrade: swap in KrispVivaIPUserTurnStartStrategy (model-based
+        # backchannel/background-voice rejection) — requires the krisp_audio SDK.
+        interruption_config = interruption_config or {}
+        start_strategies = None
+        if interruption_config.get("enabled", True):
+            barge_in_min_words = int(interruption_config.get("min_words", 2))
+            start_strategies = [
+                MinWordsUserTurnStartStrategy(min_words=barge_in_min_words, use_interim=True)
+            ]
+            logger.info(
+                f"🎤 Barge-in: MinWordsUserTurnStartStrategy "
+                f"(min_words={barge_in_min_words} during bot speech, 1 word when idle)"
+            )
+
+        filter_incomplete = bool(self.smart_turn_config.get("filter_incomplete_turns", False))
+        user_turn_strategies = None
+        if filter_incomplete:
+            completion_config = UserTurnCompletionConfig(
+                instructions=TURN_COMPLETION_INSTRUCTIONS,
+                incomplete_short_timeout=float(
+                    self.smart_turn_config.get("incomplete_short_timeout", 4.0)
+                ),
+                incomplete_long_timeout=float(
+                    self.smart_turn_config.get("incomplete_long_timeout", 8.0)
+                ),
+            )
+            user_turn_strategies = FilterIncompleteUserTurnStrategies(
+                start=start_strategies,
+                stop=stop_strategies,
+                config=completion_config,
+            )
+            logger.info(
+                "🧠 Turn-completion markers ENABLED "
+                f"(FilterIncompleteUserTurnStrategies, short={completion_config.incomplete_short_timeout}s, "
+                f"long={completion_config.incomplete_long_timeout}s, "
+                f"SmartTurn={'yes' if turn_analyzer is not None else 'defaults'})"
+            )
+        elif start_strategies is not None or stop_strategies is not None:
+            user_turn_strategies = UserTurnStrategies(
+                start=start_strategies, stop=stop_strategies
+            )
+            logger.info("🧠 SmartTurn v3 attached via TurnAnalyzerUserTurnStopStrategy")
+
+        # Create user params — VAD, turn detection, and greeting-mute all live here now.
+        # user_idle_timeout > 0 emits `on_user_turn_idle` (handled in
+        # voice_assistant to speak a gentle re-engagement) when the caller goes quiet.
+        user_params = LLMUserAggregatorParams(
+            vad_analyzer=vad_analyzer,
+            user_turn_strategies=user_turn_strategies,
+            user_mute_strategies=[MuteUntilFirstBotCompleteUserMuteStrategy()],
+            user_idle_timeout=float(user_idle_timeout or 0),
+        )
+
+        # Create assistant params. pipecat 1.x removed `expect_stripped_words`
+        # (the aggregator now handles word concatenation/spacing internally).
+        # Context summarization keeps long sessions' prompts bounded (defaults:
+        # summarize past 8k tokens down toward 6k) so late-conversation TTFB
+        # stays flat instead of growing with history.
         assistant_params = LLMAssistantAggregatorParams(
-            expect_stripped_words=True  # TTS typically sends stripped words
+            enable_context_summarization=bool(
+                self.llm_config.get("context_summarization_enabled", True)
+            ),
         )
 
         # Create the universal context aggregator pair
