@@ -18,6 +18,7 @@ from components import (
     NesterSecrets,
     NesterECR,
     NesterCloudWatchLogs,
+    NesterCloudWatchDashboard,
     NesterSSMConfig,
 )
 from components.ecr_credentials import EcrCredentials
@@ -85,7 +86,14 @@ class LightsailStack(Stack):
             log_group_arn=self.cloudwatch_logs.log_group_arn,
         )
 
-        # 5. Create SSM Parameter Store with server config
+        # 5. Create CloudWatch Dashboard for session analytics
+        self.cloudwatch_dashboard = NesterCloudWatchDashboard(
+            self,
+            "CloudWatchDashboard",
+            config=config,
+        )
+
+        # 6. Create SSM Parameter Store with server config
         self.ssm_config = NesterSSMConfig(
             self,
             "SSMConfig",
@@ -102,7 +110,17 @@ class LightsailStack(Stack):
             )
         )
 
-        # 6. Create Lightsail instance with Static IP using Custom Resource
+        # Grant CloudWatch PutMetricData permission for custom metrics
+        # (app emits session/error/RAG metrics to NesterVoiceAI namespace)
+        self.ecr_credentials.ecr_user.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["cloudwatch:PutMetricData"],
+                resources=["*"],  # PutMetricData does not support resource-level permissions
+            )
+        )
+
+        # 7. Create Lightsail instance with Static IP using Custom Resource
         # (Uses SDK calls to bypass CloudFormation Lightsail limitations)
         self.lightsail = LightsailCustomResource(
             self,

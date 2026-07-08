@@ -14,8 +14,9 @@
  */
 
 import {
-  RTVIClient,
-  RTVIClientOptions,
+  // client-js 1.x: RTVIClient -> PipecatClient, RTVIClientOptions -> PipecatClientOptions
+  PipecatClient,
+  PipecatClientOptions,
   RTVIEvent,
 } from '@pipecat-ai/client-js';
 import {
@@ -30,14 +31,18 @@ import { A2UIDocument, isA2UIUpdate } from './types/a2ui';
 import { EmotionChart } from './components/EmotionChart';
 // Topic Timeline import
 import { TopicTimeline } from './components/TopicTimeline';
+// Synchronized Analysis (Topic Flow + Emotion)
+import { extractTopicsFromMessages, layoutTopics } from './components/SynchronizedAnalysisWidget/topicExtraction';
+import type { Message, Topic } from './components/SynchronizedAnalysisWidget/topicExtraction';
 // Wave Visualization Config
 import { waveConfig } from './config/waveVisualization';
 import { Loader } from './components/Loader';
+import { USE_LOCAL_BACKEND, LOCAL_BACKEND_URL, REMOTE_BACKEND_URL } from './config';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 class VoiceScannerApp {
-  private rtviClient: RTVIClient | null = null;
+  private rtviClient: PipecatClient | null = null;
   private transport: WebSocketTransport | null = null;
   private botPlayerAnalyser: AnalyserNode | null = null;
   private botPlayerDataArray: Uint8Array | null = null;
@@ -120,12 +125,32 @@ class VoiceScannerApp {
   private voiceState: VoiceState = 'idle';
   private isConnected: boolean = false;
   private isConnecting: boolean = false;
+  private botInitiatedDisconnect: boolean = false;   // true when backend sends conversation_ending
+  private userInitiatedDisconnect: boolean = false;  // true when user clicks the X (close) button
   private preloaderAngle: number = 0;
 
   // Streaming transcript state
   private streamingBubble: HTMLElement | null = null;
   private currentUtteranceId: string | null = null;
   private streamingWords: string[] = [];
+  private streamingTextActiveForSubtitle: boolean = false;  // Track if streaming_text is handling subtitle
+  // RTVI 2.0 native subtitle sync: when the server sends bot-output with
+  // spoken_progress (audio-clock accurate), it drives the live subtitle and the
+  // legacy PTS-timer path below is suppressed. Falls back automatically if no
+  // progress arrives. Toggle off via window.__USE_NATIVE_SUBTITLES__ = false.
+  private useNativeSubtitles: boolean = (window as any).__USE_NATIVE_SUBTITLES__ !== false;
+  private nativeSubtitleActive: boolean = false;  // set once bot-output spoken_progress is seen
+  private nativeSubtitleSegmentId: number = -1;   // current bot-output segment being rendered
+  private nativeSubtitleSegmentWords: number = 0; // words of the current segment already shown
+  /** Skip the next onBotTranscript add (same content as the streaming bubble we just finalized). */
+  private skipNextBotTranscriptAdd: boolean = false;
+
+  // Subtitle timing: buffer words and release them synced with audio playback
+  private subtitleWordBuffer: Array<{ word: string; seq: number; ptsOffset: number }> = [];
+  private subtitleAudioStartTime: number = 0;  // performance.now() when BotStartedSpeaking fires
+  private subtitleDisplayTimers: ReturnType<typeof setTimeout>[] = [];
+  private subtitleDisplayedWords: string[] = [];  // words currently shown in subtitle
+  private subtitleBufferFlushTimer: ReturnType<typeof setTimeout> | null = null;  // safety flush
 
   // Typewriter effect state for bot transcripts
   private currentBotBubble: HTMLElement | null = null;
@@ -135,9 +160,30 @@ class VoiceScannerApp {
 
   // Live subtitle above wave (single line, current speaker only)
   private liveSubtitle: HTMLElement | null = null;
-  private liveSubtitleLabel: HTMLElement | null = null;
   private liveSubtitleText: HTMLElement | null = null;
   private subtitleClearTimeout: ReturnType<typeof setTimeout> | null = null;
+  private botIsSpeaking: boolean = false;
+  private subtitleWordCount: number = 0;
+  private subtitleClearOnNextSentence: boolean = false;
+
+  /** Max characters per subtitle line (wrap at word boundary). Desktop. */
+  private static readonly MAX_SUBTITLE_LINE_CHARS = 42;
+  /** Max characters per subtitle line on mobile (viewport width ≤ 640px). */
+  private static readonly MAX_SUBTITLE_LINE_CHARS_MOBILE = 35;
+  /** Viewport width below which mobile subtitle line length is used (match CSS breakpoint). */
+  private static readonly SUBTITLE_MOBILE_BREAKPOINT_PX = 640;
+  /** Delay in ms between revealing each subtitle line. Desktop. */
+  private static readonly SUBTITLE_LINE_REVEAL_DELAY_MS = 2000;
+  /** Delay in ms between revealing each subtitle line on mobile (viewport ≤ SUBTITLE_MOBILE_BREAKPOINT_PX). */
+  private static readonly SUBTITLE_LINE_REVEAL_DELAY_MS_MOBILE = 1500;
+  /** Max subtitle lines visible at once; when a new line appears, the oldest is hidden. */
+  private static readonly MAX_SUBTITLE_LINES_VISIBLE = 2;
+  /** Duration in ms for the subtitle scroll-up animation (then first line is removed). Match container enter/exit (500ms ease-in-out). */
+  private static readonly SUBTITLE_SCROLL_DURATION_MS = 500;
+  /** Timeouts for sequential line reveal; cleared when a new render starts. */
+  private subtitleRevealTimeouts: ReturnType<typeof setTimeout>[] = [];
+  /** Lines we've already scheduled (so we only append new lines, don't reset on every word). */
+  private lastScheduledSubtitleLines: string[] = [];
 
   // Media control bar: speaker/mic icon toggle (slash = muted)
   private speakerMuted: boolean = false;
@@ -152,13 +198,21 @@ class VoiceScannerApp {
   private a2uiRenderer: A2UIRenderer | null = null;
   private a2uiPanel: HTMLElement | null = null;
   private a2uiStatus: HTMLElement | null = null;
+  private a2uiHasContent: boolean = false;
 
   // Emotion-reactive UI state
   private lastEmotionUpdate: number = 0;
   private emotionUpdateDebounceMs: number = 100;
 
+  // Conversation messages for SynchronizedAnalysis (Topic Flow + Emotion)
+  private conversationMessages: Message[] = [];
+  private messageIdCounter: number = 0;
+
+  // EmotionAnalysis widget: accumulated emotion data points from backend
+  private emotionTopicNodes: { id: string; timestamp: Date; sentiment: 'positive' | 'neutral' | 'negative'; sentimentLabel: string; intensity: number }[] = [];
+  private emotionNodeCounter: number = 0;
+
   constructor() {
-    console.log("Nester AI Voice Scanner initializing...");
 
     this.botAudio = document.createElement('audio');
     this.botAudio.autoplay = true;
@@ -172,33 +226,23 @@ class VoiceScannerApp {
     this.showLoadingOverlay();
     this.setVoiceState('idle');
 
-    // Hide loading after initialization
-    setTimeout(() => this.hideLoadingOverlay(), 2500);
+    // Loading overlay is now hidden when the bot first starts speaking (see BotStartedSpeaking handler)
+    // or via the fallback timer set in onConnected. The old 2.5s fixed timer is removed.
 
-    // Expose test method for debugging visual cards
-    (window as any).testVisualCard = () => {
-      console.log('[TEST] Manually triggering visual card test...');
-      this.handleVisualHint({
-        hint_type: 'project_card',
-        content_type: 'projects',
-        content: { mentioned: true },
-        confidence: 0.9,
-        trigger_text: 'Test trigger',
-        timestamp: Date.now() / 1000
-      });
-    };
-    // Expose test method for debugging emotion timeline
+    // Auto-connect on load (Start Conversation flow without user click)
+    setTimeout(() => this.handleConnect(), 600);
+
+    // Expose test methods for debugging (no log spam on load)
+    (window as any).testVisualCard = () => this.handleVisualHint({
+      hint_type: 'project_card', content_type: 'projects',
+      content: { mentioned: true }, confidence: 0.9,
+      trigger_text: 'Test trigger', timestamp: Date.now() / 1000
+    });
     (window as any).testEmotionTimeline = () => {
-      console.log('[TEST] Manually triggering emotion timeline test...');
-      const testEmotions = ['happy', 'neutral', 'excited', 'sad', 'calm'];
-      testEmotions.forEach((emotion, i) => {
-        setTimeout(() => {
-          this.addEmotionToTimeline(emotion);
-        }, i * 500);
+      ['happy', 'neutral', 'excited', 'sad', 'calm'].forEach((emotion, i) => {
+        setTimeout(() => this.addEmotionToTimeline(emotion), i * 500);
       });
     };
-
-    console.log('[DEBUG] testVisualCard() and testEmotionTimeline() functions available in console');
   }
 
   private setupDOMElements(): void {
@@ -212,7 +256,6 @@ class VoiceScannerApp {
     this.transcriptList = document.getElementById('transcript-list');
     this.transcriptStatus = document.getElementById('transcript-status');
     this.liveSubtitle = document.getElementById('live-subtitle');
-    this.liveSubtitleLabel = document.getElementById('live-subtitle-label');
     this.liveSubtitleText = document.getElementById('live-subtitle-text');
     this.debugPanel = document.getElementById('debug-panel');
     this.debugLog = document.getElementById('debug-log');
@@ -238,18 +281,16 @@ class VoiceScannerApp {
     if (loadingTextEl) {
       this.loader = new Loader({
         container: loadingTextEl,
-        text: 'INITIALIZING',
+        text: 'Intitializing...',
       });
     }
 
     // Initialize Emotion Chart
     try {
       this.emotionChart = new EmotionChart('emotion-chart-canvas');
-      console.log('[EmotionChart] Initialized successfully');
       // Expose for testing
       (window as any).testEmotionChart = () => {
         if (this.emotionChart) {
-          console.log('[EmotionChart] Adding test data points...');
           this.emotionChart.addDataPoint(0.7, 0.6, 0.8);
           setTimeout(() => this.emotionChart?.addDataPoint(0.5, 0.4, 0.3), 500);
           setTimeout(() => this.emotionChart?.addDataPoint(0.8, 0.7, 0.6), 1000);
@@ -263,7 +304,6 @@ class VoiceScannerApp {
     // Initialize Topic Timeline
     try {
       this.topicTimeline = new TopicTimeline('topic-timeline-canvas');
-      console.log('[TopicTimeline] Initialized successfully');
     } catch (e) {
       console.warn('[TopicTimeline] Failed to initialize:', e);
     }
@@ -296,11 +336,6 @@ class VoiceScannerApp {
     connectBtn?.addEventListener('click', () => this.handleConnect());
     disconnectBtn?.addEventListener('click', () => this.handleDisconnect());
 
-    // Back button: open NesterLabs in the same tab
-    document.getElementById('back-btn')?.addEventListener('click', () => {
-      window.location.href = 'https://www.nesterlabs.com/';
-    });
-
     // Legacy scanner frame click (if still exists)
     this.scannerFrame?.addEventListener('click', () => this.handleOrbClick());
 
@@ -310,15 +345,20 @@ class VoiceScannerApp {
 
     document.getElementById('control-peak')?.addEventListener('click', () => this.toggleSidePanels());
     document.getElementById('control-close')?.addEventListener('click', () => {
+      this.userInitiatedDisconnect = true;
       this.hideA2UIPanel();
+      this.showCloseOptions(); // Switch bar to Restart | Peek so user can restart or peek
       this.handleDisconnect();
-      this.showCloseOptions();
     });
     document.getElementById('control-speaker')?.addEventListener('click', () => this.toggleSpeakerIcon());
     document.getElementById('control-mic')?.addEventListener('click', () => this.toggleMicIcon());
 
     document.getElementById('close-option-restart')?.addEventListener('click', () => this.onRestartOption());
     document.getElementById('close-option-peak')?.addEventListener('click', () => this.onPeakOption());
+
+    document.getElementById('a2ui-close')?.addEventListener('click', () => this.hideA2UIPanel());
+
+    this.updatePeakButtonState();
 
     // Emotion panel toggle
     this.emotionToggle?.addEventListener('click', () => this.toggleEmotionPanel());
@@ -346,12 +386,60 @@ class VoiceScannerApp {
   }
 
   /**
-   * Restart: hide options bar, disconnect, then connect (same flow as connect-btn)
+   * Restart: hide cards if visible, reset all card data, hide options bar, disconnect, then connect (same flow as connect-btn)
    */
   private async onRestartOption(): Promise<void> {
     this.hideCloseOptions();
+    // Hide all dashboard cards if they are visible (peek was open)
+    if (this.mainLayout && !this.mainLayout.classList.contains('panels-hidden')) {
+      this.mainLayout.classList.add('panels-hidden');
+      this.updatePeakButtonState();
+    }
+    this.resetAllCardsData();
     await this.disconnect();
     this.handleConnect();
+  }
+
+  /**
+   * Reset all dashboard card data for a new conversation (SynchronizedAnalysis, Emotion, VisitorIntent, ToneModulator, KnowledgeGraph, Transcript).
+   */
+  private resetAllCardsData(): void {
+    this.conversationMessages = [];
+    this.emotionTopicNodes = [];
+    this.emotionNodeCounter = 0;
+    this.previousTopics = [];
+    if (this.topicTimeline) this.topicTimeline.clear();
+    this.refreshSynchronizedAnalysis();
+    (window as any).EmotionAnalysis?.updateTopics?.([]);
+    this.updateVisitorIntent([]);
+    (window as any).ToneModulator?.update?.({ detectedEmotion: 'neutral', nesterResponse: 'calm' });
+    (window as any).KnowledgeGraph?.stopCycle?.();
+    (window as any).KnowledgeGraph?.clear?.();
+
+    // Clear transcript DOM and show welcome message
+    if (this.transcriptList && this.welcomeMessage) {
+      this.transcriptList.innerHTML = '';
+      this.transcriptList.appendChild(this.welcomeMessage);
+      this.welcomeMessage.classList.remove('hidden');
+    }
+    this.currentBotBubble = null;
+    this.streamingBubble = null;
+    this.currentUtteranceId = null;
+    this.skipNextBotTranscriptAdd = false;
+    this.typewriterQueue = [];
+    this.isTypewriting = false;
+    this.accumulatedBotAnswer = '';
+    if (this.subtitleClearTimeout) {
+      clearTimeout(this.subtitleClearTimeout);
+      this.subtitleClearTimeout = null;
+    }
+    this.botIsSpeaking = false;
+    this.subtitleWordCount = 0;
+    this.subtitleClearOnNextSentence = false;
+    for (const t of this.subtitleRevealTimeouts) clearTimeout(t);
+    this.subtitleRevealTimeouts = [];
+    this.lastScheduledSubtitleLines = [];
+    if (this.liveSubtitleText) this.liveSubtitleText.textContent = '';
   }
 
   /**
@@ -369,6 +457,100 @@ class VoiceScannerApp {
     const connectArea = document.getElementById('connect-area');
     mediaBar?.classList.remove('close-mode');
     connectArea?.classList.remove('hidden');
+  }
+
+  /**
+   * Show "session ended" screen when the bot gracefully terminates the conversation.
+   * Reuses the close-mode bar (Restart | Peek) so the user can start a new session.
+   */
+  private showSessionEndedScreen(): void {
+    // Enter close-mode so the "Restart" button is shown as "Start New Conversation"
+    this.showCloseOptions();
+    // Notify user that the session ended intentionally
+    this.showNotification('SESSION COMPLETE');
+    this.addTerminalMessage('Conversation ended. Click Restart to start a new session.', 'success');
+  }
+
+  /**
+   * Synthesize a crystal bell chime via Web Audio API.
+   * Ported from feat/agent-personas — plays on WebSocket connect.
+   * No audio file required; silently fails if Web Audio is unavailable.
+   */
+  private playCrystalChime(): void {
+    try {
+      const ctx = this.audioContext || new AudioContext();
+      this.audioContext = ctx;
+      const now = ctx.currentTime;
+
+      // Master gain: fast attack, 2.8s decay
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0, now);
+      master.gain.linearRampToValueAtTime(0.25, now + 0.02);
+      master.gain.exponentialRampToValueAtTime(0.001, now + 2.8);
+      master.connect(ctx.destination);
+
+      // Synthetic convolver reverb for shimmer
+      const convolver = ctx.createConvolver();
+      const reverbLen = ctx.sampleRate * 2;
+      const reverbBuf = ctx.createBuffer(2, reverbLen, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const data = reverbBuf.getChannelData(ch);
+        for (let i = 0; i < reverbLen; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / reverbLen, 3);
+        }
+      }
+      convolver.buffer = reverbBuf;
+      const reverbGain = ctx.createGain();
+      reverbGain.gain.value = 0.15;
+      convolver.connect(reverbGain);
+      reverbGain.connect(master);
+
+      // 5 staggered sine harmonics: crystal bell chord (E5–E7)
+      const harmonics = [
+        { freq: 1318.5, gain: 0.35, decay: 2.2 },  // E6 - bright top
+        { freq: 987.8,  gain: 0.45, decay: 2.5 },   // B5 - main tone
+        { freq: 659.3,  gain: 0.3,  decay: 2.0 },   // E5 - body
+        { freq: 1975.5, gain: 0.12, decay: 1.2 },   // B6 - sparkle
+        { freq: 2637,   gain: 0.06, decay: 0.8 },   // E7 - air
+      ];
+      harmonics.forEach((h, i) => {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = h.freq;
+        const gain = ctx.createGain();
+        const onset = now + i * 0.04;
+        gain.gain.setValueAtTime(0, onset);
+        gain.gain.linearRampToValueAtTime(h.gain, onset + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, onset + h.decay);
+        osc.connect(gain);
+        gain.connect(master);
+        gain.connect(convolver);
+        osc.start(onset);
+        osc.stop(onset + h.decay + 0.1);
+      });
+
+      // High-pass noise burst for percussive attack shimmer
+      const noiseLen = ctx.sampleRate * 0.15;
+      const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+      const noiseData = noiseBuf.getChannelData(0);
+      for (let i = 0; i < noiseLen; i++) {
+        noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / noiseLen, 2);
+      }
+      const noiseSrc = ctx.createBufferSource();
+      noiseSrc.buffer = noiseBuf;
+      const hpf = ctx.createBiquadFilter();
+      hpf.type = 'highpass';
+      hpf.frequency.value = 6000;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.08, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      noiseSrc.connect(hpf);
+      hpf.connect(noiseGain);
+      noiseGain.connect(master);
+      noiseSrc.start(now);
+    } catch (_e) {
+      // Silently fail — sound is non-critical
+    }
   }
 
   /**
@@ -649,13 +831,14 @@ class VoiceScannerApp {
     if (this.loadingOverlay) {
       this.loadingOverlay.classList.remove('hidden');
       this.animatePreloader();
+      this.setCloseButtonEnabled(false);
     }
   }
 
-   /**
-   * Update loader text (e.g. "Planning next moves", "INITIALIZING")
-   */
-   setLoaderText(text: string): void {
+  /**
+  * Update loader text (e.g. "Planning next moves", "INITIALIZING")
+  */
+  setLoaderText(text: string): void {
     this.loader?.setText(text);
   }
 
@@ -663,8 +846,9 @@ class VoiceScannerApp {
    * Hide loading overlay
    */
   private hideLoadingOverlay(): void {
-    if (this.loadingOverlay) {
+    if (this.loadingOverlay && !this.loadingOverlay.classList.contains('hidden')) {
       this.loadingOverlay.classList.add('hidden');
+      this.setCloseButtonEnabled(true);
       this.addTerminalMessage('Voice scanner ready. Awaiting user input.', 'regular');
       // Dispatch event for components waiting for page ready
       window.dispatchEvent(new CustomEvent('nesterPageReady'));
@@ -857,11 +1041,116 @@ class VoiceScannerApp {
 
     this.debugLog.appendChild(entry);
     this.debugLog.scrollTop = this.debugLog.scrollHeight;
-    console.log(message);
   }
 
   /**
-   * Add transcript bubble to conversation
+   * Refresh SynchronizedAnalysis widget with current conversation messages
+   */
+  private refreshSynchronizedAnalysis(): void {
+    try {
+      const topics = extractTopicsFromMessages(this.conversationMessages);
+      const topicNodes = layoutTopics(topics);
+      const categories = [...new Set(topics.map(t => t.category))];
+      (window as any).SynchronizedAnalysis?.updateTopics?.(topicNodes);
+      // Note: EmotionAnalysis widget is fed separately via pushEmotionToWidget()
+      // from live emotion detection data — do not overwrite with topic nodes.
+      this.updateVisitorIntent(topics);
+    } catch (e) {
+      console.warn('[Widget:ConversationAnalysis] Failed to refresh:', e);
+    }
+  }
+
+  /**
+   * Update Visitor Intent widget from extracted conversation topics.
+   * Derives intent description, confidence, issue category, urgency, and tech level.
+   */
+  private updateVisitorIntent(topics: Topic[]): void {
+    const descEl = document.getElementById('visitor-intent-desc');
+    const confFill = document.getElementById('visitor-intent-confidence-fill');
+    const languageEl = document.getElementById('visitor-language');
+    const issueEl = document.getElementById('visitor-issue');
+    const platformEl = document.getElementById('visitor-platform');
+    const techLevelEl = document.getElementById('visitor-tech-level');
+    const urgencyEl = document.getElementById('visitor-urgency');
+    const priorContactEl = document.getElementById('visitor-prior-contact');
+
+    if (topics.length === 0) {
+      if (descEl) descEl.textContent = 'Visitor intent will appear here as you speak';
+      if (confFill) confFill.style.width = '10%';
+      if (languageEl) languageEl.textContent = 'English';
+      if (issueEl) issueEl.textContent = 'N/A';
+      if (platformEl) platformEl.textContent = 'Web';
+      if (techLevelEl) techLevelEl.textContent = 'N/A';
+      if (urgencyEl) urgencyEl.textContent = 'N/A';
+      if (priorContactEl) priorContactEl.textContent = 'N/A';
+      return;
+    }
+
+    // Intent = latest topic name + category
+    const latest = topics[topics.length - 1];
+    const uniqueCategories = [...new Set(topics.map(t => t.category))];
+    const intentDesc = uniqueCategories.length > 1
+      ? `Discussing ${latest.name} (${uniqueCategories.join(', ')})`
+      : `Exploring ${latest.name} in ${latest.category}`;
+
+    // Confidence: more topics with keywords = higher confidence (cap at 95%)
+    const confidence = Math.min(95, 30 + topics.length * 15);
+
+    // Issue: primary category from the most recent topic
+    const issue = latest.category;
+
+    // Tech level: if Technology topics detected, infer higher tech level
+    const techTopicCount = topics.filter(t => t.category === 'Technology').length;
+    let techLevel = 'Beginner';
+    if (techTopicCount >= 3) techLevel = 'Advanced';
+    else if (techTopicCount >= 1) techLevel = 'Intermediate';
+
+    // Urgency: derive from latest sentiment
+    let urgency = 'Medium';
+    if (latest.sentiment === 'negative') urgency = 'High';
+    else if (latest.sentimentLabel === 'Excited') urgency = 'High';
+    else if (latest.sentiment === 'positive') urgency = 'Low';
+
+    if (descEl) descEl.textContent = intentDesc;
+    if (confFill) confFill.style.width = `${confidence}%`;
+    if (languageEl) languageEl.textContent = 'English';
+    if (issueEl) issueEl.textContent = issue;
+    if (platformEl) platformEl.textContent = 'Web';
+    if (techLevelEl) techLevelEl.textContent = techLevel;
+    if (urgencyEl) urgencyEl.textContent = urgency;
+    if (priorContactEl) priorContactEl.textContent = 'N/A';
+  }
+
+  /**
+   * Check if the transcript is currently scrolled to the bottom (within threshold)
+   */
+  private isTranscriptAtBottom(): boolean {
+    if (!this.transcriptList) return true;
+    const threshold = 50; // pixels
+    const position = this.transcriptList.scrollTop + this.transcriptList.offsetHeight;
+    const height = this.transcriptList.scrollHeight;
+    return position >= height - threshold;
+  }
+
+  /**
+   * Scroll transcript to the bottom if the user is already at the bottom or if forced
+   */
+  private maybeScrollToTranscriptBottom(force: boolean = false): void {
+    if (!this.transcriptList) return;
+    if (force || this.isTranscriptAtBottom()) {
+      this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+    }
+  }
+
+  /**
+   * Format timestamp for transcript log (HH:mm:ss)
+   */
+  private formatTranscriptTime(date: Date = new Date()): string {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  }
+
+  /**
+   * Add transcript line to conversation (log style: timestamp + speaker + message)
    */
   private addTranscript(text: string, isUser: boolean): void {
     if (!this.transcriptList) return;
@@ -869,35 +1158,238 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
+    // Push to conversation messages for SynchronizedAnalysis (before accumulatingBotAnswer is cleared)
+    if (isUser) {
+      if (this.accumulatedBotAnswer.trim()) {
+        this.conversationMessages.push({
+          id: `msg-${this.messageIdCounter++}`,
+          text: this.accumulatedBotAnswer.trim(),
+          timestamp: new Date(),
+          isFinal: true,
+          speaker: 'ai',
+        });
+      }
+      this.conversationMessages.push({
+        id: `msg-${this.messageIdCounter++}`,
+        text,
+        timestamp: new Date(),
+        isFinal: true,
+        speaker: 'user',
+      });
+      this.refreshSynchronizedAnalysis();
+    }
+
     this.updateLiveSubtitle(isUser ? 'user' : 'bot', text);
 
-    const bubble = document.createElement('div');
-    bubble.className = `transcript-bubble ${isUser ? 'user' : 'bot'}`;
+    const line = document.createElement('div');
+    line.className = `transcript-line ${isUser ? 'transcript-line-user' : 'transcript-line-bot'}`;
 
-    // Add label
-    const label = document.createElement('span');
-    label.className = 'transcript-label';
-    label.textContent = isUser ? 'You: ' : 'NesterAI: ';
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'transcript-time';
+    timeSpan.textContent = this.formatTranscriptTime() + ' ';
 
-    // Add text
-    const textSpan = document.createElement('span');
-    textSpan.className = 'transcript-text';
-    textSpan.textContent = text;
+    const messageSpan = document.createElement('span');
+    messageSpan.className = 'transcript-message';
+    messageSpan.textContent = text;
 
-    bubble.appendChild(label);
-    bubble.appendChild(textSpan);
+    line.appendChild(timeSpan);
+    line.appendChild(messageSpan);
 
-    this.transcriptList.appendChild(bubble);
+    this.transcriptList.appendChild(line);
 
-    // Scroll to bottom
-    this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+    // Scroll to bottom (force for new messages)
+    this.maybeScrollToTranscriptBottom(true);
   }
 
   /**
-   * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice)
+   * Split text into lines of at most maxChars characters, wrapping at word boundaries.
+   * Words longer than maxChars are broken mid-word.
+   */
+  private textToLines(text: string, maxChars: number): string[] {
+    if (!text.trim()) return [];
+    const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+    const lines: string[] = [];
+    let current = '';
+    for (const w of words) {
+      const candidate = current ? current + ' ' + w : w;
+      if (candidate.length <= maxChars) {
+        current = candidate;
+      } else {
+        if (current) {
+          lines.push(current);
+          current = '';
+        }
+        let rest = w;
+        while (rest.length > maxChars) {
+          lines.push(rest.slice(0, maxChars));
+          rest = rest.slice(maxChars);
+        }
+        if (rest.length > 0) current = rest;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  /**
+   * Render subtitle as separate lines (max 42 chars per line).
+   * Reveals lines sequentially with SUBTITLE_LINE_REVEAL_DELAY_MS between each.
+   * When the 3rd line appears, the 1st is hidden (rolling window of 2 lines).
+   * Only appends new lines when transcript grows (no reset on every word) so the delay is visible.
+   */
+  private renderSubtitleLines(lines: string[]): void {
+    if (!this.liveSubtitleText) return;
+
+    const isMobile = window.innerWidth <= VoiceScannerApp.SUBTITLE_MOBILE_BREAKPOINT_PX;
+    const delayMs = isMobile
+      ? VoiceScannerApp.SUBTITLE_LINE_REVEAL_DELAY_MS_MOBILE
+      : VoiceScannerApp.SUBTITLE_LINE_REVEAL_DELAY_MS;
+    const maxVisible = VoiceScannerApp.MAX_SUBTITLE_LINES_VISIBLE;
+
+    const shouldReset =
+      lines.length === 0 ||
+      this.lastScheduledSubtitleLines.length === 0 ||
+      lines[0] !== this.lastScheduledSubtitleLines[0] ||
+      lines.length <= this.lastScheduledSubtitleLines.length;
+
+    const isAppending =
+      !shouldReset &&
+      lines.length > this.lastScheduledSubtitleLines.length &&
+      this.lastScheduledSubtitleLines.every((l, j) => lines[j] === l);
+
+    if (shouldReset) {
+      for (const t of this.subtitleRevealTimeouts) clearTimeout(t);
+      this.subtitleRevealTimeouts = [];
+      this.liveSubtitleText.innerHTML = '';
+      this.lastScheduledSubtitleLines = [];
+      if (lines.length === 0) return;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        const idx = i;
+        const timeout = setTimeout(() => {
+          if (!this.liveSubtitleText) return;
+          this.clearSubtitleLinePromoted();
+          const el = document.createElement('span');
+          el.className = 'subtitle-line';
+          el.textContent = line;
+          this.liveSubtitleText.appendChild(el);
+          if (idx >= maxVisible) {
+            this.scrollSubtitleAndRemoveFirst();
+          }
+          // When this is the last line and we have 2+ lines, after one reveal-delay promote 2nd to 1st (no new line coming).
+          if (idx === lines.length - 1 && lines.length >= 2) {
+            const promoteTimeout = setTimeout(() => {
+              if (!this.liveSubtitleText) return;
+              if (this.liveSubtitleText.children.length >= 2) {
+                this.scrollSubtitleAndRemoveFirst();
+              }
+            }, delayMs);
+            this.subtitleRevealTimeouts.push(promoteTimeout);
+          }
+        }, idx * delayMs);
+        this.subtitleRevealTimeouts.push(timeout);
+      }
+      this.lastScheduledSubtitleLines = [...lines];
+      return;
+    }
+
+    if (isAppending) {
+      const start = this.lastScheduledSubtitleLines.length;
+      for (let i = start; i < lines.length; i++) {
+        const line = lines[i]!;
+        const idx = i;
+        const delayFromNow = (i - start + 1) * delayMs;
+        const timeout = setTimeout(() => {
+          if (!this.liveSubtitleText) return;
+          this.clearSubtitleLinePromoted();
+          const el = document.createElement('span');
+          el.className = 'subtitle-line';
+          el.textContent = line;
+          this.liveSubtitleText.appendChild(el);
+          if (idx >= maxVisible) {
+            this.scrollSubtitleAndRemoveFirst();
+          }
+          // When this is the last line and we have 2+ lines, after one reveal-delay promote 2nd to 1st (no new line coming).
+          if (idx === lines.length - 1 && lines.length >= 2) {
+            const promoteTimeout = setTimeout(() => {
+              if (!this.liveSubtitleText) return;
+              if (this.liveSubtitleText.children.length >= 2) {
+                this.scrollSubtitleAndRemoveFirst();
+              }
+            }, delayMs);
+            this.subtitleRevealTimeouts.push(promoteTimeout);
+          }
+        }, delayFromNow);
+        this.subtitleRevealTimeouts.push(timeout);
+      }
+      this.lastScheduledSubtitleLines = [...lines];
+    }
+  }
+
+  /** Remove promoted class from all subtitle lines so nth-child(2) correctly gets 30% opacity. */
+  private clearSubtitleLinePromoted(): void {
+    this.liveSubtitleText?.querySelectorAll('.subtitle-line-promoted').forEach((el) => {
+      el.classList.remove('subtitle-line-promoted');
+    });
+  }
+
+  /**
+   * Scrolls the subtitle viewport up by one line (smooth), then removes the first line and resets scroll.
+   * Call after appending a new line when we're at max visible lines (scroll-up-then-remove effect).
+   */
+  private scrollSubtitleAndRemoveFirst(): void {
+    const container = this.liveSubtitleText;
+    if (!container) return;
+    const first = container.firstElementChild as HTMLElement | null;
+    const second = first?.nextElementSibling as HTMLElement | null;
+    if (!first) return;
+    const gap = 2;
+    const scrollAmount = first.offsetHeight + gap;
+    const durationMs = VoiceScannerApp.SUBTITLE_SCROLL_DURATION_MS;
+    const startTop = container.scrollTop;
+    const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const opacityStartMs = 50;
+    const opacityEndMs = 250;
+    let startTime: number | null = null;
+    const tick = (now: number) => {
+      if (startTime === null) {
+        startTime = now;
+        if (second) second.classList.add('subtitle-line-promoted');
+      }
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / durationMs, 1);
+      container.scrollTop = startTop + (scrollAmount - startTop) * easeInOutCubic(t);
+      if (second) {
+        if (elapsed < opacityStartMs) {
+          second.style.opacity = '0.3';
+        } else if (elapsed >= opacityEndMs) {
+          second.style.opacity = '1';
+        } else {
+          const u = (elapsed - opacityStartMs) / (opacityEndMs - opacityStartMs);
+          const e = easeInOutCubic(u);
+          second.style.opacity = String(0.3 + 0.7 * e);
+        }
+      }
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        if (second) second.style.removeProperty('opacity');
+        if (container.firstElementChild) {
+          container.firstElementChild.remove();
+          container.scrollTop = 0;
+        }
+      }
+    };
+    requestAnimationFrame(tick);
+  }
+
+  /**
+   * Update the live subtitle above the wave visualizer (2 lines: user + bot, synced with voice).
+   * Wraps text to 42 characters per line.
    */
   private updateLiveSubtitle(role: 'user' | 'bot', text: string): void {
-    if (!this.liveSubtitle || !this.liveSubtitleLabel || !this.liveSubtitleText) return;
+    if (!this.liveSubtitle || !this.liveSubtitleText) return;
     if (!text) return;
 
     // Reset auto-clear timer
@@ -905,27 +1397,41 @@ class VoiceScannerApp {
       clearTimeout(this.subtitleClearTimeout);
     }
 
-    // Update label and role styling
-    this.liveSubtitleLabel.textContent = role === 'user' ? 'You' : 'NesterAI';
-    this.liveSubtitleLabel.className = 'live-subtitle-label ' + role;
+    // Role class on container for .user / .bot text styling
+    this.liveSubtitle.classList.remove('user', 'bot');
+    this.liveSubtitle.classList.add(role);
 
-    // Render each word as an animated span
-    const words = text.split(/\s+/).filter(w => w.length > 0);
-    this.liveSubtitleText.innerHTML = words.map(w =>
-      `<span class="sub-word">${w}</span>`
-    ).join(' ');
+    // User speech: prefix with "- " so we can identify user vs bot at a glance
+    const displayText = role === 'user' ? `- ${text}` : text;
+
+    const maxChars = window.innerWidth <= VoiceScannerApp.SUBTITLE_MOBILE_BREAKPOINT_PX
+      ? VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS_MOBILE
+      : VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS;
+    const lines = this.textToLines(displayText, maxChars);
+    this.renderSubtitleLines(lines);
 
     // Show the subtitle
     this.liveSubtitle.classList.add('visible');
 
-    // Auto-hide after 4s of no new updates
-    this.subtitleClearTimeout = setTimeout(() => {
-      this.liveSubtitle?.classList.remove('visible');
-    }, 4000);
+    // For user transcripts: always auto-hide after 4s
+    // For bot role when speaking: BotStoppedSpeaking handles the hide
+    if (role === 'user' || !this.botIsSpeaking) {
+      this.subtitleClearTimeout = setTimeout(() => {
+        this.liveSubtitle?.classList.remove('visible');
+      }, 4000);
+    }
   }
 
   /**
-   * Add bot transcript with typewriter effect (word by word)
+   * Update bot live subtitle with full text as it comes from transcript (no typewriter effect, no delay).
+   */
+  private setBotSubtitleFromText(fullText: string): void {
+    if (!fullText.trim()) return;
+    this.updateLiveSubtitle('bot', fullText.trim());
+  }
+
+  /**
+   * Add bot transcript with typewriter effect (word by word) - log style
    */
   private addBotTranscriptWithTypewriter(text: string): void {
     if (!this.transcriptList) return;
@@ -933,25 +1439,37 @@ class VoiceScannerApp {
     // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
-    // Create new bubble if none exists
+    // Create new line if none exists (log style: timestamp + Nester AI + message)
     if (!this.currentBotBubble) {
       this.currentBotBubble = document.createElement('div');
-      this.currentBotBubble.className = 'transcript-bubble bot typewriter';
+      this.currentBotBubble.className = 'transcript-line transcript-line-bot typewriter';
 
-      const label = document.createElement('span');
-      label.className = 'transcript-label';
-      label.textContent = 'NesterAI: ';
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'transcript-time';
+      timeSpan.textContent = this.formatTranscriptTime() + ' ';
 
       const textSpan = document.createElement('span');
-      textSpan.className = 'transcript-text typewriter-text';
+      textSpan.className = 'transcript-message typewriter-text';
 
-      this.currentBotBubble.appendChild(label);
+      this.currentBotBubble.appendChild(timeSpan);
       this.currentBotBubble.appendChild(textSpan);
       this.transcriptList.appendChild(this.currentBotBubble);
+
+      // Clear subtitle ONLY if streaming_text is not already active for this response
+      // (prevents clearing subtitle when bot-transcript arrives after streaming_text has started)
+      if (this.liveSubtitleText && !this.streamingBubble) {
+        this.liveSubtitleText.innerHTML = '';
+      } else if (this.streamingBubble) {
+      }
     }
 
     // Split text into words and add to queue
     const words = text.split(/\s+/).filter(w => w.length > 0);
+    // Mark subtitle to clear on next word ONLY if streaming_text is not active
+    // (prevents clearing subtitle when bot-transcript arrives while streaming_text is handling it)
+    if (this.liveSubtitleText && this.liveSubtitleText.childNodes.length > 0 && !this.streamingBubble) {
+      this.subtitleClearOnNextSentence = true;
+    }
     this.typewriterQueue.push(...words);
 
     // Start typewriter if not already running
@@ -973,21 +1491,25 @@ class VoiceScannerApp {
     const word = this.typewriterQueue.shift()!;
 
     if (this.currentBotBubble) {
-      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
+      const textSpan = this.currentBotBubble.querySelector('.transcript-message.typewriter-text');
       if (textSpan) {
-        // Add word with animation
+        // Same as live subtitle: first word = start of line
+        const isFirstWord = textSpan.childNodes.length === 0;
+
+        // Add word with animation (same as transcript bubble)
         const wordSpan = document.createElement('span');
         wordSpan.className = 'typewriter-word';
         wordSpan.textContent = word + ' ';
         textSpan.appendChild(wordSpan);
 
-        // Sync live subtitle with typewriter (voice sync)
-        this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
-
-        // Scroll to bottom
-        if (this.transcriptList) {
-          this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+        // Live subtitle: show full text as it comes (no typewriter effect).
+        // Suppressed when RTVI 2.0 native bot-output is driving the subtitle.
+        if (!this.streamingTextActiveForSubtitle && !this.nativeSubtitleActive) {
+          this.setBotSubtitleFromText((textSpan.textContent || '').trim());
         }
+
+        // Scroll to bottom if already there
+        this.maybeScrollToTranscriptBottom();
       }
     }
 
@@ -1000,7 +1522,7 @@ class VoiceScannerApp {
    */
   private finalizeBotBubble(): void {
     if (this.currentBotBubble) {
-      const textSpan = this.currentBotBubble.querySelector('.typewriter-text');
+      const textSpan = this.currentBotBubble.querySelector('.transcript-message.typewriter-text');
       if (textSpan) {
         this.updateLiveSubtitle('bot', (textSpan.textContent || '').trim());
       }
@@ -1058,17 +1580,13 @@ class VoiceScannerApp {
 
       // Highlight matched nodes in the graph with cycling animation
       if (data.matched && data.matched.length > 0 && (window as any).KnowledgeGraph) {
-        console.log('[KnowledgeGraph] Selected nodes (by relevance):', data.matched.join(', '));
         (window as any).KnowledgeGraph.highlightWithCycle(data.matched);
-      } else {
-        console.log('[KnowledgeGraph] No matching nodes for conversation');
       }
 
       // Add topic to timeline - topic and type come from backend LLM call
       if (this.topicTimeline && data.topic) {
         const keywords = data.matched || [];
         this.topicTimeline.addTopic(data.topic, keywords, data.topicType, data.parentTopic);
-        console.log('[TopicTimeline] Added topic:', data.topic, 'type:', data.topicType);
 
         // Track this topic for future context (keep last 10)
         this.previousTopics.push(data.topic);
@@ -1093,6 +1611,46 @@ class VoiceScannerApp {
    */
   private toggleSidePanels(): void {
     this.mainLayout?.classList.toggle('panels-hidden');
+    this.updatePeakButtonState();
+
+    const isHomeScreen = this.mainLayout?.classList.contains('panels-hidden') ?? true;
+    if (isHomeScreen) {
+      // Returning to home — restore A2UI panel if it has content
+      if (this.a2uiHasContent && this.a2uiPanel) {
+        this.a2uiPanel.classList.add('visible');
+        document.body.classList.add('a2ui-panel-visible');
+      }
+    } else {
+      // Switching to dashboard — hide A2UI panel (keep content flag)
+      this.a2uiPanel?.classList.remove('visible');
+      document.body.classList.remove('a2ui-panel-visible');
+      // Force widget refresh after dashboard cards become visible (ResizeObserver needs layout)
+      setTimeout(() => this.refreshSynchronizedAnalysis(), 100);
+    }
+  }
+
+  /**
+   * Update Peek button icon and text based on cards visibility (like speaker/mic)
+   * Cards hidden → Eye + "Peek"; Cards showing → EyeClosed + "Hide"
+   */
+  private updatePeakButtonState(): void {
+    const cardsShowing = this.mainLayout && !this.mainLayout.classList.contains('panels-hidden');
+    const iconPath = cardsShowing ? '/EyeClosed.svg' : '/Eye (1).svg';
+    const label = cardsShowing ? 'Hide' : 'Peek';
+
+    const controlPeak = document.getElementById('control-peak');
+    const controlPeakImg = controlPeak?.querySelector<HTMLImageElement>('.control-btn-icon');
+    const controlPeakLabel = controlPeak?.querySelector('.control-btn-label');
+    if (controlPeakImg) controlPeakImg.src = iconPath;
+    if (controlPeakLabel) controlPeakLabel.textContent = label;
+    controlPeak?.setAttribute('aria-label', cardsShowing ? 'Hide dashboard' : 'Peak view');
+
+    const closeOptionPeak = document.getElementById('close-option-peak');
+    const closeOptionPeakImg = closeOptionPeak?.querySelector<HTMLImageElement>('.close-option-icon');
+    const closeOptionPeakLabel = closeOptionPeak?.querySelector('.close-option-label');
+    if (closeOptionPeakImg) closeOptionPeakImg.src = iconPath;
+    if (closeOptionPeakLabel) closeOptionPeakLabel.textContent = label;
+    closeOptionPeak?.setAttribute('aria-label', cardsShowing ? 'Hide' : 'Peak');
   }
 
   /**
@@ -1146,6 +1704,73 @@ class VoiceScannerApp {
   }
 
   /**
+   * Chatterbox EMOTION_TO_PARAMS lookup (mirrors backend chatterbox_tts.py).
+   * Maps detected emotion → {exaggeration, cfg_weight} used for TTS voice control.
+   * ToneModulator clarity = 1 - cfg_weight (lower CFG = more assertive)
+   * ToneModulator intensity = exaggeration (higher = more expressive)
+   */
+  private static readonly EMOTION_TO_PARAMS: Record<string, { exaggeration: number; cfg_weight: number }> = {
+    neutral: { exaggeration: 0.4, cfg_weight: 0.5 },
+    sad: { exaggeration: 0.6, cfg_weight: 0.4 },
+    frustrated: { exaggeration: 0.5, cfg_weight: 0.5 },
+    excited: { exaggeration: 0.9, cfg_weight: 0.3 },
+    happy: { exaggeration: 0.8, cfg_weight: 0.35 },
+    angry: { exaggeration: 0.7, cfg_weight: 0.4 },
+  };
+
+  /**
+   * Update ToneModulator widget using Chatterbox CFG/exaggeration lookup.
+   */
+  private updateToneModulatorFromEmotion(detectedEmotion: string, nesterResponse?: string): void {
+    const params = VoiceScannerApp.EMOTION_TO_PARAMS[detectedEmotion] || VoiceScannerApp.EMOTION_TO_PARAMS['neutral'];
+    const clarity = 1 - params.cfg_weight;
+    const intensity = params.exaggeration;
+    (window as any).ToneModulator?.update?.({
+      detectedEmotion,
+      nesterResponse: nesterResponse ?? undefined,
+      clarity,
+      intensity,
+    });
+  }
+
+  /**
+   * Push a new emotion data point to the EmotionAnalysis widget.
+   * Maps backend emotion string to sentiment/label for the chart.
+   */
+  private pushEmotionToWidget(emotion: string, arousal: number, valence: number): void {
+    // Map emotion to sentiment
+    const posEmotions = ['happy', 'excited', 'content', 'calm'];
+    const negEmotions = ['sad', 'angry', 'frustrated', 'worried', 'fear'];
+    let sentiment: 'positive' | 'neutral' | 'negative' = 'neutral';
+    if (posEmotions.includes(emotion)) sentiment = 'positive';
+    else if (negEmotions.includes(emotion)) sentiment = 'negative';
+
+    // Map emotion to sentimentLabel (what the chart displays)
+    const labelMap: Record<string, string> = {
+      'excited': 'Excited', 'happy': 'Positive', 'content': 'Positive',
+      'calm': 'Calm', 'neutral': 'Neutral',
+      'sad': 'Concerned', 'angry': 'Concerned', 'frustrated': 'Concerned',
+      'worried': 'Concerned', 'fear': 'Concerned',
+    };
+
+    this.emotionTopicNodes.push({
+      id: `emo-${this.emotionNodeCounter++}`,
+      timestamp: new Date(),
+      sentiment,
+      sentimentLabel: labelMap[emotion] || 'Neutral',
+      intensity: Math.max(0, Math.min(1, (arousal + 1) / 2)), // normalize -1..1 to 0..1
+    });
+
+    // Keep last 30 points to avoid unbounded growth
+    if (this.emotionTopicNodes.length > 30) {
+      this.emotionTopicNodes = this.emotionTopicNodes.slice(-30);
+    }
+
+    const latest = this.emotionTopicNodes[this.emotionTopicNodes.length - 1];
+    (window as any).EmotionAnalysis?.updateTopics?.(this.emotionTopicNodes);
+  }
+
+  /**
    * Update emotion display with detected emotion data
    */
   private updateEmotionDisplay(data: {
@@ -1189,6 +1814,12 @@ class VoiceScannerApp {
     this.addTerminalMessage(`emotion.detect({type: '${data.emotion}', conf: ${(data.confidence * 100).toFixed(0)}%});`, 'command');
 
     this.log(`Emotion detected: ${emotionName} (${Math.round(data.confidence * 100)}%)`);
+
+    // Tone Modulator: use Chatterbox CFG/exaggeration lookup for clarity/intensity
+    this.updateToneModulatorFromEmotion(data.emotion, data.tone);
+
+    // EmotionAnalysis widget: push live data point
+    this.pushEmotionToWidget(data.emotion, data.arousal, data.valence);
   }
 
   /**
@@ -1251,6 +1882,12 @@ class VoiceScannerApp {
     this.addTerminalMessage(terminalMsg, 'command');
 
     this.log(`🔄 Hybrid Emotion: ${emotionName} (${Math.round(data.confidence * 100)}%) | Audio: ${data.audio_emotion} ${audioPercent}% | Text: ${data.text_emotion} ${textPercent}%`);
+
+    // Tone Modulator: use Chatterbox CFG/exaggeration lookup for clarity/intensity
+    this.updateToneModulatorFromEmotion(data.primary_emotion);
+
+    // EmotionAnalysis widget: push live data point
+    this.pushEmotionToWidget(data.primary_emotion, data.arousal, data.valence);
   }
 
   /**
@@ -1274,6 +1911,11 @@ class VoiceScannerApp {
       this.toneLabel.textContent = displayName;
     }
 
+    // Tone Modulator: Nester response tone
+    if (typeof window !== 'undefined' && (window as unknown as { ToneModulator?: { update: (u: unknown) => void } }).ToneModulator?.update) {
+      (window as unknown as { ToneModulator: { update: (u: { nesterResponse?: string }) => void } }).ToneModulator.update({ nesterResponse: tone });
+    }
+
     this.addTerminalMessage(`voice.tone.switch('${tone}');`, 'command');
     this.log(`Voice tone switched to: ${displayName}`);
   }
@@ -1282,14 +1924,12 @@ class VoiceScannerApp {
    * Add emotion dot to timeline
    */
   private addEmotionToTimeline(emotion: string, _emoji?: string): void {
-    console.log('[Timeline] Adding emotion to timeline:', emotion, 'Element exists:', !!this.emotionTimeline);
     if (!this.emotionTimeline) {
-      console.warn('[Timeline] emotionTimeline element not found!');
       return;
     }
 
     const emotionColors: Record<string, string> = {
-      'neutral': '#6b7280',
+      'neutral': '#7D7D7D',
       'happy': '#10b981',
       'excited': '#8b5cf6',
       'sad': '#3b82f6',
@@ -1303,7 +1943,7 @@ class VoiceScannerApp {
 
     const dot = document.createElement('div');
     dot.className = 'timeline-dot';
-    dot.style.backgroundColor = emotionColors[emotion] || '#6b7280';
+    dot.style.backgroundColor = emotionColors[emotion] || '#7D7D7D';
     dot.title = `${emotion.charAt(0).toUpperCase() + emotion.slice(1)}`;
 
     // Keep only last 15 emotions
@@ -1312,7 +1952,6 @@ class VoiceScannerApp {
     }
 
     this.emotionTimeline.appendChild(dot);
-    console.log('[Timeline] Dot appended, current count:', this.emotionTimeline.children.length);
 
     // Animate dot entrance
     setTimeout(() => dot.classList.add('visible'), 10);
@@ -1763,9 +2402,7 @@ class VoiceScannerApp {
               source.connect(this.analyser);
               this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
               this.botAnalyserSetup = true;
-              console.log('[BOT AUDIO] Analyser set up via captureStream');
             } catch (e) {
-              console.warn('[BOT AUDIO] captureStream failed:', e);
             }
           };
         }
@@ -1777,7 +2414,6 @@ class VoiceScannerApp {
         this.analyser.smoothingTimeConstant = 0.5;
         source.connect(this.analyser);
         this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-        console.log('[BOT AUDIO] Analyser set up via MediaStreamSource');
       }
 
       this.startAudioVisualization();
@@ -1816,61 +2452,31 @@ class VoiceScannerApp {
    * This gives us real frequency data for bot audio visualization
    */
   private setupBotPlayerAnalyser(): void {
-    console.log('[BOT AUDIO] Setting up bot player analyser...');
     try {
-      if (!this.transport) {
-        console.warn('[BOT AUDIO] Transport not available');
-        return;
-      }
-      console.log('[BOT AUDIO] Transport found:', this.transport);
-
-      // Access the internal media manager and player
-      // Note: This accesses internal properties which may change in future versions
+      if (!this.transport) return;
       const mediaManager = (this.transport as any)._mediaManager;
-      console.log('[BOT AUDIO] MediaManager:', mediaManager);
-      if (!mediaManager) {
-        console.warn('[BOT AUDIO] MediaManager not found on transport');
-        // Log available properties on transport for debugging
-        console.log('[BOT AUDIO] Transport properties:', Object.keys(this.transport));
-        return;
-      }
-
+      if (!mediaManager) return;
       const wavPlayer = mediaManager._wavStreamPlayer;
-      console.log('[BOT AUDIO] WavStreamPlayer:', wavPlayer);
-      if (!wavPlayer) {
-        console.warn('[BOT AUDIO] WavStreamPlayer not found on media manager');
-        // Log available properties for debugging
-        console.log('[BOT AUDIO] MediaManager properties:', Object.keys(mediaManager));
-        return;
-      }
+      if (!wavPlayer) return;
 
-      // Store the player's AudioContext for speaker mute (suspend/resume)
       if (wavPlayer.context) {
         this.botPlayerContext = wavPlayer.context as AudioContext;
       }
 
-      // Get the analyser from the player
       if (wavPlayer.analyser) {
         this.botPlayerAnalyser = wavPlayer.analyser as AnalyserNode;
-        const freqBinCount = this.botPlayerAnalyser.frequencyBinCount;
-        this.botPlayerDataArray = new Uint8Array(freqBinCount);
-        console.log('[BOT AUDIO] ✅ Connected to WavStreamPlayer analyser - real frequency data available!');
-        console.log('[BOT AUDIO] Frequency bins:', freqBinCount);
+        this.botPlayerDataArray = new Uint8Array(this.botPlayerAnalyser.frequencyBinCount);
       } else {
-        console.warn('[BOT AUDIO] Analyser not found on WavStreamPlayer (may not be connected yet)');
-
-        // Try again after a short delay (player might connect later)
+        // Retry after delay — player might connect later
         setTimeout(() => {
           if (wavPlayer.analyser && !this.botPlayerAnalyser) {
             this.botPlayerAnalyser = wavPlayer.analyser as AnalyserNode;
-            const freqBinCount = this.botPlayerAnalyser.frequencyBinCount;
-            this.botPlayerDataArray = new Uint8Array(freqBinCount);
-            console.log('[BOT AUDIO] ✅ Connected to WavStreamPlayer analyser (delayed)');
+            this.botPlayerDataArray = new Uint8Array(this.botPlayerAnalyser.frequencyBinCount);
           }
         }, 1000);
       }
     } catch (e) {
-      console.warn('[BOT AUDIO] Could not set up bot player analyser:', e);
+      console.warn('[BOT AUDIO] Setup failed:', e);
     }
   }
 
@@ -1916,12 +2522,50 @@ class VoiceScannerApp {
     // Bot speech events
     this.rtviClient.on(RTVIEvent.BotStartedSpeaking, () => {
       this.log('Bot started speaking');
+      // Hide loading overlay on first bot speech — seamless: overlay disappears exactly
+      // as the greeting starts. Guard in hideLoadingOverlay() prevents double-calls.
+      this.hideLoadingOverlay();
       // Note: Bot audio visualization uses simulated data since RTVI doesn't expose bot audio track
+      this.botIsSpeaking = true;
+      if (this.subtitleClearTimeout) {
+        clearTimeout(this.subtitleClearTimeout);
+        this.subtitleClearTimeout = null;
+      }
+      // Native subtitle path: start each bot turn with a fresh rolling window.
+      if (this.nativeSubtitleActive) {
+        this.subtitleDisplayedWords = [];
+        this.subtitleWordCount = 0;
+        this.nativeSubtitleSegmentId = -1;
+        this.nativeSubtitleSegmentWords = 0;
+      }
       this.setVoiceState('speaking');
+
+      // Audio is now playing — schedule buffered subtitle words based on PTS timing
+      this.subtitleAudioStartTime = performance.now();
+      if (this.subtitleBufferFlushTimer) {
+        clearTimeout(this.subtitleBufferFlushTimer);
+        this.subtitleBufferFlushTimer = null;
+      }
+      this.flushSubtitleWordBuffer();
     });
 
     this.rtviClient.on(RTVIEvent.BotStoppedSpeaking, () => {
       this.log('Bot stopped speaking');
+      this.botIsSpeaking = false;
+      // BotStoppedSpeaking can fire during short audio gaps while PTS-timed
+      // subtitle words are still queued. Keep the subtitle visible until no
+      // buffered/timed words remain, otherwise it briefly disappears mid-line.
+      const pendingSubtitleWork = this.hasPendingSubtitleWork();
+      const hideDelay = pendingSubtitleWork ? 5000 : Math.min(Math.max(this.subtitleWordCount * 80, 1500), 4000);
+      this.subtitleWordCount = 0;
+      if (this.subtitleClearTimeout) {
+        clearTimeout(this.subtitleClearTimeout);
+      }
+      this.subtitleClearTimeout = setTimeout(() => {
+        if (!this.botIsSpeaking && !this.hasPendingSubtitleWork()) {
+          this.liveSubtitle?.classList.remove('visible');
+        }
+      }, hideDelay);
       if (this.isConnected) {
         this.setVoiceState('listening');
       }
@@ -1949,6 +2593,7 @@ class VoiceScannerApp {
    * Get backend URL
    */
   private getBackendUrl(): string {
+    // Highest priority: explicit env (for production / advanced setups)
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) {
       // @ts-ignore
@@ -1957,7 +2602,9 @@ class VoiceScannerApp {
     if ((window as any).__BACKEND_URL__) {
       return (window as any).__BACKEND_URL__;
     }
-    return 'http://localhost:7860';
+
+    // Fallback: use simple toggle from frontend config
+    return USE_LOCAL_BACKEND ? LOCAL_BACKEND_URL : REMOTE_BACKEND_URL;
   }
 
   /**
@@ -1993,12 +2640,10 @@ class VoiceScannerApp {
       this.log(`Connecting to ${backendUrl}...`);
 
       this.transport = new WebSocketTransport();
-      const config: RTVIClientOptions = {
+      // client-js 1.x: `params`/`endpoints` are gone; the /connect endpoint is
+      // now passed to startBotAndConnect() below instead.
+      const config: PipecatClientOptions = {
         transport: this.transport,
-        params: {
-          baseUrl: backendUrl,
-          endpoints: { connect: '/connect' },
-        },
         enableMic: true,
         enableCam: false,
         callbacks: {
@@ -2012,6 +2657,12 @@ class VoiceScannerApp {
             this.addTerminalMessage('Connection established. Voice active.', 'success');
             this.showNotification('CONNECTION ESTABLISHED');
 
+            // Crystal chime — premium connection audio feedback
+            this.playCrystalChime();
+
+            // Fallback: hide loading overlay if bot somehow doesn't speak within 8s
+            setTimeout(() => this.hideLoadingOverlay(), 8000);
+
             // Set up bot player analyser after connection (with delay to ensure player is ready)
             setTimeout(() => {
               this.setupBotPlayerAnalyser();
@@ -2024,10 +2675,37 @@ class VoiceScannerApp {
             this.setCloseButtonEnabled(true);
             this.log('Disconnected');
             this.setVoiceState('idle');
+            // Stop all subtitle activity
+            this.clearSubtitleDisplayTimers();
+            this.subtitleWordBuffer = [];
+            this.subtitleDisplayedWords = [];
+            this.subtitleAudioStartTime = 0;
+            this.nativeSubtitleActive = false;  // re-detect bot-output support next session
+            this.nativeSubtitleSegmentId = -1;
+            this.nativeSubtitleSegmentWords = 0;
+            if (this.subtitleClearTimeout) {
+              clearTimeout(this.subtitleClearTimeout);
+              this.subtitleClearTimeout = null;
+            }
+            this.liveSubtitle?.classList.remove('visible');
+            // Do not clear close-mode here: when user clicked Close we keep Restart | Peek visible.
+            // When server/error disconnects, we're not in close-mode so updateConnectionUI(false) will show connect area.
             this.updateConnectionUI(false);
             this.stopAudioVisualization();
             this.startIdleBlobAnimation(); // Keep wave animating in idle state
-            this.addTerminalMessage('Connection terminated.', 'regular');
+            if (this.botInitiatedDisconnect) {
+              // showSessionEndedScreen() was already called when conversation_ending arrived.
+              // Just clear the flag; close-mode is already active.
+              this.botInitiatedDisconnect = false;
+            } else if (this.userInitiatedDisconnect) {
+              // User clicked the X button — close-mode (Restart | Peek) is already showing.
+              // Nothing extra needed.
+              this.userInitiatedDisconnect = false;
+            } else {
+              // Unexpected disconnect: idle timeout, network drop, server crash, etc.
+              // Show session-ended screen so user has a clear "Restart" button.
+              this.showSessionEndedScreen();
+            }
           },
           onBotReady: () => {
             this.log(`Bot ready`);
@@ -2040,12 +2718,14 @@ class VoiceScannerApp {
               this.log(`You: ${data.text}`);
               // Finalize previous bot bubble before adding user message
               this.finalizeBotBubble();
+              this.streamingTextActiveForSubtitle = false;  // Reset for next turn
               this.addTranscript(data.text, true);
               // Store query and reset accumulated answer for new turn
               this.lastUserQuery = data.text;
               this.accumulatedBotAnswer = '';
               // Clear A2UI from previous turn when new user query starts
               this.clearA2UI();
+              this.hideA2UIPanel();
               // Stop any ongoing graph node cycling
               if ((window as any).KnowledgeGraph?.stopCycle) {
                 (window as any).KnowledgeGraph.stopCycle();
@@ -2054,9 +2734,13 @@ class VoiceScannerApp {
           },
           onBotTranscript: (data) => {
             this.log(`Bot: ${data.text}`);
-            // Use typewriter effect for bot transcript
-            this.addBotTranscriptWithTypewriter(data.text);
-            // Accumulate bot answer chunks
+            // [SUBTITLE-SYNC] Disabled: subtitle & transcript now driven by streaming_text
+            // from SubtitleSyncProcessor for audio-synced subtitles.
+            // if (!this.streamingBubble && !this.skipNextBotTranscriptAdd) {
+            //   this.addBotTranscriptWithTypewriter(data.text);
+            // }
+            // if (this.skipNextBotTranscriptAdd) this.skipNextBotTranscriptAdd = false;
+            // Accumulate bot answer chunks (for graph highlight)
             this.accumulatedBotAnswer += ' ' + data.text;
             // Debounce highlight call - wait 500ms after last chunk
             if (this.graphHighlightTimeout) {
@@ -2073,9 +2757,33 @@ class VoiceScannerApp {
             this.addTerminalMessage(errorMsg, 'error');
             console.error('RTVI Error:', error);
           },
-          onServerMessage: (message) => {
-            console.log('[Visual] Server message received:', JSON.stringify(message, null, 2));
+          // RTVI 2.0 native bot output: spoken_progress.accumulated_text grows in
+          // sync with the transport's audio clock, so it drives the live subtitle
+          // far more accurately than client-side PTS timers. When present, it
+          // takes over subtitle rendering (see nativeSubtitleActive guards).
+          onBotOutput: (data) => {
+            if (!this.useNativeSubtitles) return;
+            const progress = data.spoken_progress;
+            if (!progress || typeof progress.accumulated_text !== 'string') return;
+            this.nativeSubtitleActive = true;
 
+            const words = progress.accumulated_text.trim().split(/\s+/).filter(w => w.length > 0);
+            const segId = typeof data.segment_id === 'number' ? data.segment_id : 0;
+            // New segment within this bot turn → its words are all fresh.
+            if (segId !== this.nativeSubtitleSegmentId) {
+              this.nativeSubtitleSegmentId = segId;
+              this.nativeSubtitleSegmentWords = 0;
+            }
+            // Append only newly-spoken words through the existing 2-line + glow
+            // renderer (displaySubtitleWord), so the design is unchanged — only the
+            // timing source is now the transport audio clock instead of PTS timers.
+            for (let i = this.nativeSubtitleSegmentWords; i < words.length; i++) {
+              this.displaySubtitleWord(words[i]);
+            }
+            this.nativeSubtitleSegmentWords = Math.max(this.nativeSubtitleSegmentWords, words.length);
+            // 'completed' → segment fully spoken; BotStoppedSpeaking handles hide.
+          },
+          onServerMessage: (message) => {
             try {
               let messageData = null;
               let messageType = null;
@@ -2092,59 +2800,57 @@ class VoiceScannerApp {
                 messageData = message.data;
               }
 
-              console.log('[Visual] Parsed message type:', messageType);
-
               // Handle different message types
               switch (messageType) {
+                case 'conversation_ending':
+                  this.botInitiatedDisconnect = true;
+                  // Show session-ended screen immediately while bot says farewell.
+                  // Don't wait for onDisconnected — the RTVI message may arrive before
+                  // the WebSocket close event is processed, giving better UX.
+                  this.showSessionEndedScreen();
+                  break;
                 case 'hybrid_emotion_detected':
-                  console.log('[HYBRID EMOTION] Updating displays:', messageData);
                   this.updateHybridEmotionDisplay(messageData);
                   this.updateEmotionReactiveUI(messageData);
                   break;
                 case 'emotion_detected':
-                  console.log('[Emotion] Updating displays:', messageData);
                   this.updateEmotionDisplay(messageData);
                   this.updateEmotionReactiveUI(messageData);
                   break;
                 case 'tone_switched':
-                  console.log('[Tone] Switching to:', messageData.new_tone);
                   this.updateToneDisplay(messageData.new_tone);
                   break;
                 case 'streaming_text':
-                  console.log('[Streaming] Text received:', messageData.text, 'seq:', messageData.sequence_id);
                   this.handleStreamingText(messageData);
                   break;
+                case 'subtitle_chunk':
+                  this.handleSubtitleChunk(messageData);
+                  break;
                 case 'visual_hint':
-                  console.log('[Visual Hint] Received:', messageData.hint_type);
                   this.handleVisualHint(messageData);
                   break;
                 case 'a2ui_update':
-                  console.log('='.repeat(60));
-                  console.log('🎨 [A2UI] *** A2UI_UPDATE MESSAGE RECEIVED ***');
-                  console.log('   Raw messageData:', messageData);
-                  console.log('   isA2UIUpdate check:', isA2UIUpdate(messageData));
                   if (isA2UIUpdate(messageData)) {
-                    console.log('✅ [A2UI] Valid A2UI update - calling handleA2UIUpdate');
                     this.handleA2UIUpdate(messageData);
                   } else {
-                    console.warn('⚠️ [A2UI] Invalid A2UI update format');
-                    console.warn('   Expected: message_type="a2ui_update" and a2ui object');
+                    console.warn('[A2UI] Invalid update format');
                   }
-                  console.log('='.repeat(60));
                   break;
               }
             } catch (e) {
-              console.error('[Visual] Error handling server message:', e);
+              console.error('[ServerMessage] Error:', e);
             }
           },
         },
       };
 
-      this.rtviClient = new RTVIClient(config);
+      this.rtviClient = new PipecatClient(config);
       this.setupTrackListeners();
 
       await this.rtviClient.initDevices();
-      await this.rtviClient.connect();
+      // client-js 1.x: POST to /connect (returns { ws_url }) and connect in one
+      // step. The websocket transport consumes the ws_url from the response.
+      await this.rtviClient.startBotAndConnect({ endpoint: `${backendUrl}/connect` });
 
     } catch (error) {
       this.isConnecting = false;
@@ -2157,7 +2863,7 @@ class VoiceScannerApp {
       if (this.rtviClient) {
         try {
           await this.rtviClient.disconnect();
-        } catch (e) {}
+        } catch (e) { }
         this.rtviClient = null;
       }
     }
@@ -2204,11 +2910,13 @@ class VoiceScannerApp {
       // Clear A2UI display
       this.clearA2UI();
 
-      // Clear topic timeline and history
-      if (this.topicTimeline) {
-        this.topicTimeline.clear();
-      }
-      this.previousTopics = [];
+      // Reset subtitle state
+      this.botIsSpeaking = false;
+      this.subtitleWordCount = 0;
+      this.subtitleClearOnNextSentence = false;
+
+      // Do NOT clear card data on disconnect (X): keep conversation history visible in all cards.
+      // Card data is only cleared when user clicks Restart (resetAllCardsData).
 
       this.isConnecting = false;
       this.isConnected = false;
@@ -2228,98 +2936,303 @@ class VoiceScannerApp {
   // ===== STREAMING TRANSCRIPT METHODS =====
 
   /**
-   * Handle streaming text events for word-by-word display
+   * Handle streaming text events — buffer words with PTS timing, display synced with audio.
+   *
+   * Words arrive from SubtitleSyncProcessor as a burst BEFORE audio plays.
+   * Each word includes pts_offset (seconds from first word in utterance).
+   * Words are buffered and released when BotStartedSpeaking fires.
    */
   private handleStreamingText(data: {
     text: string;
     is_final: boolean;
     sequence_id: number;
     utterance_id: string;
+    pts_offset?: number;
     timestamp: number;
   }): void {
-    // Start new utterance if needed
-    if (data.utterance_id !== this.currentUtteranceId) {
-      this.finalizeCurrentStreamingBubble();
-      this.currentUtteranceId = data.utterance_id;
-      this.streamingWords = [];
-      this.createStreamingBubble();
-    }
-
-    // Add word with animation (skip empty final markers)
-    if (data.text && data.text.trim()) {
-      this.addStreamingWord(data.text, data.sequence_id);
-    }
-
-    // Finalize on is_final
+    // Handle final marker
     if (data.is_final) {
       this.finalizeCurrentStreamingBubble();
+      return;
+    }
+
+    // New utterance — reset state
+    if (data.utterance_id !== this.currentUtteranceId) {
+      if (this.streamingBubble) {
+        this.finalizeCurrentStreamingBubble();
+      }
+      this.currentUtteranceId = data.utterance_id;
+      this.streamingTextActiveForSubtitle = true;
+      this.createStreamingBubble();
+
+      // Reset subtitle timing state
+      this.clearSubtitleDisplayTimers();
+      this.subtitleWordBuffer = [];
+      this.subtitleDisplayedWords = [];
+      // If bot is already speaking (BotStartedSpeaking fired before first streaming_text),
+      // keep audio start time so words schedule immediately instead of buffering forever.
+      if (this.botIsSpeaking) {
+        this.subtitleAudioStartTime = performance.now();
+      } else {
+        this.subtitleAudioStartTime = 0;
+      }
+    }
+
+    if (!data.text || !data.text.trim()) return;
+    const word = data.text.trim();
+    const ptsOffset = data.pts_offset ?? 0;
+
+    // Add word to transcript bubble immediately (transcript is a log, no timing needed)
+    this.addWordToTranscriptBubble(word, data.sequence_id);
+
+    // RTVI 2.0 native bot-output owns the live subtitle when available; skip the
+    // legacy PTS-timer buffering below (transcript bubble above still updates).
+    if (this.nativeSubtitleActive) return;
+
+    // Buffer word for timed subtitle display
+    if (this.subtitleAudioStartTime > 0) {
+      // Audio already playing — schedule this word immediately
+      this.scheduleSubtitleWord(word, ptsOffset);
+    } else {
+      // Audio not yet playing — buffer for later
+      this.subtitleWordBuffer.push({ word, seq: data.sequence_id, ptsOffset });
+      // Safety: if BotStartedSpeaking never fires (e.g. event lost), flush after 2s
+      if (!this.subtitleBufferFlushTimer) {
+        this.subtitleBufferFlushTimer = setTimeout(() => {
+          this.subtitleBufferFlushTimer = null;
+          if (this.subtitleWordBuffer.length > 0 && this.subtitleAudioStartTime === 0) {
+            console.log('[ST] Safety flush: BotStartedSpeaking not received, flushing buffered words');
+            this.subtitleAudioStartTime = performance.now();
+            this.flushSubtitleWordBuffer();
+          }
+        }, 2000);
+      }
     }
   }
 
   /**
-   * Create a new streaming transcript bubble
+   * Handle subtitle_chunk from Chatterbox TTS — full sentence with exact audio duration.
+   * Words are revealed one-by-one timed to audio_duration / word_count.
+   */
+  private handleSubtitleChunk(data: {
+    text: string;
+    audio_duration: number;
+    timestamp: number;
+  }): void {
+    if (!data.text || !data.text.trim()) return;
+    const words = data.text.trim().split(/\s+/);
+    if (words.length === 0) return;
+
+    const interval = data.audio_duration / words.length;
+
+    // Convert to buffered words with evenly-spaced PTS offsets.
+    // Skipped when RTVI 2.0 native bot-output is driving the live subtitle.
+    for (let i = 0; i < words.length && !this.nativeSubtitleActive; i++) {
+      const ptsOffset = i * interval;
+      if (this.subtitleAudioStartTime > 0) {
+        this.scheduleSubtitleWord(words[i], ptsOffset);
+      } else {
+        this.subtitleWordBuffer.push({ word: words[i], seq: i + 1, ptsOffset });
+      }
+    }
+
+    // Add full text to transcript bubble
+    if (!this.streamingBubble) {
+      this.createStreamingBubble();
+    }
+    for (let i = 0; i < words.length; i++) {
+      this.addWordToTranscriptBubble(words[i], i + 1);
+    }
+
+    // Safety flush if BotStartedSpeaking doesn't fire
+    if (this.subtitleAudioStartTime === 0 && !this.subtitleBufferFlushTimer) {
+      this.subtitleBufferFlushTimer = setTimeout(() => {
+        this.subtitleBufferFlushTimer = null;
+        if (this.subtitleWordBuffer.length > 0 && this.subtitleAudioStartTime === 0) {
+          console.log('[ST] Safety flush: BotStartedSpeaking not received, flushing subtitle_chunk');
+          this.subtitleAudioStartTime = performance.now();
+          this.flushSubtitleWordBuffer();
+        }
+      }, 2000);
+    }
+  }
+
+  /**
+   * Flush buffered subtitle words — called when BotStartedSpeaking fires.
+   * Schedules each word's display at its PTS offset from now.
+   */
+  private flushSubtitleWordBuffer(): void {
+    for (const entry of this.subtitleWordBuffer) {
+      this.scheduleSubtitleWord(entry.word, entry.ptsOffset);
+    }
+    this.subtitleWordBuffer = [];
+  }
+
+  /**
+   * Schedule a single word to appear in the subtitle at its PTS time.
+   */
+  private scheduleSubtitleWord(word: string, ptsOffset: number): void {
+    const elapsed = (performance.now() - this.subtitleAudioStartTime) / 1000;
+    const delay = Math.max(0, ptsOffset - elapsed);
+
+    if (delay < 0.05) {
+      // Show immediately
+      this.displaySubtitleWord(word);
+    } else {
+      const timer = setTimeout(() => {
+        this.subtitleDisplayTimers = this.subtitleDisplayTimers.filter(t => t !== timer);
+        this.displaySubtitleWord(word);
+      }, delay * 1000);
+      this.subtitleDisplayTimers.push(timer);
+    }
+  }
+
+  /**
+   * Display a word in the live subtitle (append to rolling text).
+   */
+  private displaySubtitleWord(word: string): void {
+    this.subtitleDisplayedWords.push(word);
+    this.subtitleWordCount++;
+
+    if (this.liveSubtitle && this.liveSubtitleText) {
+      const fullText = this.subtitleDisplayedWords.join(' ');
+      const maxChars = window.innerWidth <= VoiceScannerApp.SUBTITLE_MOBILE_BREAKPOINT_PX
+        ? VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS_MOBILE
+        : VoiceScannerApp.MAX_SUBTITLE_LINE_CHARS;
+      const lines = this.textToLines(fullText, maxChars);
+      const maxVisible = VoiceScannerApp.MAX_SUBTITLE_LINES_VISIBLE;
+      const visibleLines = lines.slice(-maxVisible);
+
+      // Render each line with individual word spans; latest word gets glow
+      this.liveSubtitleText.innerHTML = '';
+      const totalWordCount = this.subtitleDisplayedWords.length;
+      let wordIndex = 0;
+      // Calculate how many words are in lines before the visible ones
+      const allLines = this.textToLines(fullText, maxChars);
+      const hiddenLines = allLines.slice(0, allLines.length - visibleLines.length);
+      let hiddenWordCount = 0;
+      for (const hl of hiddenLines) {
+        hiddenWordCount += hl.split(/\s+/).filter(Boolean).length;
+      }
+      wordIndex = hiddenWordCount;
+
+      for (const line of visibleLines) {
+        const lineEl = document.createElement('span');
+        lineEl.className = 'subtitle-line';
+        const words = line.split(/\s+/).filter(Boolean);
+        for (let i = 0; i < words.length; i++) {
+          if (i > 0) lineEl.appendChild(document.createTextNode(' '));
+          const wordSpan = document.createElement('span');
+          wordSpan.className = 'subtitle-word';
+          wordSpan.textContent = words[i];
+          wordIndex++;
+          if (wordIndex === totalWordCount) {
+            // This is the latest word — give it the active glow
+            wordSpan.classList.add('subtitle-word-active');
+          }
+          lineEl.appendChild(wordSpan);
+        }
+        this.liveSubtitleText.appendChild(lineEl);
+      }
+
+      this.liveSubtitle.classList.remove('user');
+      this.liveSubtitle.classList.add('bot', 'visible');
+
+      // Clear any pending hide timer while words are still being displayed
+      if (this.subtitleClearTimeout) {
+        clearTimeout(this.subtitleClearTimeout);
+        this.subtitleClearTimeout = null;
+      }
+    }
+  }
+
+  /**
+   * Clear all pending subtitle display timers.
+   */
+  private clearSubtitleDisplayTimers(): void {
+    for (const t of this.subtitleDisplayTimers) clearTimeout(t);
+    this.subtitleDisplayTimers = [];
+    if (this.subtitleBufferFlushTimer) {
+      clearTimeout(this.subtitleBufferFlushTimer);
+      this.subtitleBufferFlushTimer = null;
+    }
+  }
+
+  /**
+   * True while subtitle words are still expected for the current bot utterance.
+   */
+  private hasPendingSubtitleWork(): boolean {
+    return (
+      this.subtitleDisplayTimers.length > 0 ||
+      this.subtitleWordBuffer.length > 0 ||
+      this.subtitleBufferFlushTimer !== null
+    );
+  }
+
+  /**
+   * Create a new streaming transcript bubble (log-style, no timing).
    */
   private createStreamingBubble(): void {
     if (!this.transcriptList) return;
 
-    // Hide welcome message
     this.welcomeMessage?.classList.add('hidden');
 
-    this.streamingBubble = document.createElement('div');
-    this.streamingBubble.className = 'transcript-bubble bot streaming';
+    this.streamingWords = [];
+    for (const t of this.subtitleRevealTimeouts) clearTimeout(t);
+    this.subtitleRevealTimeouts = [];
+    this.lastScheduledSubtitleLines = [];
+    if (this.liveSubtitleText) {
+      this.liveSubtitleText.textContent = '';
+    }
 
-    const label = document.createElement('span');
-    label.className = 'transcript-label';
-    label.textContent = 'NesterAI: ';
+    this.streamingBubble = document.createElement('div');
+    this.streamingBubble.className = 'transcript-line transcript-line-bot streaming';
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'transcript-time';
+    timeSpan.textContent = this.formatTranscriptTime() + ' ';
 
     const textContainer = document.createElement('span');
-    textContainer.className = 'transcript-text streaming-text';
+    textContainer.className = 'transcript-message streaming-text';
 
-    this.streamingBubble.appendChild(label);
+    this.streamingBubble.appendChild(timeSpan);
     this.streamingBubble.appendChild(textContainer);
     this.transcriptList.appendChild(this.streamingBubble);
-    this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
+    this.maybeScrollToTranscriptBottom(true);
   }
 
   /**
-   * Add a word to the streaming bubble with animation
+   * Add a word to the transcript bubble (immediate, no timing).
    */
-  private addStreamingWord(word: string, sequenceId: number): void {
+  private addWordToTranscriptBubble(word: string, sequenceId: number): void {
     if (!this.streamingBubble) return;
 
-    const textContainer = this.streamingBubble.querySelector('.streaming-text');
+    const textContainer = this.streamingBubble.querySelector('.transcript-message.streaming-text');
     if (!textContainer) return;
 
-    // Create word span with animation
     const wordSpan = document.createElement('span');
     wordSpan.className = 'streaming-word';
     wordSpan.textContent = word + ' ';
-    wordSpan.style.animationDelay = `${(sequenceId % 10) * 30}ms`; // Stagger animation
+    wordSpan.style.animationDelay = `${(sequenceId % 10) * 30}ms`;
 
     textContainer.appendChild(wordSpan);
     this.streamingWords.push(word);
 
-    // Sync live subtitle with streaming (voice sync)
-    this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
-
-    // Auto-scroll
-    if (this.transcriptList) {
-      this.transcriptList.scrollTop = this.transcriptList.scrollHeight;
-    }
+    this.maybeScrollToTranscriptBottom();
   }
 
   /**
-   * Finalize the current streaming bubble
+   * Finalize the current streaming bubble.
+   * Note: does NOT clear subtitle display timers — words may still be scheduled
+   * for display (is_final arrives when TTS finishes generating, before audio ends).
+   * Timers are only cleared when a new utterance starts.
    */
   private finalizeCurrentStreamingBubble(): void {
     if (this.streamingBubble) {
-      this.updateLiveSubtitle('bot', this.streamingWords.join(' '));
-
       this.streamingBubble.classList.remove('streaming');
       this.streamingBubble.classList.add('finalized');
 
-      // Convert streaming words to static text for better performance
-      const textContainer = this.streamingBubble.querySelector('.streaming-text');
+      const textContainer = this.streamingBubble.querySelector('.transcript-message.streaming-text');
       if (textContainer && this.streamingWords.length > 0) {
         textContainer.innerHTML = '';
         textContainer.textContent = this.streamingWords.join(' ');
@@ -2328,6 +3241,9 @@ class VoiceScannerApp {
     this.streamingBubble = null;
     this.currentUtteranceId = null;
     this.streamingWords = [];
+    this.subtitleWordBuffer = [];
+    // Don't clear subtitleDisplayedWords or timers — words are still being displayed
+    this.skipNextBotTranscriptAdd = true;
   }
 
   // ===== VISUAL CARD METHODS =====
@@ -2970,17 +3886,13 @@ class VoiceScannerApp {
    * Display a visual card with optional auto-dismiss
    */
   private displayVisualCard(card: HTMLElement, autoDismissMs?: number): void {
-    console.log('[Visual Card] Displaying card:', card.className);
-
     // Get or create visual cards container
     if (!this.visualCardsContainer) {
       this.visualCardsContainer = document.getElementById('visual-cards-container');
-      console.log('[Visual Card] Container from DOM:', this.visualCardsContainer);
       if (!this.visualCardsContainer) {
         this.visualCardsContainer = document.createElement('div');
         this.visualCardsContainer.id = 'visual-cards-container';
         document.querySelector('.interface-container')?.appendChild(this.visualCardsContainer);
-        console.log('[Visual Card] Created new container');
       }
     }
 
@@ -3034,20 +3946,12 @@ class VoiceScannerApp {
    * Initialize the A2UI renderer
    */
   private initializeA2UIRenderer(): void {
-    console.log('='.repeat(60));
-    console.log('🎨 [A2UI] Initializing A2UI Renderer...');
     try {
       this.a2uiRenderer = new A2UIRenderer('a2ui-container');
       this.log('A2UI renderer initialized');
       this.addTerminalMessage('a2ui.renderer.init();', 'command');
-      console.log('✅ [A2UI] A2UIRenderer created successfully');
-      console.log('   Panel element:', this.a2uiPanel);
-      console.log('   Status element:', this.a2uiStatus);
-      console.log('='.repeat(60));
     } catch (error) {
-      console.error('='.repeat(60));
-      console.error('❌ [A2UI] Failed to initialize A2UI renderer:', error);
-      console.error('='.repeat(60));
+      console.error('[A2UI] Init failed:', error);
       this.log('A2UI renderer initialization failed');
     }
   }
@@ -3062,79 +3966,52 @@ class VoiceScannerApp {
     template_type?: string;
     timestamp?: number;
   }): void {
-    console.log('='.repeat(60));
-    console.log('🎨 [A2UI] handleA2UIUpdate CALLED');
-    console.log('   Full data received:', data);
-    console.log('   Renderer exists:', !!this.a2uiRenderer);
-    console.log('   A2UI doc exists:', !!data.a2ui);
-    
     if (!this.a2uiRenderer || !data.a2ui) {
-      console.warn('⚠️ [A2UI] Renderer not available or no A2UI data');
-      console.warn('   Renderer:', this.a2uiRenderer);
-      console.warn('   Data:', data);
-      console.log('='.repeat(60));
+      console.warn('[A2UI] Renderer not available or no data');
       return;
     }
 
     const templateType = data.a2ui.root?.type || 'unknown';
     const tier = data.tier || data.a2ui._metadata?.tier || 'auto';
-    const tierName = data.a2ui._metadata?.tier_name || 'unknown';
-    
-    console.log('📋 [A2UI] Document details:');
-    console.log(`   Template type: ${templateType}`);
-    console.log(`   Tier: ${tier} (${tierName})`);
-    console.log(`   Query: ${data.query || 'N/A'}`);
-    console.log(`   Timestamp: ${data.timestamp}`);
 
-    // Update status indicator
     if (this.a2uiStatus) {
       this.a2uiStatus.textContent = 'RENDERING';
       this.a2uiStatus.classList.add('active');
-      console.log('📊 [A2UI] Status updated to RENDERING');
     }
-
-    // Show the A2UI panel if hidden
-    if (this.a2uiPanel) {
+    this.a2uiHasContent = true;
+    const isHomeScreen = this.mainLayout?.classList.contains('panels-hidden') ?? true;
+    if (this.a2uiPanel && isHomeScreen) {
       this.a2uiPanel.classList.add('visible');
-      console.log('📺 [A2UI] Panel made visible');
+      document.body.classList.add('a2ui-panel-visible');
     }
 
     try {
-      console.log('🔄 [A2UI] Calling renderer.render()...');
-      // Render the A2UI document
       this.a2uiRenderer.render(data.a2ui);
-
-      // Log to terminal
       this.addTerminalMessage(`a2ui.render({ type: '${templateType}', tier: '${tier}' });`, 'command');
       this.log(`A2UI rendered: ${templateType} (${tier})`);
-      
-      console.log('✅ [A2UI] Render completed successfully!');
 
-      // Update status after render
       setTimeout(() => {
         if (this.a2uiStatus) {
           this.a2uiStatus.textContent = 'READY';
           this.a2uiStatus.classList.remove('active');
-          console.log('📊 [A2UI] Status updated to READY');
         }
       }, 500);
 
     } catch (error) {
-      console.error('❌ [A2UI] Render error:', error);
+      console.error('[A2UI] Render error:', error);
       this.addTerminalMessage(`a2ui.error: ${(error as Error).message}`, 'error');
-
       if (this.a2uiStatus) {
         this.a2uiStatus.textContent = 'ERROR';
         this.a2uiStatus.classList.remove('active');
       }
     }
-    console.log('='.repeat(60));
   }
 
   /**
    * Clear the A2UI display
    */
   private clearA2UI(): void {
+    this.a2uiHasContent = false;
     if (this.a2uiRenderer) {
       this.a2uiRenderer.clear();
     }
@@ -3147,9 +4024,11 @@ class VoiceScannerApp {
    * Hide the A2UI panel
    */
   private hideA2UIPanel(): void {
+    this.a2uiHasContent = false;
     if (this.a2uiPanel) {
       this.a2uiPanel.classList.remove('visible');
     }
+    document.body.classList.remove('a2ui-panel-visible');
   }
 
   /**
@@ -3158,6 +4037,7 @@ class VoiceScannerApp {
   private showA2UIPanel(): void {
     if (this.a2uiPanel) {
       this.a2uiPanel.classList.add('visible');
+      document.body.classList.add('a2ui-panel-visible');
     }
   }
 
@@ -3234,4 +4114,3 @@ window.addEventListener('DOMContentLoaded', () => {
   const app = new VoiceScannerApp();
   (window as any).voiceScannerApp = app; // e.g. voiceScannerApp.setLoaderText('Planning next moves')
 });
-

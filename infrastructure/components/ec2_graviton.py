@@ -132,6 +132,26 @@ class EC2GravitonInstance(Construct):
             )
         )
 
+        # CloudWatch custom metrics (session analytics)
+        self.instance_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["cloudwatch:PutMetricData"],
+                resources=["*"],
+            )
+        )
+
+        # SSM Parameter Store read (for refresh-env.sh)
+        self.instance_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["ssm:GetParameter"],
+                resources=[
+                    f"arn:aws:ssm:{region}:*:parameter/{prefix}/*",
+                ],
+            )
+        )
+
         # AMI - Amazon Linux 2023 ARM64
         ami = ec2.MachineImage.latest_amazon_linux2023(
             cpu_type=ec2.AmazonLinuxCpuType.ARM_64,
@@ -216,6 +236,10 @@ class EC2GravitonInstance(Construct):
             "LOG_LEVEL": app.server.log_level,
             "AWS_REGION": region,
             "CLOUDWATCH_LOG_GROUP": self.log_group_name,
+            # CloudWatch custom metrics (session analytics)
+            "CLOUDWATCH_METRICS_ENABLED": "true",
+            "CLOUDWATCH_NAMESPACE": "NesterVoiceAI",
+            "ENVIRONMENT": self.config.environment,
         }
 
         if app.domain.name:
@@ -490,6 +514,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+User=ec2-user
+Group=docker
 WorkingDirectory=/opt/nester
 ExecStartPre=/opt/nester/refresh-env.sh
 ExecStartPre=/opt/nester/ecr-login.sh

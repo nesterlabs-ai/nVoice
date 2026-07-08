@@ -108,7 +108,9 @@ class HybridEmotionDetector:
         # Get text sentiment (LLM - contextual understanding!)
         if transcript and transcript.strip() and transcript != "...":
             logger.debug(f"📝 Calling LLM for text sentiment: '{transcript[:100]}'")
-            text_result = self.llm_detector.detect_emotion(transcript) if self.llm_detector else self._neutral_text_result()
+            # await: detect_emotion is async (httpx.AsyncClient) so the sentiment
+            # HTTP call no longer blocks the pipeline's event loop.
+            text_result = (await self.llm_detector.detect_emotion(transcript)) if self.llm_detector else self._neutral_text_result()
             logger.debug(f"📝 LLM result: {text_result['emotion']} (conf: {text_result['confidence']:.2f}, tokens: {text_result.get('tokens_used', 0)})")
         else:
             logger.debug(f"📝 Empty/invalid transcript, using neutral: '{transcript}'")
@@ -279,31 +281,59 @@ class HybridEmotionDetector:
     ) -> str:
         """Map dimensional scores to categorical emotion.
 
+        Maps to granular Cartesia-compatible emotions so the emotion map in
+        tone_aware_processor.py can apply fine-grained voice control.
+
         Args:
             arousal: Energy level (0-1)
             valence: Positive/negative (0-1)
             dominance: Control/confidence (0-1)
 
         Returns:
-            Categorical emotion: frustrated/excited/sad/neutral
+            Categorical emotion string matching CARTESIA_EMOTION_CONFIG keys
         """
-        # High arousal emotions
+        # High arousal (> 0.6) — energetic states
         if arousal > 0.6:
-            if valence < 0.4:
-                return "frustrated"  # High arousal + negative valence
-            elif valence > 0.6:
-                return "excited"  # High arousal + positive valence
+            if valence < 0.3:
+                if dominance > 0.65:
+                    return "angry"        # High energy + very negative + dominant
+                return "frustrated"       # High energy + negative + not dominant
+            elif valence < 0.45:
+                return "anxious"          # High energy + slightly negative = tense
+            elif valence > 0.7:
+                return "excited"          # High energy + very positive (→ enthusiastic in Cartesia)
+            elif valence > 0.55:
+                return "happy"            # High energy + moderately positive
             else:
-                return "neutral"  # High arousal + neutral valence
+                return "confident"        # High energy + neutral valence = assertive
 
-        # Low arousal emotions
-        else:
-            if valence < 0.4:
-                return "sad"  # Low arousal + negative valence
-            elif valence > 0.6:
-                return "excited"  # Low arousal + positive valence (calm excitement)
+        # Medium arousal (0.4–0.6)
+        elif arousal > 0.4:
+            if valence < 0.3:
+                return "sad"              # Medium energy + negative
+            elif valence < 0.45:
+                return "disappointed"     # Medium energy + mildly negative
+            elif valence > 0.65:
+                return "happy"            # Medium energy + positive
+            elif valence > 0.5:
+                return "content"          # Medium energy + slightly positive = settled
             else:
-                return "neutral"  # Low arousal + neutral valence
+                return "neutral"
+
+        # Low arousal (< 0.4) — subdued states
+        else:
+            if valence < 0.25:
+                if dominance < 0.35:
+                    return "fear"         # Low energy + very negative + submissive (→ scared)
+                return "sad"              # Low energy + negative
+            elif valence < 0.4:
+                return "apologetic"       # Low energy + mildly negative = subdued/sorry
+            elif valence > 0.6:
+                return "content"          # Low energy + positive = calm/relaxed
+            elif valence > 0.45:
+                return "empathetic"       # Low energy + slightly positive = warm/gentle
+            else:
+                return "neutral"
 
     def _detect_mismatch(
         self,

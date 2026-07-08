@@ -1,0 +1,151 @@
+/* EmotionAnalysisWidget - standalone styles */
+
+.emotion-analysis-card {
+  --emotion-grid-line-color: #44444E; /* Horizontal grid line color; override to change */
+  --emotion-grid-line-color-vertical: #44444E; /* Vertical grid line color; override for different vertical color */
+  --emotion-x-axis-label-font-size: 9px; /* Horizontal x-axis time label font size */
+  --emotion-x-axis-label-color: #7D7D7D; /* Horizontal x-axis time label color */
+  background: #000;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  height: 100%;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+}
+
+.emotion-analysis-header {
+  padding: 1rem;
+  flex-shrink: 0;
+}
+
+.emotion-analysis-title {
+  color: #fff;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.875rem;
+  letter-spacing: 0.05em;
+}
+
+.emotion-analysis-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.emotion-analysis-scroll {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 48px; /* Match sticky y-axis width (leftPadding + 20) so labels are visible */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.emotion-analysis-chart-inner {
+  position: relative;
+}
+
+.emotion-analysis-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #7D7D7D;
+  font-size: 0.875rem;
+}
+
+.emotion-analysis-legend {
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.emotion-analysis-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.emotion-analysis-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.emotion-analysis-legend-dot.cyan {
+  background: #06b6d4;
+}
+
+.emotion-analysis-legend-dot.orange {
+  background: #f97316;
+}
+
+.emotion-analysis-legend-dot.purple {
+  background: #a855f7;
+}
+
+.emotion-analysis-legend-text {
+  color: rgba(245, 245, 245, 0.75);
+  font-family: "JetBrains Mono";
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.emotion-analysis-sticky-y {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* bottom: 3.5rem; */
+  background: #000;
+  pointer-events: none;
+  z-index: 10;
+  height: 100%;
+}
+
+.emotion-analysis-sticky-x {
+  position: absolute;
+  /* left: 0; */
+  right: 0;
+  bottom: 0;
+  background: #000;
+  pointer-events: none;
+  z-index: 10;
+  height: 24px;
+}
+
+.emotion-scroll-to-latest {
+  position: absolute;
+  bottom: 30px;
+  right: 8px;
+  z-index: 20;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #f97316;
+  background: rgba(17, 24, 39, 0.9);
+  color: #f97316;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+
+.emotion-scroll-to-latest:hover {
+  opacity: 1;
+  background: rgba(249, 115, 22, 0.15);
+}
+
+/* When embedded below EMOTION ANALYSIS card */
+.emotion-analysis-topic .emotion-analysis-card {
+  height: 100%;
+  min-height: 160px;
+}

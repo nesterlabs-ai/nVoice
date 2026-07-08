@@ -106,6 +106,10 @@ jobs:
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # gpt-5.5 via OpenAI Responses API + Cartesia sonic TTS (pipecat 1.4 stack)
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
+          CARTESIA_VOICE_ID: ${{ secrets.CARTESIA_VOICE_ID }}
           RESEMBLE_API_KEY: ${{ secrets.RESEMBLE_API_KEY }}
           RESEMBLE_VOICE_UUID: ${{ secrets.RESEMBLE_VOICE_UUID }}
           LIGHTRAG_API_KEY: ${{ secrets.LIGHTRAG_API_KEY }}
@@ -114,7 +118,7 @@ jobs:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: AWS_REGION,IMAGE_TAG,GHCR_TOKEN,GHCR_USER,PUBLIC_URL,DEEPGRAM_API_KEY,GOOGLE_API_KEY,GROQ_API_KEY,RESEMBLE_API_KEY,RESEMBLE_VOICE_UUID,LIGHTRAG_API_KEY,LIGHTRAG_BASE_URL
+          envs: AWS_REGION,IMAGE_TAG,GHCR_TOKEN,GHCR_USER,PUBLIC_URL,DEEPGRAM_API_KEY,GOOGLE_API_KEY,GROQ_API_KEY,OPENAI_API_KEY,CARTESIA_API_KEY,CARTESIA_VOICE_ID,RESEMBLE_API_KEY,RESEMBLE_VOICE_UUID,LIGHTRAG_API_KEY,LIGHTRAG_BASE_URL
           script: |
             set -e
             
@@ -238,6 +242,9 @@ jobs:
             DEEPGRAM_API_KEY=$DEEPGRAM_API_KEY
             GOOGLE_API_KEY=$GOOGLE_API_KEY
             GROQ_API_KEY=$GROQ_API_KEY
+            OPENAI_API_KEY=$OPENAI_API_KEY
+            CARTESIA_API_KEY=$CARTESIA_API_KEY
+            CARTESIA_VOICE_ID=$CARTESIA_VOICE_ID
             RESEMBLE_API_KEY=$RESEMBLE_API_KEY
             RESEMBLE_VOICE_UUID=${RESEMBLE_VOICE_UUID:-fb2d2858}
             LIGHTRAG_API_KEY=$LIGHTRAG_API_KEY
@@ -252,11 +259,14 @@ jobs:
             sed -i 's/^[[:space:]]*//' .env
             chmod 600 .env
             
-            # Verify critical secrets are present
-            if [ -z "$DEEPGRAM_API_KEY" ] || [ -z "$GOOGLE_API_KEY" ]; then
+            # Verify critical secrets are present (OPENAI + CARTESIA are fatal:
+            # the gpt-5.5 LLM and Cartesia TTS won't start without them)
+            if [ -z "$DEEPGRAM_API_KEY" ] || [ -z "$GOOGLE_API_KEY" ] || [ -z "$OPENAI_API_KEY" ] || [ -z "$CARTESIA_API_KEY" ]; then
               echo "⚠️  Warning: Some API keys may be missing"
               echo "   DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:+SET}"
               echo "   GOOGLE_API_KEY: ${GOOGLE_API_KEY:+SET}"
+              echo "   OPENAI_API_KEY: ${OPENAI_API_KEY:+SET}"
+              echo "   CARTESIA_API_KEY: ${CARTESIA_API_KEY:+SET}"
               echo "   GROQ_API_KEY: ${GROQ_API_KEY:+SET}"
               echo "   RESEMBLE_API_KEY: ${RESEMBLE_API_KEY:+SET}"
             fi

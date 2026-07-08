@@ -272,7 +272,7 @@ def get_template_from_library(template_type: str) -> Dict[str, Any]:
 
     Returns:
         Template structure dictionary (version + root only).
-        Returns simple-card template if type not found.
+        Returns magazine-hero template if type not found.
 
     Examples:
         >>> template = get_template_from_library("timeline")
@@ -281,7 +281,7 @@ def get_template_from_library(template_type: str) -> Dict[str, Any]:
 
         >>> template = get_template_from_library("unknown")
         >>> template["root"]["type"]
-        'simple-card'
+        'magazine-hero'
     """
     logger.debug(f"get_template_from_library called for: '{template_type}'")
 
@@ -289,8 +289,8 @@ def get_template_from_library(template_type: str) -> Dict[str, Any]:
         logger.debug(f"   Template found: {template_type}")
         template = TEMPLATE_LIBRARY[template_type]
     else:
-        logger.warning(f"   Template '{template_type}' not found, using 'simple-card' fallback")
-        template = TEMPLATE_LIBRARY["simple-card"]
+        logger.warning(f"   Template '{template_type}' not found, using 'magazine-hero' fallback")
+        template = TEMPLATE_LIBRARY["magazine-hero"]
 
     # Strip internal fields that should not be sent to LightRAG or returned to frontend
     import copy

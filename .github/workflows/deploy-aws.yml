@@ -12,7 +12,7 @@ name: Deploy to AWS
 
 on:
   push:
-    branches: [main]
+    branches: [release/v1.0]
     paths:
       - 'app/**'
       - 'client/**'
@@ -95,8 +95,9 @@ jobs:
           tags: |
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-backend:latest
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-backend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            CACHEBUST=${{ github.sha }}
+          no-cache: true
 
   # Build and push frontend image
   build-frontend:
@@ -130,8 +131,9 @@ jobs:
           tags: |
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-frontend:latest
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-${{ env.ENVIRONMENT }}-frontend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            CACHEBUST=${{ github.sha }}
+          no-cache: true
 
   # Config sync indicator (for visibility in Actions UI)
   sync-config:
@@ -205,6 +207,10 @@ jobs:
 
             # Clean up
             rm -rf /tmp/deploy
+
+            # Remove old Docker images, containers, and volumes to free disk space
+            echo "=== Cleaning up old Docker resources ==="
+            docker system prune -a -f --volumes || true
 
             # Run the deploy script (handles ECR login, pull, restart)
             ./deploy.sh

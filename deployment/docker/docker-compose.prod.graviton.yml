@@ -1,0 +1,118 @@
+# Production docker-compose for Graviton (ARM64) deployment
+# This file is synced to /opt/nester/docker-compose.yml during CI/CD deployment
+#
+# Key differences from docker-compose.graviton.yml:
+# - Default log group: /nester-ai/prod
+# - Default PUBLIC_URL: https://ai.nesterlabs.com
+# - No hardcoded account IDs in image refs
+# - CloudWatch metrics environment variables
+
+x-logging: &cloudwatch-logging
+  driver: awslogs
+  options:
+    awslogs-group: ${CLOUDWATCH_LOG_GROUP:-/nester-ai/prod}
+    awslogs-region: ${AWS_REGION:-us-west-2}
+    awslogs-create-group: "true"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: nester-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - nester-network
+    logging:
+      <<: *cloudwatch-logging
+      options:
+        awslogs-group: ${CLOUDWATCH_LOG_GROUP:-/nester-ai/prod}
+        awslogs-region: ${AWS_REGION:-us-west-2}
+        awslogs-stream: caddy
+        awslogs-create-group: "true"
+
+  backend:
+    image: ${BACKEND_IMAGE:-767397733115.dkr.ecr.us-west-2.amazonaws.com/nester-ai-prod-backend:latest}
+    container_name: nester-backend
+    restart: always
+    expose:
+      - "7860"
+      - "8765"
+    env_file:
+      - .env
+    environment:
+      # Graviton PyTorch optimizations
+      - DNNL_DEFAULT_FPMATH_MODE=BF16
+      - LRU_CACHE_CAPACITY=1024
+      - THP_MEM_ALLOC_ENABLE=1
+      - OMP_NUM_THREADS=2
+      - OMP_PROC_BIND=false
+      - OMP_PLACES=cores
+      # CloudWatch custom metrics
+      - CLOUDWATCH_METRICS_ENABLED=true
+      - CLOUDWATCH_NAMESPACE=NesterVoiceAI
+      - ENVIRONMENT=prod
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - nester-network
+    logging:
+      <<: *cloudwatch-logging
+      options:
+        awslogs-group: ${CLOUDWATCH_LOG_GROUP:-/nester-ai/prod}
+        awslogs-region: ${AWS_REGION:-us-west-2}
+        awslogs-stream: backend
+        awslogs-create-group: "true"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-767397733115.dkr.ecr.us-west-2.amazonaws.com/nester-ai-prod-frontend:latest}
+    container_name: nester-frontend
+    restart: always
+    expose:
+      - "80"
+    env_file:
+      - .env  # Pass through LIGHTRAG_API_KEY etc. from the EC2 instance .env
+    environment:
+      - BACKEND_URL=${PUBLIC_URL:-https://ai.nesterlabs.com}
+      # Knowledge graph widget — must be passed in so docker-entrypoint.sh writes
+      # them into runtime config.js. Without these, the entrypoint falls back to a
+      # stale default key and the widget returns {"detail":"Invalid API Key"}.
+      - LIGHTRAG_URL=${LIGHTRAG_BASE_URL:-https://lightrag.nesterlabs.com}
+      - LIGHTRAG_API_KEY=${LIGHTRAG_API_KEY}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - nester-network
+    logging:
+      <<: *cloudwatch-logging
+      options:
+        awslogs-group: ${CLOUDWATCH_LOG_GROUP:-/nester-ai/prod}
+        awslogs-region: ${AWS_REGION:-us-west-2}
+        awslogs-stream: frontend
+        awslogs-create-group: "true"
+
+networks:
+  nester-network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

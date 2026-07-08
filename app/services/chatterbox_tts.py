@@ -7,6 +7,7 @@ Chatterbox model with emotion control via exaggeration and cfg_weight parameters
 Compatible with Pipecat pipeline framework.
 """
 
+import time
 import aiohttp
 from typing import Optional, Dict, Any, AsyncGenerator
 
@@ -18,6 +19,7 @@ from pipecat.frames.frames import (
     TTSStoppedFrame,
     ErrorFrame,
 )
+from pipecat.processors.frameworks.rtvi import RTVIServerMessageFrame
 from pipecat.services.tts_service import TTSService
 
 
@@ -25,14 +27,14 @@ from pipecat.services.tts_service import TTSService
 # Exaggeration: 0.25-2.0 (higher = more emotional)
 # CFG Weight: 0.0-1.0 (lower = faster, more expressive)
 EMOTION_TO_PARAMS = {
-    "neutral": {"exaggeration": 0.4, "cfg_weight": 0.5},
-    "sad": {"exaggeration": 0.6, "cfg_weight": 0.4},        # Softer, empathetic
-    "frustrated": {"exaggeration": 0.5, "cfg_weight": 0.5}, # Calm, patient
-    "excited": {"exaggeration": 0.9, "cfg_weight": 0.3},    # Energetic, fast
-    "happy": {"exaggeration": 0.8, "cfg_weight": 0.35},     # Warm, upbeat
-    "angry": {"exaggeration": 0.7, "cfg_weight": 0.4},      # Controlled intensity
-    "fear": {"exaggeration": 0.5, "cfg_weight": 0.45},      # Gentle, calming
-    "content": {"exaggeration": 0.4, "cfg_weight": 0.5},    # Relaxed, neutral
+    "neutral": {"exaggeration": 0.5, "cfg_weight": 0.3},     # Natural pace, slightly expressive
+    "sad": {"exaggeration": 0.8, "cfg_weight": 0.3},         # Softer, slower, empathetic
+    "frustrated": {"exaggeration": 0.7, "cfg_weight": 0.35}, # Firm, slightly tense
+    "excited": {"exaggeration": 1.2, "cfg_weight": 0.2},     # High energy, fast, expressive
+    "happy": {"exaggeration": 1.0, "cfg_weight": 0.25},      # Warm, upbeat, bright
+    "angry": {"exaggeration": 0.9, "cfg_weight": 0.3},       # Controlled intensity
+    "fear": {"exaggeration": 0.6, "cfg_weight": 0.4},        # Gentle, calming
+    "content": {"exaggeration": 0.35, "cfg_weight": 0.55},   # Relaxed, near neutral
 }
 
 # Voice name to emotion mapping (for compatibility with existing voice switching)
@@ -68,6 +70,7 @@ class ChatterboxTTSService(TTSService):
         synthesis_url: str = "https://f.cluster.resemble.ai/synthesize",
         stream_url: str = "https://f.cluster.resemble.ai/stream",
         sample_rate: int = 24000,
+        model: str = "chatterbox-turbo",
         voice: str = "neutral",
         **kwargs,
     ):
@@ -79,23 +82,25 @@ class ChatterboxTTSService(TTSService):
             synthesis_url: URL for synthesis endpoint
             stream_url: URL for streaming endpoint
             sample_rate: Audio sample rate (default 24000)
+            model: Resemble model to use (default "chatterbox-turbo" for lower latency)
             voice: Initial voice/emotion (default "neutral")
             **kwargs: Additional arguments for parent class
         """
-        super().__init__(sample_rate=sample_rate, **kwargs)
+        super().__init__(sample_rate=sample_rate, push_text_frames=False, **kwargs)
 
         self._api_key = api_key
         self._voice_uuid = voice_uuid
         self._synthesis_url = synthesis_url
         self._stream_url = stream_url
         self._sample_rate = sample_rate
+        self._model = model
         self._voice_id = voice
         self._current_emotion = VOICE_TO_EMOTION.get(voice, "neutral")
         self._session: Optional[aiohttp.ClientSession] = None
 
         logger.info(
             f"ChatterboxTTSService initialized "
-            f"(synthesis: {synthesis_url}, voice_uuid: {voice_uuid}, emotion: {self._current_emotion})"
+            f"(model: {model}, synthesis: {synthesis_url}, voice_uuid: {voice_uuid}, emotion: {self._current_emotion})"
         )
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -162,17 +167,16 @@ class ChatterboxTTSService(TTSService):
         Yields:
             Pipecat frames (TTSStartedFrame, TTSAudioRawFrame, TTSStoppedFrame)
         """
-        logger.debug(
-            f"ChatterboxTTSService: Generating TTS [{text}] "
-            f"(emotion={self._current_emotion})"
+        params = self.get_emotion_params()
+        logger.info(
+            f"🔊 Chatterbox TTS request: text='{text[:80]}{'...' if len(text) > 80 else ''}' "
+            f"emotion={self._current_emotion} exaggeration={params['exaggeration']} "
+            f"cfg_weight={params['cfg_weight']}"
         )
 
         try:
             # Signal TTS started
             yield TTSStartedFrame()
-
-            # Get emotion parameters
-            params = self.get_emotion_params()
 
             payload = {
                 "voice_uuid": self._voice_uuid,
@@ -183,53 +187,157 @@ class ChatterboxTTSService(TTSService):
                 "precision": "PCM_16",
             }
 
+            # Log full request details for debugging
+            logger.info(
+                f"🔊 Chatterbox API call: model={self._model} "
+                f"voice_uuid={self._voice_uuid[:8]}...{self._voice_uuid[-4:]} "
+                f"sample_rate={self._sample_rate} precision=PCM_16"
+            )
+
             session = await self._get_session()
 
-            # Use streaming endpoint for lower latency
-            async with session.post(self._stream_url, json=payload) as response:
-                if response.status == 200:
-                    # Accumulate full response since we need to strip WAV header
-                    audio_data = await response.read()
+            # Try stream endpoint first (returns raw WAV chunks for low-latency playback)
+            # Fall back to synthesis endpoint (returns JSON with base64 audio)
+            for url in [self._stream_url, self._synthesis_url]:
+                start_time = time.time()
+                is_stream = (url == self._stream_url)
 
-                    # Strip WAV header (44 bytes standard, but check for RIFF header)
-                    if audio_data[:4] == b'RIFF':
-                        # Find 'data' chunk
-                        data_index = audio_data.find(b'data')
-                        if data_index != -1:
-                            # Skip 'data' + 4 bytes for chunk size
-                            header_size = data_index + 8
-                            audio_data = audio_data[header_size:]
-                        else:
-                            # Fallback to standard 44-byte header
-                            audio_data = audio_data[44:]
+                async with session.post(url, json=payload) as response:
+                    ttfb_ms = (time.time() - start_time) * 1000
 
-                    # Yield raw PCM audio in chunks
-                    chunk_size = 4096
-                    for i in range(0, len(audio_data), chunk_size):
-                        chunk = audio_data[i:i + chunk_size]
-                        if chunk:
-                            yield TTSAudioRawFrame(
-                                audio=chunk,
-                                sample_rate=self._sample_rate,
-                                num_channels=1,
-                            )
-                else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Chatterbox stream failed: {response.status} - {error_text}"
+                    if response.status == 500 and is_stream:
+                        error_text = await response.text()
+                        logger.warning(
+                            f"🔊 Stream endpoint failed (500), trying synthesis... "
+                            f"error={error_text[:100]}"
+                        )
+                        continue  # Try synthesis endpoint as fallback
+
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(
+                            f"🔊 Chatterbox TTS FAILED: status={response.status} "
+                            f"url={url} latency={ttfb_ms:.0f}ms error={error_text[:200]}"
+                        )
+                        yield ErrorFrame(f"Chatterbox TTS failed: {response.status}")
+                        break
+
+                    logger.info(
+                        f"🔊 Chatterbox TTS: started via {'stream' if is_stream else 'synthesis'} "
+                        f"(ttfb={ttfb_ms:.0f}ms)"
                     )
-                    yield ErrorFrame(f"Chatterbox TTS failed: {response.status}")
+
+                    chunks_sent = 0
+                    total_bytes = 0
+
+                    if is_stream:
+                        # Stream endpoint returns raw WAV bytes — strip header and yield chunks
+                        header_stripped = False
+                        header_buffer = b''
+
+                        async for chunk in response.content.iter_chunked(16384):
+                            if not chunk:
+                                continue
+
+                            total_bytes += len(chunk)
+
+                            # Strip WAV header from first chunk(s)
+                            if not header_stripped:
+                                header_buffer += chunk
+                                if len(header_buffer) >= 44:
+                                    if header_buffer[:4] == b'RIFF':
+                                        data_index = header_buffer.find(b'data')
+                                        if data_index != -1:
+                                            header_size = data_index + 8
+                                            chunk = header_buffer[header_size:]
+                                            header_stripped = True
+                                            logger.debug(f"🔊 Stripped WAV header ({header_size} bytes)")
+                                        else:
+                                            continue
+                                    else:
+                                        chunk = header_buffer
+                                        header_stripped = True
+                                    header_buffer = b''
+
+                            if chunk:
+                                yield TTSAudioRawFrame(
+                                    audio=chunk,
+                                    sample_rate=self._sample_rate,
+                                    num_channels=1,
+                                )
+                                chunks_sent += 1
+                    else:
+                        # Synthesis endpoint returns JSON with base64-encoded audio
+                        import base64
+                        import json as json_mod
+
+                        response_text = await response.text()
+                        try:
+                            response_json = json_mod.loads(response_text)
+                            audio_b64 = response_json.get("audio_content", "")
+                            if not audio_b64:
+                                logger.error("🔊 Synthesis response missing audio_content")
+                                yield ErrorFrame("Chatterbox synthesis: no audio_content")
+                                break
+
+                            audio_bytes = base64.b64decode(audio_b64)
+                            total_bytes = len(audio_bytes)
+
+                            # Strip WAV header if present
+                            if audio_bytes[:4] == b'RIFF':
+                                data_index = audio_bytes.find(b'data')
+                                if data_index != -1:
+                                    header_size = data_index + 8
+                                    audio_bytes = audio_bytes[header_size:]
+                                    logger.debug(f"🔊 Stripped WAV header ({header_size} bytes)")
+
+                            # Yield in chunks for smooth pipeline processing
+                            chunk_size = 16384
+                            for i in range(0, len(audio_bytes), chunk_size):
+                                chunk = audio_bytes[i:i + chunk_size]
+                                yield TTSAudioRawFrame(
+                                    audio=chunk,
+                                    sample_rate=self._sample_rate,
+                                    num_channels=1,
+                                )
+                                chunks_sent += 1
+
+                        except (json_mod.JSONDecodeError, Exception) as e:
+                            logger.error(f"🔊 Failed to parse synthesis response: {e}")
+                            yield ErrorFrame(f"Chatterbox synthesis parse error: {e}")
+                            break
+
+                    total_ms = (time.time() - start_time) * 1000
+                    audio_duration_secs = total_bytes / (self._sample_rate * 2)
+                    logger.info(
+                        f"🔊 Chatterbox TTS complete: total={total_ms:.0f}ms "
+                        f"audio={total_bytes} bytes ({audio_duration_secs:.1f}s) "
+                        f"chunks={chunks_sent} via={'stream' if is_stream else 'synthesis'}"
+                    )
+                    # Emit subtitle data with exact audio duration for frontend word reveal
+                    if total_bytes > 0:
+                        yield RTVIServerMessageFrame(data={
+                            "message_type": "subtitle_chunk",
+                            "text": text,
+                            "audio_duration": audio_duration_secs,
+                            "timestamp": time.time(),
+                        })
+
+                    break  # Success, don't try next URL
 
             # Signal TTS stopped
             yield TTSStoppedFrame()
+            logger.info(f"🔊 Chatterbox TTS complete for: '{text[:50]}...'")
 
         except aiohttp.ClientError as e:
-            logger.error(f"Chatterbox API error: {e}")
+            logger.error(f"🔊 Chatterbox API connection error: {e}")
             yield ErrorFrame(f"Chatterbox API error: {e}")
             yield TTSStoppedFrame()
 
         except Exception as e:
-            logger.error(f"Chatterbox TTS error: {e}")
+            logger.error(f"🔊 Chatterbox TTS unexpected error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             yield ErrorFrame(f"Chatterbox TTS error: {e}")
             yield TTSStoppedFrame()
 
@@ -247,6 +355,7 @@ def create_chatterbox_tts_service(
     synthesis_url: str = "https://f.cluster.resemble.ai/synthesize",
     stream_url: str = "https://f.cluster.resemble.ai/stream",
     sample_rate: int = 24000,
+    model: str = "chatterbox-turbo",
     voice: str = "neutral",
 ) -> ChatterboxTTSService:
     """Create a Chatterbox TTS service instance.
@@ -257,6 +366,7 @@ def create_chatterbox_tts_service(
         synthesis_url: Synthesis endpoint URL
         stream_url: Streaming endpoint URL
         sample_rate: Audio sample rate
+        model: Resemble model (default "chatterbox-turbo")
         voice: Initial voice/emotion
 
     Returns:
@@ -268,5 +378,6 @@ def create_chatterbox_tts_service(
         synthesis_url=synthesis_url,
         stream_url=stream_url,
         sample_rate=sample_rate,
+        model=model,
         voice=voice,
     )

@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 from loguru import logger
 from pipecat.frames.frames import TTSSpeakFrame
-from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.cartesia.tts import CartesiaTTSService, GenerationConfig
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 
@@ -121,7 +121,26 @@ class TextToSpeechService:
             else:
                 selected_voice_id = voice_id
 
-            self.tts_service = CartesiaTTSService(api_key=api_key, voice_id=selected_voice_id)
+            model = self.config.get("model", "sonic-3")
+            initial_emotion = self.config.get("emotion", "neutral")
+
+            generation_config = GenerationConfig(emotion=initial_emotion)
+            params = CartesiaTTSService.InputParams(generation_config=generation_config)
+
+            self.tts_service = CartesiaTTSService(
+                api_key=api_key,
+                voice_id=selected_voice_id,
+                model=model,
+                params=params,
+                # Disable internal sentence aggregation so LLM tokens stream
+                # directly to Cartesia's persistent WebSocket (continue=true).
+                # This eliminates the audible gaps between sentences.
+                aggregate_sentences=False,
+            )
+            logger.info(
+                f"Using Cartesia TTS model={model} voice_id={selected_voice_id} "
+                f"emotion={initial_emotion} aggregate_sentences=False"
+            )
 
         elif self.tts_provider == "chatterbox":
             api_key = self.config.get("api_key")
@@ -134,6 +153,7 @@ class TextToSpeechService:
             synthesis_url = self.config.get("synthesis_url", "https://f.cluster.resemble.ai/synthesize")
             stream_url = self.config.get("stream_url", "https://f.cluster.resemble.ai/stream")
             sample_rate = self.config.get("sample_rate", 24000)
+            model = self.config.get("model", "chatterbox-turbo")
             voice = self.config.get("voice", "neutral")
 
             self.tts_service = ChatterboxTTSService(
@@ -142,9 +162,10 @@ class TextToSpeechService:
                 synthesis_url=synthesis_url,
                 stream_url=stream_url,
                 sample_rate=sample_rate,
+                model=model,
                 voice=voice,
             )
-            logger.info(f"Using Chatterbox TTS with emotion control (voice_uuid={voice_uuid}, sample_rate={sample_rate}Hz)")
+            logger.info(f"Using Chatterbox TTS model={model} (voice_uuid={voice_uuid}, sample_rate={sample_rate}Hz)")
 
         else:
             raise ValueError(f"Unsupported TTS provider: {self.tts_provider}")

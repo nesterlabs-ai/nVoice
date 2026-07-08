@@ -14,7 +14,7 @@ name: Deploy to AWS Graviton
 
 on:
   push:
-    branches: [graviton-test]
+    branches: [feat/cartesia-tts]
     paths:
       - 'app/**'
       - 'client/**'
@@ -96,6 +96,8 @@ jobs:
           tags: |
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-backend:latest
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-backend:${{ github.sha }}
+          build-args: |
+            CACHEBUST=${{ github.sha }}
           cache-from: type=gha,scope=graviton-backend
           cache-to: type=gha,scope=graviton-backend,mode=max
 
@@ -131,6 +133,8 @@ jobs:
           tags: |
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-frontend:latest
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nester-ai-graviton-test-frontend:${{ github.sha }}
+          build-args: |
+            CACHEBUST=${{ github.sha }}
           cache-from: type=gha,scope=graviton-frontend
           cache-to: type=gha,scope=graviton-frontend,mode=max
 
@@ -166,6 +170,7 @@ jobs:
           username: ec2-user
           key: ${{ secrets.GRAVITON_SSH_KEY }}
           script: |
+            set -e
             echo "=== Starting Graviton deployment ==="
             cd /opt/nester
 
@@ -184,9 +189,42 @@ jobs:
             # Clean up
             rm -rf /tmp/deploy
 
-            # Run the deploy script (handles ECR login, pull, restart)
-            ./deploy.sh
+            # Remove old Docker images, containers, and volumes to free disk space
+            echo "=== Cleaning up old Docker resources ==="
+            docker system prune -a -f --volumes || true
 
+            # Refresh environment (best-effort, don't fail deploy if this errors)
+            ./deploy.sh || echo "WARNING: deploy.sh had errors, continuing with explicit pull/restart"
+
+            # Explicit ECR login, pull, and restart (ensures new images are always used)
+            echo "=== ECR login ==="
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+            echo "=== Pulling latest images ==="
+            docker compose pull
+
+            echo "=== Restarting services ==="
+            docker compose up -d --force-recreate || true
+
+            echo "=== Waiting for backend to become healthy (up to 150s) ==="
+            for i in $(seq 1 15); do
+              sleep 10
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' nester-backend 2>/dev/null || echo "missing")
+              echo "[$((i*10))s] backend health: $STATUS"
+              if [ "$STATUS" = "healthy" ]; then
+                echo "Backend is healthy!"
+                break
+              fi
+              if [ "$STATUS" = "unhealthy" ]; then
+                echo "=== BACKEND CRASHED - container logs ==="
+                docker logs --tail 100 nester-backend
+                echo "=== docker inspect health ==="
+                docker inspect nester-backend | python3 -c "import sys,json; h=json.load(sys.stdin)[0]['State']['Health']; [print(l['Output']) for l in h.get('Log',[])]"
+                exit 1
+              fi
+            done
+
+            docker compose ps
             echo "=== Graviton deployment complete ==="
 
   # Verify deployment

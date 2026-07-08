@@ -49,6 +49,10 @@ class NesterSSMConfig(Construct):
             "LOG_LEVEL": app.server.log_level,
             "AWS_REGION": region,
             "CLOUDWATCH_LOG_GROUP": f"/nester-ai/{config.environment}",
+            # CloudWatch custom metrics (session analytics)
+            "CLOUDWATCH_METRICS_ENABLED": "true",
+            "CLOUDWATCH_NAMESPACE": "NesterVoiceAI",
+            "ENVIRONMENT": config.environment,
         }
 
         if app.domain.name:

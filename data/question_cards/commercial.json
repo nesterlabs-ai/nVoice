@@ -1,0 +1,47 @@
+[
+  {
+    "id": "commercial.pricing_scope",
+    "mode": "commercial_procurement",
+    "priority": 110,
+    "patterns": [
+      "\\b(price|pricing|cost|budget|setup fee|onboarding fee|monthly|retainer|commercial)\\b",
+      "\\bhow much\\b"
+    ],
+    "answer_style": "direct commercial answer; give real scoping factors, never specific numbers",
+    "guidance": "Explain that Nesterlabs scopes pricing by implementation complexity, integrations, compliance, design depth, production hardening, and post-launch support. If exact setup fees, monthly fees, or cancellation terms are requested, do not invent numbers or policies; say those are finalized commercially once scope and support model are clear.",
+    "must_include": [
+      "pricing depends on scope, integrations, compliance, and support model",
+      "we scope each engagement individually rather than quoting one-size-fits-all rates",
+      "commercial specifics should be handled by Ankur or the team"
+    ],
+    "must_avoid": [
+      "do not make up monthly cost, cancellation notice, or fixed setup fees",
+      "do not dodge the question with product discovery"
+    ],
+    "followup_rule": "Do not ask broad discovery. Offer to route exact commercial terms if needed.",
+    "escalation": "Route exact pricing, contracts, and cancellation terms to Ankur/team.",
+    "allow_discovery_question": false
+  },
+  {
+    "id": "proof.references_nda",
+    "mode": "proof_case_study",
+    "priority": 102,
+    "patterns": [
+      "\\b(reference|references|NDA|case stud(y|ies)|proof point|proof|similar engagement|client example)\\b",
+      "\\b(can you share|show me|send over).*(reference|case|proof)\\b"
+    ],
+    "answer_style": "truthful proof answer",
+    "guidance": "Share public proof points only: healthcare voice intake with 77% faster booking and 78% cost reduction, voice mentorship and multilingual systems with sub-1.5s behavior, and portfolio categories such as RevOps, analytics, identity, security, genomics, and design-led AI products. For confidential or regulated references, say references may be arranged under NDA and client permission.",
+    "must_include": [
+      "public proof points can be discussed at a high level",
+      "confidential client names or finance-grade details require NDA/client permission"
+    ],
+    "must_avoid": [
+      "do not invent a finance-grade multi-region case study",
+      "do not name confidential clients"
+    ],
+    "followup_rule": "Offer NDA/reference process if the user asks for proof needed to proceed.",
+    "escalation": "Reference and NDA workflow should go through the team/legal/commercial owner.",
+    "allow_discovery_question": false
+  }
+]

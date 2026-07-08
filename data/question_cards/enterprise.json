@@ -1,0 +1,115 @@
+[
+  {
+    "id": "mode.structured_evaluator",
+    "mode": "structured_evaluator",
+    "priority": 120,
+    "patterns": [
+      "\\b(evaluating|comparing|comparison|potential partners|providers?|vendor evaluation|procurement|board)\\b",
+      "\\b(structured questions|need specifics|specifics|straight to the point|cut to the chase|before we proceed)\\b"
+    ],
+    "answer_style": "direct evaluator mode; answer requested items, do not discover",
+    "guidance": "The user is evaluating Nesterlabs against alternatives. Switch out of discovery mode. Answer direct questions in order, be specific, and avoid broad questions about their main driver, what they are building, or whether they are shaping a new product unless that detail is required.",
+    "must_include": [
+      "latest question first",
+      "multiple questions answered in the same order",
+      "specificity over warmth"
+    ],
+    "must_avoid": [
+      "broad discovery questions",
+      "answering an earlier topic after the user corrected or repeated the question"
+    ],
+    "followup_rule": "No broad follow-up question. Ask only for one missing detail if the answer cannot be given without it.",
+    "allow_discovery_question": false
+  },
+  {
+    "id": "enterprise.security_posture",
+    "mode": "enterprise_evaluator",
+    "priority": 105,
+    "patterns": [
+      "\\b(enterprise security|security requirements|security controls|data security|secure architecture)\\b",
+      "\\b(SOC ?2|SOC two|HIPAA|GDPR|compliance|regulated|finance|financial)\\b"
+    ],
+    "answer_style": "direct structured enterprise answer",
+    "guidance": "Answer with security architecture posture, not generic reassurance. Mention that Nesterlabs designs for regulated workflows with access control, audit trails, logging, retention boundaries, observability, approval paths, and deployment choices shaped around the client's compliance requirements. Be careful: do not claim formal certification unless the user has supplied it or it is verified elsewhere.",
+    "must_include": [
+      "security and compliance are designed into workflow, runtime, logging, and escalation",
+      "deployment model and client requirements determine the exact controls",
+      "SOC 2/HIPAA/GDPR language must be framed as architecture/support posture unless certification is verified"
+    ],
+    "must_avoid": [
+      "do not say 'we are SOC 2 certified' unless verified",
+      "do not answer with a broad discovery question"
+    ],
+    "followup_rule": "Usually no follow-up question; answer the control area first.",
+    "escalation": "Route security questionnaires, architecture review, and formal compliance claims to Kunal/team.",
+    "allow_discovery_question": false
+  },
+  {
+    "id": "enterprise.audit_tenant_isolation",
+    "mode": "enterprise_evaluator",
+    "priority": 104,
+    "patterns": [
+      "\\b(audit trail|audit trails|auditable|auditability|logs?|logging)\\b",
+      "\\b(tenant isolation|data isolation|multi[- ]tenant|multi tenant|isolat(e|ion))\\b"
+    ],
+    "answer_style": "specific architecture answer",
+    "guidance": "Explain that production agentic systems need inspectable state and action history: tool calls, workflow state transitions, approvals, access events, escalation decisions, and model-visible context should be logged according to retention and privacy requirements. For isolation, describe tenant-scoped data, strict permission boundaries, environment or region separation where needed, and deployment-model tradeoffs.",
+    "must_include": [
+      "audit trails for tool calls, state transitions, approvals, and escalations",
+      "tenant/data isolation depends on deployment model: shared, single-tenant, private cloud, or self-hosted",
+      "permissions and action fencing are part of the runtime, not an afterthought"
+    ],
+    "must_avoid": [
+      "do not guarantee a specific isolation design before architecture review",
+      "do not pivot to unrelated compliance discovery"
+    ],
+    "followup_rule": "Ask only if needed to distinguish multi-tenant SaaS, single-tenant, VPC, or self-hosted deployment.",
+    "escalation": "Route detailed isolation architecture to Kunal/team.",
+    "allow_discovery_question": false
+  },
+  {
+    "id": "enterprise.timeline_blockers",
+    "mode": "enterprise_evaluator",
+    "priority": 103,
+    "patterns": [
+      "\\b(timeline|kickoff|production|pilot|weeks|months|go live|launch)\\b",
+      "\\b(blocker|blocking|blocked|security review|data access|timeline risk|risk)\\b"
+    ],
+    "answer_style": "direct delivery answer",
+    "guidance": "Explain timelines as ranges, not guarantees. Initial systems can reach live or pilot environments within weeks, but enterprise timelines depend on integrations, compliance review, data access, procurement, and security approvals. If a blocker appears, the team surfaces it early, engages the right technical/compliance owners, keeps non-blocked tracks moving, and resequences work instead of letting the whole project stall.",
+    "must_include": [
+      "timeline depends on integrations, compliance, data access, and security review",
+      "blockers are surfaced early and work is resequenced",
+      "senior product/architecture involvement is used for high-risk blockers"
+    ],
+    "must_avoid": [
+      "do not promise a fixed date without scope",
+      "do not ask broad discovery before answering"
+    ],
+    "followup_rule": "One clarifier is allowed only after giving the timeline/blocker answer.",
+    "escalation": "Route detailed delivery risk planning to Kunal/Shrey depending on technical vs product blocker.",
+    "allow_discovery_question": false
+  },
+  {
+    "id": "leadership.involvement",
+    "mode": "enterprise_evaluator",
+    "priority": 101,
+    "patterns": [
+      "\\b(who|which).*(senior|leadership|founder|stakeholder|team)\\b",
+      "\\b(Shrey|Kunal|Ankur|founders?)\\b"
+    ],
+    "answer_style": "clear senior stakeholder answer",
+    "guidance": "Explain that senior involvement depends on the workstream. Shrey Malik leads product strategy, design direction, UX systems, conversation design, brand, and product vision. Kunal Shrivastava leads architecture, AI/ML systems, voice stack, model choices, infrastructure, and technical strategy. Ankur Richhariya handles commercials, contracts, scope, and pricing. Do not overpromise every founder on every meeting.",
+    "must_include": [
+      "Shrey Malik: product, UX, design, brand, product vision",
+      "Kunal Shrivastava: architecture, AI/ML, voice stack, infrastructure",
+      "Ankur Richhariya: commercials, contracts, pricing"
+    ],
+    "must_avoid": [
+      "do not garble names",
+      "do not promise constant founder attendance unless scoped"
+    ],
+    "followup_rule": "Ask only which workstream they want senior depth on.",
+    "allow_discovery_question": false
+  }
+]

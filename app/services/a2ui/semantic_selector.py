@@ -135,7 +135,7 @@ class SemanticTemplateSelector:
     def select_template(
         self,
         query: str,
-        threshold: float = 0.15
+        threshold: float = 0.3
     ) -> Tuple[Optional[str], float]:
         """
         Select the best matching template based on semantic similarity.
@@ -143,7 +143,7 @@ class SemanticTemplateSelector:
         Args:
             query: User's question
             threshold: Minimum similarity score (0-1) to consider a match
-                      Default: 0.15 (lowered to catch more queries)
+                      Default: 0.3 (moderate threshold for quality template matching)
 
         Returns:
             Tuple of (template_type, confidence_score)
@@ -193,7 +193,7 @@ class SemanticTemplateSelector:
         self,
         query: str,
         keyword_result: Optional[str] = None,
-        semantic_threshold: float = 0.15,
+        semantic_threshold: float = 0.3,
         confidence_threshold: float = 0.5
     ) -> Tuple[str, float, str]:
         """
@@ -202,8 +202,8 @@ class SemanticTemplateSelector:
         Strategy:
         1. Try semantic matching
         2. If confidence is high (>0.5), use semantic result
-        3. If confidence is medium (0.15-0.5) and keyword result exists, use keyword
-        4. If confidence is low (<0.15), use keyword result or default
+        3. If confidence is medium (0.3-0.5) and keyword result exists, use keyword
+        4. If confidence is low (<0.3), use keyword result or default to magazine-hero
 
         Args:
             query: User's question
@@ -236,8 +236,8 @@ class SemanticTemplateSelector:
             logger.info(f"⚠️ Low semantic confidence, using keyword fallback: {keyword_result}")
             return keyword_result, 0.0, "keyword_fallback"
 
-        logger.info(f"⚠️ No matches found, defaulting to simple-card")
-        return "simple-card", 0.0, "default"
+        logger.info(f"⚠️ No matches found, defaulting to magazine-hero")
+        return "magazine-hero", 0.0, "default"
 
     def get_all_scores(self, query: str) -> Dict[str, float]:
         """

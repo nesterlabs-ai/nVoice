@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="/Nester-Logo.svg">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <!-- Critical CSS: prevent FOUC – show loader and hide status/mic until main CSS loads -->
+  <!-- Critical CSS: prevent FOUC – show loader, hide dashboard cards until main CSS loads -->
   <style>
     .loading-overlay {
       position: fixed;
@@ -23,6 +23,23 @@
     .hidden {
       display: none !important;
     }
+    /* Hide dashboard grid until main CSS loads – prevents cards flashing on refresh */
+    .main-layout .dashboard-grid {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    /* Start left/right panels off-screen so they don't slide on load (avoids slide glitch) */
+    .main-layout .left-panel {
+      transform: translateX(calc(-100% - 24px));
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .main-layout .right-panel {
+      transform: translateX(calc(100% + 24px));
+      visibility: hidden;
+      pointer-events: none;
+    }
   </style>
 </head>
 
@@ -30,13 +47,9 @@
   <!-- Loading Overlay -->
   <div class="loading-overlay" id="loading-overlay">
     <div class="loading-container">
-      <div class="loading-spinner"></div>
-      <div class="loading-text" id="loading-text">INITIALIZING</div>
+      <div class="loading-text" id="loading-text">Intitializing...</div>
     </div>
   </div>
-
-  <!-- Notification Banner -->
-  <div class="notification" id="notification">VOICE DETECTED</div>
 
   <!-- ===== NESTER DESIGN LANGUAGE LAYOUT ===== -->
 
@@ -54,27 +67,93 @@
     </div>
   </header> -->
 
-  <!-- Main Layout (panels hidden by default; use Peak in media bar to show) -->
+  <!-- Main Layout -->
   <main class="main-layout panels-hidden">
-    <img src="/dots.svg" alt="" class="main-layout-dots" aria-hidden="true" />
-
-    <!-- LEFT PANEL: Emotion Metrics -->
-    <aside class="left-panel">
-      <div class="panel emotion-panel" id="emotion-panel">
-        <div class="panel-header">
-          <span class="panel-label">EMOTION METRICS</span>
+    <a href="https://www.nesterlabs.com/" class="main-layout-logo-link" aria-label="Nester Labs">
+      <img src="/Logo White.svg" alt="Nester" class="main-layout-logo" aria-hidden="true" />
+    </a>
+    <!-- 6-Card Dashboard Grid (visible when Peek/dashboard mode) -->
+    <!-- Column order: 1 = Visitor Intent + Transcript, 2 = Conversation + Emotion, 3 = Knowledge Graph + Tone -->
+    <div class="dashboard-grid" id="dashboard-grid" aria-hidden="true">
+      <!-- Column 1: Visitor Intent (top), Transcript (bottom) -->
+      <div class="dashboard-card visitor-intent-card" id="dashboard-card-3">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">VISITOR INTENT</span>
         </div>
-        <div class="panel-body">
-          <!-- Current Emotion Display -->
-          <div class="emotion-display">
+        <div class="dashboard-card-body visitor-intent-body">
+          <div class="visitor-intent-section">
+            <p class="visitor-intent-desc" id="visitor-intent-desc">Visitor intent will appear here as you speak</p>
+            <div class="visitor-intent-confidence">
+              <div class="confidence-bar">
+                <div class="confidence-fill" id="visitor-intent-confidence-fill" style="width: 10%"></div>
+              </div>
+              <span class="confidence-label">CONFIDENCE</span>
+            </div>
+          </div>
+          <div class="visitor-info-section">
+            <h3 class="visitor-info-header">VISITOR INFO</h3>
+            <div class="visitor-info-grid">
+              <div class="visitor-info-col observed">
+                <span class="visitor-info-col-label">OBSERVED</span>
+                <div class="visitor-info-list" id="visitor-observed-list">
+                  <div class="visitor-info-item"><span class="key">Language:</span> <span class="value" id="visitor-language">English</span></div>
+                  <div class="visitor-info-item"><span class="key">Issue:</span> <span class="value" id="visitor-issue">Account</span></div>
+                  <div class="visitor-info-item"><span class="key">Platform:</span> <span class="value" id="visitor-platform">Desktop Web</span></div>
+                </div>
+              </div>
+              <div class="visitor-info-col inferred">
+                <span class="visitor-info-col-label">INFERRED</span>
+                <div class="visitor-info-list" id="visitor-inferred-list">
+                  <div class="visitor-info-item"><span class="key">Tech Level:</span> <span class="value" id="visitor-tech-level">Intermediate</span></div>
+                  <div class="visitor-info-item"><span class="key">Urgency:</span> <span class="value" id="visitor-urgency">High</span></div>
+                  <div class="visitor-info-item"><span class="key">Prior contact:</span> <span class="value" id="visitor-prior-contact">Yes (2 times)</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dashboard-card" id="dashboard-card-1">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">CONVERSATION ANALYSIS</span>
+        </div>
+        <div class="dashboard-card-body">
+          <div id="synchronized-analysis-root" class="dashboard-card-inner"></div>
+        </div>
+      </div>
+      <div class="dashboard-card" id="dashboard-card-2">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">KNOWLEDGE GRAPH</span>
+        </div>
+        <div class="dashboard-card-body">
+          <div id="knowledge-graph-root" class="dashboard-card-inner"></div>
+        </div>
+      </div>
+      <!-- Column 2: Emotion Analysis (below Conversation Analysis) -->
+      <div class="dashboard-card" id="dashboard-card-6">
+        <div class="dashboard-card-header transcript-header">
+          <span class="status-dot active" id="transcript-status-dot"></span>
+          <span class="dashboard-card-label">Transcript</span>
+          <span id="transcript-status" class="hidden">READY</span>
+        </div>
+        <div class="dashboard-card-body transcript-log-body" id="transcript-list">
+          <div class="welcome-message transcript-welcome" id="welcome-message">
+            <span class="transcript-welcome-text">Messages will appear here</span>
+          </div>
+        </div>
+      </div>
+      <div class="dashboard-card" id="dashboard-card-4">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">EMOTION ANALYSIS</span>
+        </div>
+        <div class="dashboard-card-body">
+          <!-- <div class="emotion-display">
             <span class="emotion-emoji" id="emotion-emoji">😊</span>
             <div class="emotion-info">
               <span class="emotion-label" id="emotion-label">NEUTRAL</span>
               <span class="emotion-confidence">Confidence: <span id="emotion-confidence">0%</span></span>
             </div>
           </div>
-
-          <!-- Emotion Line Chart -->
           <div class="emotion-chart-section">
             <canvas id="emotion-chart-canvas"></canvas>
             <div class="chart-legend">
@@ -82,61 +161,32 @@
               <span class="legend-item"><span class="legend-color arousal"></span>AROUSAL</span>
               <span class="legend-item"><span class="legend-color dominance"></span>DOMINANCE</span>
             </div>
-          </div>
+          </div> -->
+          <div id="emotion-analysis-root" class="dashboard-card-inner emotion-analysis-topic"></div>
         </div>
       </div>
+      <div class="dashboard-card" id="dashboard-card-5">
+        <div class="dashboard-card-header">
+          <span class="dashboard-card-label">TONE MODULATOR</span>
+        </div>
+        <div class="dashboard-card-body">
+          <div id="tone-modulator-root" class="dashboard-card-inner"></div>
+        </div>
+      </div>
+    </div>
 
-      <!-- Knowledge Graph Widget -->
-      <div id="knowledge-graph-root" class="panel knowledge-graph-panel"></div>
-
+    <!-- Legacy left panel (hidden when dashboard shown) -->
+    <aside class="left-panel legacy-panel">
+      <div class="panel emotion-panel hidden" id="emotion-panel-legacy"></div>
+      <div class="panel knowledge-graph-panel hidden" id="knowledge-graph-legacy"></div>
     </aside>
 
-    <!-- CENTER: Connect Button & Wave Visualizer -->
+    <!-- CENTER: Wave Visualizer (connect-area removed; connection starts automatically on load) -->
     <section class="center-section">
-      <!-- Back button -->
-      <button type="button" class="back-btn" id="back-btn" aria-label="Back">
-        <img src="/ArrowLeft.svg" alt="" class="back-btn-icon" />
-        <span class="back-btn-text">Back</span>
-      </button>
-
-      <!-- Connect/Disconnect Button -->
-      <div class="connect-area" id="connect-area">
-        <button class="connect-btn" id="connect-btn">
-          <span class="btn-text">START CONVERSATION</span>
-          <span class="btn-icon">→</span>
-        </button>
-        <p class="connect-hint">Click to begin voice interaction</p>
-      </div>
-
-      <!-- Status Display (shown when connected) -->
-      <div class="status-display hidden" id="status-display">
-        <div class="status-icon" id="status-icon">
-          <!-- Mic icon for listening -->
-          <svg class="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
-          <!-- Wave icon for speaking -->
-          <svg class="icon-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 3v18"/>
-            <path d="M8 8v8"/>
-            <path d="M16 8v8"/>
-            <path d="M4 11v2"/>
-            <path d="M20 11v2"/>
-          </svg>
-          <!-- Dots for thinking -->
-          <div class="thinking-dots">
-            <span></span><span></span><span></span>
-          </div>
-        </div>
-        <span class="status-text" id="status-text">LISTENING</span>
-      </div>
+      <div class="connect-area hidden" id="connect-area" aria-hidden="true"></div>
 
       <!-- Live subtitle: single line, centered above wave, shows current speaker only -->
       <div class="live-subtitle" id="live-subtitle" aria-live="polite">
-        <span class="live-subtitle-label" id="live-subtitle-label"></span>
         <span class="live-subtitle-text" id="live-subtitle-text"></span>
       </div>
 
@@ -154,20 +204,20 @@
             <img src="/X (1).svg" alt="" class="control-btn-icon control-btn-icon-invert" />
           </button>
           <img src="/Line 3.svg" alt="" class="control-bar-divider hide-on-mobile" aria-hidden="true" />
-          <button type="button" class="control-btn control-btn-peak hide-on-mobile" id="control-peak" aria-label="Peak view">
+          <button type="button" class="control-btn control-btn-peak hide-on-mobile" id="control-peak" aria-label="Peek view">
             <img src="/Eye (1).svg" alt="" class="control-btn-icon" />
-            <span class="control-btn-label">Peak</span>
+            <span class="control-btn-label">Peek</span>
           </button>
         </div>
-        <div class="close-options-group" id="close-options-group" aria-label="Restart or Peak">
+        <div class="close-options-group" id="close-options-group" aria-label="Restart or Peek">
           <button type="button" class="close-option close-option-restart" id="close-option-restart" aria-label="Restart">
             <img src="/ArrowClockwise.svg" alt="" class="close-option-icon" />
             <span class="close-option-label">Restart</span>
           </button>
           <img src="/Line 3.svg" alt="" class="control-bar-divider hide-on-mobile" aria-hidden="true" />
-          <button type="button" class="close-option close-option-peak hide-on-mobile" id="close-option-peak" aria-label="Peak">
+          <button type="button" class="close-option close-option-peak hide-on-mobile" id="close-option-peak" aria-label="Peek">
             <img src="/Eye (1).svg" alt="" class="close-option-icon" />
-            <span class="close-option-label">Peak</span>
+            <span class="close-option-label">Peek</span>
           </button>
         </div>
       </div>
@@ -178,26 +228,8 @@
       </div>
     </section>
 
-    <!-- RIGHT PANEL: Conversation Log + Terminal -->
+    <!-- RIGHT PANEL (hidden when dashboard shown) -->
     <aside class="right-panel">
-      <!-- Conversation Panel (takes more space) -->
-      <div class="panel conversation-panel">
-        <div class="panel-header">
-          <span class="panel-label">CONVERSATION</span>
-        </div>
-        <div class="conversation-body" id="transcript-list">
-          <div class="welcome-message" id="welcome-message">
-            <div class="welcome-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              </svg>
-            </div>
-            <div class="welcome-text">CONVERSATION LOG</div>
-            <div class="welcome-sub">Messages will appear here</div>
-          </div>
-        </div>
-      </div>
-
       <!-- Topic Timeline Panel -->
       <div class="panel topic-timeline-panel">
         <div class="panel-header">
@@ -253,6 +285,7 @@
 
   <!-- A2UI Visual Cards Container -->
   <div class="a2ui-panel" id="a2ui-panel">
+    <!-- <button class="a2ui-panel-close" id="a2ui-close" aria-label="Close">&times;</button> -->
     <div class="a2ui-content" id="a2ui-container"></div>
   </div>
 
@@ -267,8 +300,11 @@
 
   <script type="module" src="/src/app.ts"></script>
   <script type="module" src="/src/components/KnowledgeGraphWidget/mount.tsx"></script>
+  <script type="module" src="/src/components/SynchronizedAnalysisWidget/mount.tsx"></script>
+  <script type="module" src="/src/components/ToneModulatorWidget/mount.tsx"></script>
+  <script type="module" src="/src/components/EmotionAnalysisWidget/mount.tsx"></script>
   <link rel="stylesheet" href="/src/style.css">
-  <link rel="stylesheet" href="/src/components/a2ui/a2ui-styles.css">
+  <link rel="stylesheet" href="/src/components/a2ui/a2ui-styles.css?v=7">
 </body>
 
 </html>

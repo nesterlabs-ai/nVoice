@@ -14,6 +14,7 @@ merge is purely cosmetic — semantically identical to what the user said —
 and only affects the outbound API payload, not the stored context.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -21,6 +22,47 @@ from openai import APIError
 from pipecat.services.openai.llm import OpenAILLMService
 
 from pipecat.adapters.services.open_ai_adapter import OpenAILLMInvocationParams
+
+# Functions registered on the LLM service (must stay in sync with conversation.py)
+_KNOWN_FUNCTIONS = frozenset({
+    "call_rag_system",
+    "end_conversation",
+    "start_appointment_booking",
+    "submit_appointment",
+})
+
+_MALFORMED_TOOL_RE = re.compile(
+    r"attempted to call tool '([^']+)' which was not in request\.tools"
+)
+
+
+def _extract_real_function(error_str: str) -> Optional[str]:
+    """Return the real function name when Llama encodes args inside the tool name.
+
+    Llama sometimes generates a tool call with the function name field set to
+    something like ``call_rag_system={"question": "..."}`` instead of separating
+    the name and arguments.  Groq rejects this because that composite string is
+    not a registered tool name.
+
+    If the malformed name starts with a known function name we return that name
+    so the caller can retry with tool_choice forced to the correct function.
+    """
+    m = _MALFORMED_TOOL_RE.search(error_str)
+    if not m:
+        return None
+    malformed = m.group(1)
+    for fn in _KNOWN_FUNCTIONS:
+        # Llama uses several separators between the name and the args:
+        #   call_rag_system={"question": "..."}   (equals sign)
+        #   call_rag_system {"question": "..."}   (space)
+        #   call_rag_system{"question": "..."}    (no separator)
+        if (
+            malformed.startswith(fn + "=")
+            or malformed.startswith(fn + " ")
+            or malformed.startswith(fn + "{")
+        ):
+            return fn
+    return None
 
 
 def _merge_consecutive_user_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -78,6 +120,10 @@ class GroqLLMService(OpenAILLMService):
         """Build params, merging consecutive user messages first."""
         params = super().build_chat_completion_params(params_from_context)
 
+        # Llama models on Groq don't reliably handle parallel tool calls
+        if params.get("tools"):
+            params["parallel_tool_calls"] = False
+
         # params["messages"] comes from the context; merge in place
         if "messages" in params:
             original_count = len(params["messages"])
@@ -93,28 +139,62 @@ class GroqLLMService(OpenAILLMService):
         return params
 
     async def _process_context(self, context):
-        """Process context with a fallback retry on Groq function-call errors.
+        """Process context with smart retry on Groq/Llama function-call errors.
 
-        The "Failed to call a function" error from Groq is raised *during
-        stream iteration*, not during stream creation.  We wrap the parent
-        implementation and, on that specific error, retry the same context
-        with tool_choice="none" so the model falls back to a plain text
-        response.
+        Two error classes are handled:
+
+        1. **Malformed tool name** — Llama encodes args inside the function name
+           (e.g. ``call_rag_system={"question": "..."}``).  Groq rejects this
+           because the composite string isn't a registered tool.  We detect
+           which real function was intended and retry with tool_choice forced to
+           that function so the model generates a correctly-structured call.
+
+        2. **Generic failure / null tool** — "Failed to call a function", null
+           tool name, etc.  We retry with tool_choice="none" so the model falls
+           back to a plain text response rather than crashing the session.
         """
         try:
             await super()._process_context(context)
-        except APIError as e:
-            if "Failed to call a function" not in str(e):
-                raise  # Re-raise unrelated API errors
+        except (APIError, Exception) as e:
+            error_str = str(e)
+            retryable_errors = [
+                "Failed to call a function",
+                "attempted to call tool 'null'",
+                "which was not in request.tools",
+                "tool call validation failed",
+            ]
+            if not any(err in error_str for err in retryable_errors):
+                raise  # Re-raise unrelated errors
 
-            logger.warning(
-                "GroqLLMService: Groq function-call error during stream "
-                "iteration — retrying with tool_choice=none"
-            )
-            # Temporarily force tool_choice to "none" for the retry.
-            # OpenAILLMContext.tool_choice is a read-only property; use
-            # set_tool_choice() which writes the backing _tool_choice field.
             original_tool_choice = context.tool_choice
+
+            # ── Strategy 1: malformed tool name ──────────────────────────────
+            # Llama put args inside the function name field.  We know which
+            # function was intended, so force it to retry that call correctly.
+            real_fn = _extract_real_function(error_str)
+            if real_fn:
+                logger.warning(
+                    f"GroqLLMService: Malformed tool name detected "
+                    f"(intended '{real_fn}') — retrying with forced tool_choice "
+                    f"(error: {error_str[:120]})"
+                )
+                context.set_tool_choice({"type": "function", "function": {"name": real_fn}})
+                try:
+                    await super()._process_context(context)
+                    return
+                except Exception as retry_err:
+                    logger.warning(
+                        f"GroqLLMService: Forced tool_choice retry also failed "
+                        f"({retry_err!s:.80}) — falling back to tool_choice=none"
+                    )
+                finally:
+                    context.set_tool_choice(original_tool_choice)
+
+            # ── Strategy 2: generic fallback — plain text response ────────────
+            logger.warning(
+                f"GroqLLMService: Groq/Llama function-call error — retrying "
+                f"with tool_choice=none (error: {error_str[:100]})"
+            )
             context.set_tool_choice("none")
             try:
                 await super()._process_context(context)

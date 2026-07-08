@@ -104,15 +104,19 @@ class VoiceAssistantServer:
         audio_out_enabled = self.server_config.get("audio_out_enabled", True)
         add_wav_header = self.server_config.get("add_wav_header", False)
 
-        # Create VAD analyzer with noise-resistant settings
+        # VAD tuning lives in config.yaml (server.vad); these are only fallbacks if a
+        # key is missing. Kept in sync with the relaxed config values.
         vad_config = self.server_config.get("vad", {})
         vad_params = VADParams(
-            confidence=vad_config.get("confidence", 0.85),
-            start_secs=vad_config.get("start_secs", 0.3),
-            stop_secs=vad_config.get("stop_secs", 0.6),
-            min_volume=vad_config.get("min_volume", 0.75),
+            confidence=vad_config.get("confidence", 0.75),
+            start_secs=vad_config.get("start_secs", 0.2),
+            stop_secs=vad_config.get("stop_secs", 0.5),
+            min_volume=vad_config.get("min_volume", 0.65),
         )
         vad_analyzer = SileroVADAnalyzer(params=vad_params)
+        # pipecat 1.x: VAD attaches to the user aggregator, not the transport.
+        # Stash it so run_websocket_server() can pass it into voice_assistant.run().
+        self._vad_analyzer = vad_analyzer
         logger.info(
             f"VAD configured: confidence={vad_params.confidence}, "
             f"min_volume={vad_params.min_volume}, start_secs={vad_params.start_secs}"
@@ -120,12 +124,19 @@ class VoiceAssistantServer:
 
         # Create transport parameters
         # Note: host and port must be passed directly to WebsocketServerTransport
+        # Get TTS sample rate from config (Resemble=24kHz, ElevenLabs=24kHz, default=16kHz)
+        tts_config = self.config.get("tts", {}).get("config", {})
+        audio_out_sample_rate = tts_config.get("sample_rate", 16000)
+        logger.info(f"Transport audio_out_sample_rate={audio_out_sample_rate}")
+
+        # pipecat 1.x: vad_analyzer moved off the transport onto the user
+        # aggregator (passed via voice_assistant.run() -> create_context_aggregator).
         transport_params = WebsocketServerParams(
             serializer=ProtobufFrameSerializer(),
             audio_in_enabled=audio_in_enabled,
             audio_out_enabled=audio_out_enabled,
+            audio_out_sample_rate=audio_out_sample_rate,
             add_wav_header=add_wav_header,
-            vad_analyzer=vad_analyzer,
             session_timeout=session_timeout,
         )
 
@@ -156,8 +167,14 @@ class VoiceAssistantServer:
 
                 logger.info("Voice Assistant ready for new connection...")
 
-                # Run the voice assistant with the transport
-                await voice_assistant.run(transport, handle_sigint=False)
+                # Run the voice assistant with the transport. pipecat 1.x: VAD
+                # attaches to the aggregator, so pass it through here (this
+                # standalone path has no SmartTurn analyzer -> turn_analyzer=None).
+                await voice_assistant.run(
+                    transport,
+                    handle_sigint=False,
+                    vad_analyzer=getattr(self, "_vad_analyzer", None),
+                )
 
             except asyncio.CancelledError:
                 logger.info("WebSocket server task cancelled")

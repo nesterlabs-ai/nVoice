@@ -233,6 +233,14 @@ class VisualHintProcessor(FrameProcessor):
         self._emitted_hints_this_utterance: set = set()  # Prevent duplicate hints
         self._a2ui_emitted_this_utterance: bool = False  # Prevent duplicate A2UI
 
+        # Stateful function-call-leak filter — mirrors TextFilterProcessor
+        # Prevents Llama-native <function=...></function> syntax from appearing
+        # in streaming subtitles when the model emits a tool call as plain text.
+        self._fn_active: bool = False   # True while inside a <function=...> block
+        self._fn_partial: str = ""      # Trailing text that might be a partial tag
+        self._FN_OPEN_MARKERS: List[str] = ["<function=", "<|python_tag|>"]
+        self._FN_CLOSE_MARKER: str = "</function>"
+
         logger.info(
             f"VisualHintProcessor initialized: "
             f"enabled={enabled}, stream_words={stream_words}, detect_content={detect_content}, "
@@ -256,7 +264,10 @@ class VisualHintProcessor(FrameProcessor):
                 self._word_buffer = ""
                 self._emitted_hints_this_utterance = set()
                 self._a2ui_emitted_this_utterance = False
-                logger.info(f"📝 LLMFullResponseStart → new utterance: {self._current_utterance_id}")
+                # Reset function-call leak filter for the new turn
+                self._fn_active = False
+                self._fn_partial = ""
+                logger.debug(f"📝 LLMFullResponseStart → new utterance: {self._current_utterance_id}")
 
             # LLM response finished — flush any partial word and finalize
             elif isinstance(frame, LLMFullResponseEndFrame):
@@ -266,13 +277,16 @@ class VisualHintProcessor(FrameProcessor):
                     await self._emit_word(self._word_buffer, self._sequence_counter)
                     self._word_buffer = ""
                 await self.finalize_utterance()
-                logger.info(f"📝 LLMFullResponseEnd → utterance finalized")
+                logger.debug(f"📝 LLMFullResponseEnd → utterance finalized")
 
             # Stream text chunks word-by-word
             elif isinstance(frame, TextFrame):
-                text = frame.text if hasattr(frame, 'text') else str(frame)
+                raw_text = frame.text if hasattr(frame, 'text') else str(frame)
+                # Strip Llama-native function call syntax before emitting to frontend
+                text = self._strip_function_calls(raw_text)
                 if text and text.strip():
                     if self.stream_words:
+                        logger.debug(f"📤 [SUBTITLE] Emitting streaming text for: '{text[:50]}...'")
                         await self._emit_streaming_text(text)
 
                     # Buffer full text for content detection
@@ -284,6 +298,56 @@ class VisualHintProcessor(FrameProcessor):
         # Always pass frame downstream to TTS
         await self.push_frame(frame, direction)
 
+    def _strip_function_calls(self, text: str) -> str:
+        """Strip Llama-native function call syntax from a streaming text chunk.
+
+        Stateful: _fn_active / _fn_partial persist across TextFrame calls within
+        one LLM turn so partial tags split across chunk boundaries are handled.
+        """
+        text = self._fn_partial + text
+        self._fn_partial = ""
+
+        result: list[str] = []
+        remaining = text
+
+        while remaining:
+            if self._fn_active:
+                close_idx = remaining.find(self._FN_CLOSE_MARKER)
+                if close_idx >= 0:
+                    remaining = remaining[close_idx + len(self._FN_CLOSE_MARKER):]
+                    self._fn_active = False
+                else:
+                    remaining = ""
+            else:
+                trigger_pos = -1
+                trigger_len = 0
+                for marker in self._FN_OPEN_MARKERS:
+                    idx = remaining.find(marker)
+                    if idx >= 0 and (trigger_pos < 0 or idx < trigger_pos):
+                        trigger_pos = idx
+                        trigger_len = len(marker)
+
+                if trigger_pos >= 0:
+                    result.append(remaining[:trigger_pos])
+                    remaining = remaining[trigger_pos + trigger_len:]
+                    self._fn_active = True
+                else:
+                    max_scan = max(len(m) for m in self._FN_OPEN_MARKERS) - 1
+                    partial_start = -1
+                    for start in range(len(remaining) - 1, max(len(remaining) - max_scan - 1, -1), -1):
+                        suffix = remaining[start:]
+                        if any(m.startswith(suffix) for m in self._FN_OPEN_MARKERS) and len(suffix) >= 1:
+                            partial_start = start
+                            break
+                    if partial_start >= 0:
+                        result.append(remaining[:partial_start])
+                        self._fn_partial = remaining[partial_start:]
+                    else:
+                        result.append(remaining)
+                    remaining = ""
+
+        return "".join(result)
+
     async def _emit_streaming_text(self, text: str) -> None:
         """Emit streaming text event for word-by-word display.
 
@@ -294,6 +358,12 @@ class VisualHintProcessor(FrameProcessor):
         Args:
             text: Text chunk from LLM
         """
+        # Initialize utterance_id if not set (e.g., for greeting messages)
+        if self._current_utterance_id is None:
+            self._current_utterance_id = str(uuid.uuid4())
+            self._sequence_counter = 0
+            logger.info(f"🆔 [SUBTITLE] Generated new utterance_id: {self._current_utterance_id[:8]}")
+
         # Prepend any leftover partial word from the previous chunk
         text = self._word_buffer + text
         self._word_buffer = ""
@@ -331,9 +401,10 @@ class VisualHintProcessor(FrameProcessor):
         try:
             data_frame = RTVIServerMessageFrame(data=message_data)
             await self.push_frame(data_frame)
-            logger.debug(f"📤 Streamed word: '{word}' (seq={seq})")
+            utterance_short = self._current_utterance_id[:8] if self._current_utterance_id else "None"
+            logger.info(f"📤 [SUBTITLE] Streamed word to client: '{word}' (seq={seq}, utterance={utterance_short})")
         except Exception as e:
-            logger.warning(f"Failed to emit streaming text: {e}")
+            logger.error(f"❌ [SUBTITLE] Failed to emit streaming text: {e}", exc_info=True)
 
     async def _detect_and_emit_hints(self) -> None:
         """Detect content patterns in buffered text and emit visual hints."""
@@ -484,6 +555,13 @@ class VisualHintProcessor(FrameProcessor):
     async def finalize_utterance(self) -> None:
         """Finalize the current utterance, emitting is_final=True."""
         if self._current_utterance_id:
+            # Flush any remaining buffered word first
+            if self.stream_words and self._word_buffer:
+                self._sequence_counter += 1
+                await self._emit_word(self._word_buffer, self._sequence_counter)
+                self._word_buffer = ""
+                logger.info(f"🔚 [SUBTITLE] Flushed final buffered word during finalization")
+
             # Emit final marker
             message_data = {
                 "message_type": "streaming_text",

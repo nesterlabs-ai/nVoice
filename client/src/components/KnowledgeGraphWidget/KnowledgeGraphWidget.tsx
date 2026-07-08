@@ -33,7 +33,7 @@ const COLORS = {
   nodeDefault: '#9ca3af',
   nodeHighlighted: '#ef4444',
   nodeDisabled: '#4b5563',
-  edgeDefault: '#6b7280',
+  edgeDefault: '#7D7D7D',
   edgeHighlighted: '#ef4444',
   labelDefault: '#e5e7eb',
   labelHighlighted: '#000000',  // Dark text for highlighted nodes
@@ -310,7 +310,6 @@ export function KnowledgeGraphWidget({
         })));
 
         setSearchIndex(index);
-        console.log('[KnowledgeGraph] Graph loaded:', data.nodes.length, 'nodes');
       } catch (e) {
         console.error('[KnowledgeGraph] Failed to load graph:', e);
         setError('Failed to load knowledge graph');
@@ -358,7 +357,6 @@ export function KnowledgeGraphWidget({
       }
     });
 
-    console.log('[KnowledgeGraph] Matched nodes for cycling:', matchedNodes);
 
     if (matchedNodes.length === 0) {
       setHighlightedNodes(new Set());
@@ -436,10 +434,6 @@ export function KnowledgeGraphWidget({
 
   return (
     <div className={`knowledge-graph-widget ${className}`}>
-      <div className="kg-header">
-        <span className="kg-title">KNOWLEDGE GRAPH</span>
-      </div>
-
       <div className="kg-container">
         {loading && (
           <div className="kg-loading">
