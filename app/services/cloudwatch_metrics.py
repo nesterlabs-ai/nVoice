@@ -155,3 +155,33 @@ def emit_stt_latency(latency_ms: float):
     """Emit STT latency metric."""
     dims = [{"Name": "Environment", "Value": os.getenv("ENVIRONMENT", "production")}]
     _put_metric("STTLatency", latency_ms, "Milliseconds", dims)
+
+
+def emit_turn_latency(latency_ms: float, session_id: str = ""):
+    """Emit end-to-end turn latency: final user transcript → bot audio start.
+
+    This is the user-perceived responsiveness number; regressions here are the
+    first thing to alarm on.
+    """
+    dims = [{"Name": "Environment", "Value": os.getenv("ENVIRONMENT", "production")}]
+    _put_metric("TurnLatency", latency_ms, "Milliseconds", dims)
+
+
+def emit_question_card_match(card_ids: list, session_id: str = ""):
+    """Emit question-card routing analytics.
+
+    One count per matched card id, plus an 'unmatched' count when no card fired —
+    unmatched questions are the card-authoring backlog, measured from real traffic.
+    """
+    env = os.getenv("ENVIRONMENT", "production")
+    if not card_ids:
+        _put_metric(
+            "QuestionCardMatch", 1, "Count",
+            [{"Name": "Environment", "Value": env}, {"Name": "CardId", "Value": "unmatched"}],
+        )
+        return
+    for card_id in card_ids:
+        _put_metric(
+            "QuestionCardMatch", 1, "Count",
+            [{"Name": "Environment", "Value": env}, {"Name": "CardId", "Value": card_id}],
+        )

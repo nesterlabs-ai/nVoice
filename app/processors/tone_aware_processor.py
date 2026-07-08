@@ -22,7 +22,6 @@ from pipecat.frames.frames import (
     Frame,
     TranscriptionFrame,
     InterimTranscriptionFrame,
-    TranscriptionUpdateFrame,
     AudioRawFrame,
     BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
@@ -166,6 +165,13 @@ class ToneAwareProcessor(FrameProcessor):
         # A2UI query capture - forward user queries to VisualHintProcessor
         self._visual_hint_processor = None
 
+        # Emotion → LLM wording: when set, stable detected emotion is upserted as a
+        # compact system note in the LLM context (same pattern as question cards)
+        self._conversation_manager = None
+
+        # Turn latency clock: final user transcript → bot audio start
+        self._turn_latency_t0 = 0.0
+
         mode_str = "HYBRID (Audio 70% + LLM Text 30%)" if use_hybrid_mode else "AUDIO-ONLY"
         logger.info(
             f"ToneAwareProcessor {mode_str} NON-BLOCKING: MSP-PODCAST, conf=0.25, buffer=1000ms, "
@@ -211,6 +217,58 @@ class ToneAwareProcessor(FrameProcessor):
         """
         self._visual_hint_processor = visual_hint_processor
         logger.info("🎨 VisualHintProcessor connected to ToneAwareProcessor for A2UI query capture")
+
+    def set_conversation_manager(self, conversation_manager) -> None:
+        """Set the ConversationManager so detected emotion can steer the LLM's wording.
+
+        Args:
+            conversation_manager: The ConversationManager owning the LLM context
+        """
+        self._conversation_manager = conversation_manager
+        logger.info("🎭 ConversationManager connected to ToneAwareProcessor (emotion → LLM wording)")
+
+    EMOTION_NOTE_MARKER = "[NESTERAI_EMOTION]"
+    # Wording guidance per detected emotion — kept terse; the LLM's job is to
+    # adapt phrasing, not to comment on the caller's mood.
+    EMOTION_GUIDANCE = {
+        "frustrated": "Caller sounds frustrated. Acknowledge briefly, be extra direct and concrete, skip pleasantries, get to the answer fast.",
+        "sad": "Caller sounds subdued. Keep a warm, calm tone; no upbeat sales energy.",
+        "excited": "Caller sounds enthusiastic. Match their energy a notch, stay concise, move the conversation forward.",
+        "angry": "Caller sounds irritated. Stay calm and factual, acknowledge once, do not push follow-up questions.",
+    }
+
+    def _update_llm_emotion_note(self, emotion: str, confidence: float) -> None:
+        """Upsert a compact emotion note into the LLM context (marker-deduped).
+
+        Mirrors the question-card injection pattern: at most one
+        [NESTERAI_EMOTION] system note exists at a time; neutral/low-confidence
+        results remove it rather than leaving stale mood guidance behind.
+        """
+        context = getattr(self._conversation_manager, "context", None)
+        messages = getattr(context, "messages", None)
+        if messages is None:
+            return
+
+        # Always drop the previous note first (marker-dedup, latest wins).
+        messages[:] = [
+            m for m in messages
+            if not (
+                isinstance(m, dict)
+                and isinstance(m.get("content"), str)
+                and m["content"].startswith(self.EMOTION_NOTE_MARKER)
+            )
+        ]
+
+        guidance = self.EMOTION_GUIDANCE.get(emotion)
+        if guidance and confidence >= 0.35:
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"{self.EMOTION_NOTE_MARKER} {guidance} "
+                    "Never mention that you detected their mood."
+                ),
+            })
+            logger.info(f"🎭 Emotion note injected for LLM: {emotion} ({confidence:.0%})")
 
     def _can_switch_cooldown(self) -> bool:
         """Check if cooldown period has passed since last switch."""
@@ -287,22 +345,32 @@ class ToneAwareProcessor(FrameProcessor):
             await self.push_frame(frame, direction)
             return
 
-        # Periodic frame type logging (every 500 audio frames)
-        if isinstance(frame, AudioRawFrame):
-            if not hasattr(self, '_frame_count'):
-                self._frame_count = 0
-            self._frame_count += 1
-            if self._frame_count % 500 == 1:
-                logger.debug(
-                    f"[EMOTION-DIAG] AudioRawFrame #{self._frame_count}: "
-                    f"direction={direction}, audio_len={len(frame.audio)}, "
-                    f"sample_rate={getattr(frame, 'sample_rate', 'N/A')}, "
-                    f"detector_connected={self.emotion_detector.is_connected}"
-                )
-
         # Track bot speaking state to avoid interrupting speech
         if isinstance(frame, BotStartedSpeakingFrame):
             self._bot_is_speaking = True
+            # Turn latency: final user transcript → bot audio start. The
+            # user-perceived responsiveness number; emitted off-loop to CloudWatch.
+            # Readings above ~4s are turn-completion HOLDS (○/◐ suppression +
+            # incomplete_short_timeout re-prompt), i.e. deliberate patience, not
+            # slowness — log them for visibility but don't pollute the metric.
+            TURN_HOLD_THRESHOLD_MS = 4000  # = incomplete_short_timeout (4.0s)
+            if getattr(self, "_turn_latency_t0", 0):
+                latency_ms = (time.time() - self._turn_latency_t0) * 1000
+                self._turn_latency_t0 = 0
+                if latency_ms >= TURN_HOLD_THRESHOLD_MS:
+                    logger.info(
+                        f"⏱️ Turn latency {latency_ms:.0f}ms includes a turn-hold wait "
+                        "(○/◐ suppression) — not emitted to CloudWatch"
+                    )
+                else:
+                    logger.info(f"⏱️ Turn latency (transcript → bot audio): {latency_ms:.0f}ms")
+                    try:
+                        from app.services.cloudwatch_metrics import emit_turn_latency
+                        asyncio.get_running_loop().create_task(
+                            asyncio.to_thread(emit_turn_latency, latency_ms)
+                        )
+                    except Exception:
+                        pass
             # Clear stale audio buffer — no point detecting emotion on leftover mic audio
             self._audio_buffer = b""
             self._audio_buffer_duration_ms = 0
@@ -327,26 +395,28 @@ class ToneAwareProcessor(FrameProcessor):
                 self._buffer_audio_frame(frame)
 
         # Process transcription frames for fallback/logging
+        # TranscriptionUpdateFrame was removed in pipecat 1.x; per-turn text now
+        # arrives only as TranscriptionFrame / InterimTranscriptionFrame.
         transcription_types = (
             TranscriptionFrame,
             InterimTranscriptionFrame,
-            TranscriptionUpdateFrame,
         )
         if isinstance(frame, transcription_types):
             text = getattr(frame, "text", "")
             is_final = isinstance(frame, TranscriptionFrame)
 
-            # Only log final transcriptions at INFO; interim at DEBUG
+            # User turns are recorded in the transcript by the STT service;
+            # here only debug-level plumbing detail.
             if is_final:
-                logger.info(f"📥 TranscriptionFrame: '{text}'")
+                logger.debug(f"📥 TranscriptionFrame: '{text}'")
+                # Start the turn-latency clock (stopped on BotStartedSpeakingFrame)
+                self._turn_latency_t0 = time.time()
             else:
                 logger.debug(f"📥 {type(frame).__name__}: '{text}'")
 
             # Store transcript for hybrid mode
             if text and text.strip():
                 self._latest_transcript = text
-                if is_final:
-                    logger.info(f"💾 Stored transcript for hybrid: '{text[:50]}'...")
 
                 # Forward to VisualHintProcessor for A2UI query capture
                 if self._visual_hint_processor is not None:
@@ -454,13 +524,12 @@ class ToneAwareProcessor(FrameProcessor):
                 )
 
                 if audio_result is None:
-                    logger.warning(
-                        f"[EMOTION-DIAG] process_audio returned None! "
-                        f"enabled={self.emotion_detector.enabled}, "
-                        f"is_connected={self.emotion_detector.is_connected}, "
-                        f"model={self.emotion_detector.model is not None}, "
-                        f"buffer_len={len(audio_buffer)}, "
-                        f"min_bytes_needed={int(sample_rate * 2 * 0.5)}"
+                    # Expected for very short utterances (<0.5s of audio) —
+                    # not a fault, so debug rather than warning.
+                    logger.debug(
+                        f"[EMOTION-DIAG] process_audio returned None "
+                        f"(buffer_len={len(audio_buffer)}, "
+                        f"min_bytes_needed={int(sample_rate * 2 * 0.5)})"
                     )
                     return
 
@@ -480,21 +549,18 @@ class ToneAwareProcessor(FrameProcessor):
                         transcript=transcript
                     )
 
-                    # Log detailed hybrid results
-                    logger.info(
-                        f"🎯 [BG] HYBRID RESULT:\n"
-                        f"  Primary Emotion: {hybrid_result['primary_emotion']} "
-                        f"(confidence: {hybrid_result['overall_confidence']:.0%})\n"
-                        f"  Audio: {audio_dict['emotion']} ({audio_dict['confidence']:.0%}) "
-                        f"× {hybrid_result['weights']['audio']:.0%}\n"
-                        f"  Text:  {hybrid_result['components']['text']['emotion']} "
-                        f"({hybrid_result['components']['text']['confidence']:.0%}) "
-                        f"× {hybrid_result['weights']['text']:.0%}\n"
-                        f"  Mismatch: {hybrid_result['mismatch_detected']} "
-                        f"{hybrid_result.get('interpretation', '')}\n"
-                        f"  Fused A/V/D: {hybrid_result['arousal']:.2f}/"
-                        f"{hybrid_result['valence']:.2f}/{hybrid_result['dominance']:.2f}\n"
-                        f"  Tokens Used: {hybrid_result['tokens_used']}"
+                    # Detailed breakdown at debug; the one-line hybrid emotion
+                    # event below is the INFO-level per-turn signal.
+                    logger.debug(
+                        f"🎯 [BG] HYBRID RESULT: "
+                        f"{hybrid_result['primary_emotion']} "
+                        f"({hybrid_result['overall_confidence']:.0%}) | "
+                        f"audio={audio_dict['emotion']}/{audio_dict['confidence']:.0%} "
+                        f"text={hybrid_result['components']['text']['emotion']}/"
+                        f"{hybrid_result['components']['text']['confidence']:.0%} | "
+                        f"mismatch={hybrid_result['mismatch_detected']} | "
+                        f"A/V/D={hybrid_result['arousal']:.2f}/"
+                        f"{hybrid_result['valence']:.2f}/{hybrid_result['dominance']:.2f}"
                     )
 
                     # Update state with hybrid results (thread-safe for asyncio)
@@ -511,6 +577,15 @@ class ToneAwareProcessor(FrameProcessor):
 
                     # Emit hybrid emotion to frontend
                     await self._emit_hybrid_emotion_event(hybrid_result)
+
+                    # Steer the LLM's wording (not just the TTS voice) for the
+                    # next turn. Detection completes in the background, usually
+                    # after the current turn's LLM call started — mood persists,
+                    # so next-turn adaptation is the right semantic anyway.
+                    self._update_llm_emotion_note(
+                        hybrid_result['primary_emotion'],
+                        hybrid_result['overall_confidence'],
+                    )
 
                     # Check voice switch with hybrid confidence
                     if hybrid_result['overall_confidence'] >= self._confidence_threshold:
@@ -629,7 +704,7 @@ class ToneAwareProcessor(FrameProcessor):
             is_stable = self._is_tone_stable(tone, confidence)
             has_tts = self.tts_service is not None
 
-            logger.info(
+            logger.debug(
                 f"VOICE SWITCH CHECK: tone={tone}, stable={is_stable}, "
                 f"tts_connected={has_tts}, current={current_tone}"
             )
@@ -737,7 +812,11 @@ class ToneAwareProcessor(FrameProcessor):
                     f"Cartesia TTS: emotion='{cartesia_emotion}' speed={speed} volume={volume} "
                     f"(from internal tone='{tone}')"
                 )
-                self.tts_service._settings["generation_config"] = GenerationConfig(
+                # pipecat 1.x: _settings is a CartesiaTTSSettings dataclass, not a
+                # dict — use attribute assignment. run_tts() re-reads
+                # _settings.generation_config on each utterance, so this takes
+                # effect on the next synthesis.
+                self.tts_service._settings.generation_config = GenerationConfig(
                     emotion=cartesia_emotion,
                     speed=speed,
                     volume=volume,

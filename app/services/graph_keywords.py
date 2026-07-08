@@ -31,7 +31,7 @@ class GraphKeywordExtractor:
         api_key: str,
         lightrag_url: str = "https://lightrag.nesterlabs.com",
         lightrag_api_key: str = None,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-2.5-flash",
     ):
         """Initialize the keyword extractor.
 
@@ -39,7 +39,7 @@ class GraphKeywordExtractor:
             api_key: Google AI API key
             lightrag_url: LightRAG API base URL
             lightrag_api_key: LightRAG API key for authentication
-            model: Model name (default: gemini-2.0-flash)
+            model: Model name (default: gemini-2.5-flash)
         """
         self.api_key = api_key
         self.lightrag_url = lightrag_url.rstrip("/")

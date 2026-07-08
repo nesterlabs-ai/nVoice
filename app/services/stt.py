@@ -10,37 +10,35 @@ import re
 import unicodedata
 from typing import Any, Dict, List, Tuple
 
-from deepgram import LiveOptions
+# deepgram-sdk 7.x removed the top-level `LiveOptions`. Pipecat 1.4.0 ships a
+# compatibility shim mirroring the old class; import it from there.
+from pipecat.services.deepgram.stt import LiveOptions
 from loguru import logger
 from pipecat.frames.frames import Frame, TranscriptionFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.whisper.stt import WhisperSTTService
+# Deepgram Flux: conversational STT with model-native turn detection
+# (StartOfTurn / EndOfTurn / EagerEndOfTurn). Pairs with
+# ExternalUserTurnStrategies on the aggregator — Flux drives the turn, not
+# VAD/SmartTurn.
+from pipecat.services.deepgram.flux.stt import DeepgramFluxSTTService
+# WhisperSTTService (and its faster_whisper dependency) is imported lazily in
+# _initialize_service() only when the whisper provider is selected. Deepgram is
+# the production provider and faster_whisper is not installed in that path.
 from pipecat.transcriptions.language import Language
 
 
-class TextNormalizedDeepgramSTTService(DeepgramSTTService):
-    """Deepgram STT service with Unicode normalization and config-driven STT corrections.
+class STTCorrectionsMixin:
+    """Unicode normalization + config-driven corrections for STT services.
 
-    Extends the base Deepgram STT service to:
-    - Normalize Unicode text, preventing JSON encoding issues
-    - Apply configurable post-processing corrections for STT misrecognitions
-
-    Corrections are loaded from config.yaml `stt.config.corrections` as a list of
-    {"pattern": "regex", "replacement": "text"} entries, compiled once at init time.
+    Cooperative mixin: list it BEFORE the concrete STT service base so its
+    push_frame/queue_frame overrides run first and `super()` resolves through
+    the service's MRO. Corrections are loaded from config.yaml
+    `stt.config.corrections` as {"pattern": regex, "replacement": text} entries,
+    compiled once via _init_corrections().
     """
 
-    def __init__(self, api_key: str, live_options: LiveOptions = None,
-                 corrections: List[Dict] = None, **kwargs):
-        """Initialize the normalized Deepgram STT service.
-
-        Args:
-            api_key: Deepgram API key
-            live_options: Deepgram live options configuration
-            corrections: List of {"pattern": "regex", "replacement": "text"} dicts
-            **kwargs: Additional arguments for the base service
-        """
-        super().__init__(api_key=api_key, live_options=live_options, **kwargs)
+    def _init_corrections(self, corrections: List[Dict] = None) -> None:
         self._corrections: List[Tuple[re.Pattern, str]] = []
         if corrections:
             for entry in corrections:
@@ -93,9 +91,9 @@ class TextNormalizedDeepgramSTTService(DeepgramSTTService):
             frame: Frame to push
             direction: Frame direction
         """
-        # Log and normalize TranscriptionFrames
+        # Normalize TranscriptionFrames and record the user turn in the
+        # conversation transcript (console + logs/transcript.log).
         if isinstance(frame, TranscriptionFrame):
-            logger.info(f"🎤 STT push_frame: TranscriptionFrame text='{frame.text}'")
             if frame.text:
                 corrected = self._apply_corrections(self._normalize_text(frame.text))
                 if corrected != frame.text:
@@ -106,21 +104,30 @@ class TextNormalizedDeepgramSTTService(DeepgramSTTService):
                         timestamp=frame.timestamp,
                         language=getattr(frame, "language", None),
                     )
+            logger.bind(transcript=True).info(f"🗣️ USER: {frame.text}")
 
         await super().push_frame(frame, direction)
 
-    async def queue_frame(self, frame: Frame, direction: FrameDirection = FrameDirection.DOWNSTREAM) -> None:
-        """Override queue_frame to log transcription frames.
 
-        Args:
-            frame: Frame to queue
-            direction: Frame direction
-        """
-        # Log TranscriptionFrames
-        if isinstance(frame, TranscriptionFrame):
-            logger.info(f"🎤 STT queue_frame: TranscriptionFrame text='{frame.text}'")
+class TextNormalizedDeepgramSTTService(STTCorrectionsMixin, DeepgramSTTService):
+    """Nova (listen v1) STT with normalization + corrections."""
 
-        await super().queue_frame(frame, direction)
+    def __init__(self, api_key: str, live_options: LiveOptions = None,
+                 corrections: List[Dict] = None, **kwargs):
+        super().__init__(api_key=api_key, live_options=live_options, **kwargs)
+        self._init_corrections(corrections)
+
+
+class TextNormalizedFluxSTTService(STTCorrectionsMixin, DeepgramFluxSTTService):
+    """Deepgram Flux STT with normalization + corrections.
+
+    Same post-processing as the Nova service; turn detection is handled by
+    Flux itself (EOT/EagerEOT events broadcast as user-speaking frames).
+    """
+
+    def __init__(self, *args, corrections: List[Dict] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._init_corrections(corrections)
 
 
 class SpeechToTextService:
@@ -156,10 +163,41 @@ class SpeechToTextService:
             ValueError: If provider is unsupported or API key is missing
         """
         if self.stt_provider == "whisper":
+            from pipecat.services.whisper.stt import WhisperSTTService
             self.stt_service = WhisperSTTService(
                 device=self.config.get("device", "cpu"),
                 model=self.config.get("model", "small"),
                 no_speech_prob=self.config.get("no_speech_prob", 0.3),
+            )
+        elif self.stt_provider == "deepgram_flux":
+            api_key = self.config.get("api_key")
+            if not api_key:
+                raise ValueError("Deepgram API key is required")
+
+            flux_cfg = self.config.get("flux", {})
+            settings = TextNormalizedFluxSTTService.Settings(
+                model=flux_cfg.get("model", "flux-general-en"),
+                eot_threshold=flux_cfg.get("eot_threshold", 0.7),
+                eot_timeout_ms=flux_cfg.get("eot_timeout_ms"),
+                eager_eot_threshold=flux_cfg.get("eager_eot_threshold"),
+                keyterm=list(self.config.get("keyterms") or []) or None,
+            )
+            # native_interruption=True: Flux's model-based StartOfTurn barges in
+            # directly (it's trained to ignore noise/backchannels). Set false to
+            # fall back to the MinWords word-count gate on the aggregator instead.
+            should_interrupt = bool(flux_cfg.get("native_interruption", True))
+            self.stt_service = TextNormalizedFluxSTTService(
+                api_key=api_key,
+                settings=settings,
+                should_interrupt=should_interrupt,
+                corrections=self.config.get("corrections", []),
+            )
+            logger.info(
+                f"Initialized Deepgram FLUX STT: model={settings.model}, "
+                f"eot_threshold={settings.eot_threshold}, "
+                f"eager_eot={settings.eager_eot_threshold or 'off'}, "
+                f"native_interruption={should_interrupt}, "
+                f"keyterms={len(self.config.get('keyterms') or [])}"
             )
         elif self.stt_provider == "deepgram":
             api_key = self.config.get("api_key")
@@ -172,16 +210,28 @@ class SpeechToTextService:
             live_options_config = {
                 "model": self.config.get("model", "nova-2"),
                 "smart_format": self.config.get("smart_format", True),
-                "filler_words": self.config.get("filler_words", False),
                 "punctuate": self.config.get("punctuate", True),
                 "endpointing": self.config.get("endpointing", 500),
                 "utterance_end_ms": self.config.get("utterance_end_ms", 1200),
                 "interim_results": self.config.get("interim_results", True),
-                # CRITICAL: Disable Deepgram VAD events to prevent false interruptions
-                # The local Silero VAD handles speech detection with tuned parameters
-                # Deepgram VAD was causing bot to be cut off on deployed version
-                "vad_events": self.config.get("vad_events", False),
             }
+            # Nova-3 keyterm prompting: bias recognition toward brand/founder terms
+            # at DECODE time, so "Nesterlabs" doesn't come out as "Nestle labs" in
+            # the first place. Complements (and should shrink) the regex
+            # corrections below, which only patch mistakes after the fact.
+            keyterms = self.config.get("keyterms")
+            if keyterms:
+                live_options_config["keyterm"] = list(keyterms)
+                logger.info(f"Deepgram keyterm boosting: {len(keyterms)} terms")
+
+            # NOTE: `filler_words` and `vad_events` are intentionally NOT passed.
+            # deepgram-sdk 7.x (pulled in by pipecat 1.4.0) removed them from
+            # AsyncV1Client.connect(); pipecat's LiveOptions shim forwards unknown
+            # options as raw kwargs, so passing either raises
+            # "connect() got an unexpected keyword argument 'filler_words'" and the
+            # STT socket retries forever. Both default to False in Deepgram anyway
+            # (no filler words returned; local Silero VAD handles speech detection),
+            # so omitting them preserves the previous behavior.
 
             # NOTE: Deepgram's `keywords` param breaks Nova-3 WebSocket connections.
             # Proper noun correction is handled via config-driven post-processing

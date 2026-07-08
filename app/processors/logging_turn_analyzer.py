@@ -26,19 +26,33 @@ class LoggingSmartTurnAnalyzer(BaseTurnAnalyzer):
     pipecat's transport layer validation.
     """
 
-    def __init__(self, cpu_count: int = 1, session_id: str = "unknown"):
+    def __init__(
+        self,
+        cpu_count: int = 1,
+        session_id: str = "unknown",
+        stop_secs: Optional[float] = None,
+    ):
         """Initialize the logging wrapper.
 
         Args:
             cpu_count: Number of CPU threads for ONNX inference
             session_id: Session ID for logging context
+            stop_secs: Maximum silence (seconds) before SmartTurn commits to
+                end-of-turn. Maps the tuned `smart_turn.timeout` config value onto
+                pipecat 1.x's SmartTurnParams.stop_secs (default is used if None).
         """
         # Don't call super().__init__() as BaseTurnAnalyzer is abstract
         # and we're delegating to the inner analyzer
         from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 
         logger.info(f"[Session {session_id}] 🧠 Creating LocalSmartTurnAnalyzerV3...")
-        self._analyzer = LocalSmartTurnAnalyzerV3(cpu_count=cpu_count)
+        # pipecat 1.x: turn-taking timing is configured via SmartTurnParams.
+        analyzer_kwargs = {"cpu_count": cpu_count}
+        if stop_secs is not None:
+            from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
+            analyzer_kwargs["params"] = SmartTurnParams(stop_secs=stop_secs)
+        self._analyzer = LocalSmartTurnAnalyzerV3(**analyzer_kwargs)
+        self._stop_secs = stop_secs
         self._session_id = session_id
         self._audio_chunks_received = 0
         self._analysis_count = 0
@@ -51,6 +65,7 @@ class LoggingSmartTurnAnalyzer(BaseTurnAnalyzer):
         logger.info(f"[Session {session_id}]    ├─ Wrapper: LoggingSmartTurnAnalyzer")
         logger.info(f"[Session {session_id}]    ├─ Inner: LocalSmartTurnAnalyzerV3")
         logger.info(f"[Session {session_id}]    ├─ CPU threads: {cpu_count}")
+        logger.info(f"[Session {session_id}]    ├─ stop_secs: {stop_secs if stop_secs is not None else 'default'}")
         logger.info(f"[Session {session_id}]    └─ Logging: Audio chunks, analyses, end-of-turn events")
         logger.info(f"[Session {session_id}] " + "=" * 50)
 

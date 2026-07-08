@@ -1,11 +1,12 @@
 """
-LLM-based text sentiment detector using Groq.
+LLM-based text sentiment detector (provider-configurable).
 
-This module provides contextual emotion detection from text using an LLM
-via the Groq OpenAI-compatible API.
+Contextual emotion detection from text via any OpenAI-compatible chat API.
+Preferred provider is Gemini (GOOGLE_API_KEY — same key as graph keywords);
+Groq (GROQ_API_KEY) is the fallback for backwards compatibility.
 
 Classes: frustrated, excited, sad, neutral
-Latency: ~50-150ms (Groq is optimised for low-latency inference)
+Latency: ~100-300ms for flash/instant-class models
 """
 
 import os
@@ -13,11 +14,15 @@ from typing import Dict, Optional
 from loguru import logger
 import httpx
 
+# OpenAI-compatible chat completion endpoints per provider
+PROVIDER_URLS = {
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "groq": "https://api.groq.com/openai/v1/chat/completions",
+}
+
 
 class LLMTextSentiment:
-    """Contextual text sentiment detector using Groq."""
-
-    GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+    """Contextual text sentiment detector via an OpenAI-compatible API."""
 
     # Map LLM emotions to our 4 core emotions with dimensional scores
     EMOTION_DIMENSIONS = {
@@ -43,26 +48,34 @@ class LLMTextSentiment:
         self,
         api_key: str,
         model: str = "llama-3.1-8b-instant",
+        provider: str = "groq",
     ):
         """Initialize the LLM sentiment detector.
 
         Args:
-            api_key: Groq API key
-            model: Groq model name
+            api_key: API key for the provider
+            model: Model name at the provider
+            provider: "gemini" or "groq" (any OpenAI-compatible endpoint in PROVIDER_URLS)
         """
         self.api_key = api_key
         self.model = model
-        self._client = httpx.Client(
+        self.provider = provider
+        self.url = PROVIDER_URLS[provider]
+        # AsyncClient is CRITICAL here: this runs inside the voice pipeline's
+        # event loop. A sync httpx call froze the ENTIRE loop (including the
+        # OpenAI Responses WebSocket receive) for 1-5s per turn — observed live
+        # as a 5.2s LLM "TTFB" that unblocked 2ms after a sentiment timeout.
+        self._client = httpx.AsyncClient(
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             timeout=5.0,
         )
-        logger.info(f"LLM Text Sentiment initialized (model: {model}, provider: Groq)")
+        logger.info(f"LLM Text Sentiment initialized (model: {model}, provider: {provider})")
 
-    def detect_emotion(self, text: str) -> Dict:
-        """Detect emotion from text using Groq LLM.
+    async def detect_emotion(self, text: str) -> Dict:
+        """Detect emotion from text using the LLM (non-blocking).
 
         Args:
             text: Input text to analyze
@@ -74,8 +87,8 @@ class LLMTextSentiment:
             return self._neutral_result("Empty text")
 
         try:
-            resp = self._client.post(
-                self.GROQ_URL,
+            resp = await self._client.post(
+                self.url,
                 json={
                     "model": self.model,
                     "messages": [
@@ -137,7 +150,7 @@ class LLMTextSentiment:
             "reason": reason
         }
 
-    def batch_detect(self, texts: list[str]) -> list[Dict]:
+    async def batch_detect(self, texts: list[str]) -> list[Dict]:
         """Detect emotions for multiple texts (sequential calls for now).
 
         Args:
@@ -148,14 +161,14 @@ class LLMTextSentiment:
         """
         results = []
         for text in texts:
-            results.append(self.detect_emotion(text))
+            results.append(await self.detect_emotion(text))
         return results
 
     def get_status(self) -> Dict:
         """Get detector status."""
         return {
             "model": self.model,
-            "provider": "groq",
+            "provider": self.provider,
             "available": self._client is not None,
             "tokens_per_detection": "~20-50"
         }
@@ -168,13 +181,22 @@ _llm_detector: Optional[LLMTextSentiment] = None
 def get_llm_detector(api_key: str = None) -> LLMTextSentiment:
     """Get or create global LLM detector instance.
 
-    Args:
-        api_key: Groq API key. Falls back to GROQ_API_KEY env var.
+    Prefers Gemini (GOOGLE_API_KEY) — the same key already used for graph
+    keywords — and falls back to Groq (GROQ_API_KEY or the passed api_key,
+    kept for backwards compatibility).
     """
     global _llm_detector
     if _llm_detector is None:
-        key = api_key or os.getenv("GROQ_API_KEY")
-        if not key:
-            raise ValueError("GROQ_API_KEY env var required to initialize LLM detector")
-        _llm_detector = LLMTextSentiment(api_key=key)
+        gemini_key = os.getenv("GOOGLE_API_KEY")
+        groq_key = api_key or os.getenv("GROQ_API_KEY")
+        if gemini_key:
+            _llm_detector = LLMTextSentiment(
+                api_key=gemini_key, model="gemini-2.5-flash-lite", provider="gemini"
+            )
+        elif groq_key:
+            _llm_detector = LLMTextSentiment(api_key=groq_key)
+        else:
+            raise ValueError(
+                "GOOGLE_API_KEY or GROQ_API_KEY env var required to initialize LLM detector"
+            )
     return _llm_detector

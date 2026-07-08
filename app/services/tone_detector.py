@@ -112,7 +112,7 @@ Respond with ONLY one word (neutral/frustrated/excited/sad):"""
             try:
                 from google import genai
                 self._client = genai.Client(api_key=self._api_key)
-                self._model_name = "gemini-2.0-flash"
+                self._model_name = "gemini-2.5-flash"
                 self._model = True  # Flag that LLM is available
                 logger.info("Initialized ToneDetector with Gemini Flash LLM (google.genai)")
             except ImportError:
@@ -121,7 +121,7 @@ Respond with ONLY one word (neutral/frustrated/excited/sad):"""
                     import google.generativeai as genai_old
                     genai_old.configure(api_key=self._api_key)
                     self._client = None
-                    self._model = genai_old.GenerativeModel("gemini-2.0-flash")
+                    self._model = genai_old.GenerativeModel("gemini-2.5-flash")
                     logger.info("Initialized ToneDetector with Gemini Flash LLM (legacy)")
                 except Exception as e:
                     logger.warning(f"Failed to initialize Gemini: {e}. Using keyword fallback.")

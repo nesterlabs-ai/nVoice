@@ -30,6 +30,7 @@ class SubtitleSyncProcessor(FrameProcessor):
         self._utterance_id: str | None = None
         self._sequence_counter: int = 0
         self._base_pts: float | None = None  # PTS of first word (seconds)
+        self._spoken_words: list[str] = []  # what was actually voiced this utterance
 
         logger.info("[SUBTITLE-SYNC] SubtitleSyncProcessor initialized")
 
@@ -42,7 +43,8 @@ class SubtitleSyncProcessor(FrameProcessor):
                     self._utterance_id = str(uuid.uuid4())
                     self._sequence_counter = 0
                     self._base_pts = None
-                    logger.info(
+                    self._spoken_words = []
+                    logger.debug(
                         f"[SUBTITLE-SYNC] TTSStartedFrame -> new utterance: {self._utterance_id[:8]}"
                     )
 
@@ -50,6 +52,7 @@ class SubtitleSyncProcessor(FrameProcessor):
                     word = frame.text if hasattr(frame, "text") else ""
                     if word and word.strip() and self._utterance_id:
                         self._sequence_counter += 1
+                        self._spoken_words.append(word.strip())
                         word_pts_secs = nanoseconds_to_seconds(frame.pts) if frame.pts else 0.0
 
                         if self._base_pts is None:
@@ -66,14 +69,22 @@ class SubtitleSyncProcessor(FrameProcessor):
 
                 elif isinstance(frame, TTSStoppedFrame):
                     if self._utterance_id:
-                        logger.info(
+                        logger.debug(
                             f"[SUBTITLE-SYNC] TTSStoppedFrame -> finalizing "
                             f"{self._utterance_id[:8]} ({self._sequence_counter} words)"
                         )
+                        # Record the bot turn as it was actually voiced —
+                        # interruptions truncate this naturally, so the
+                        # transcript reflects what the user really heard.
+                        if self._spoken_words:
+                            logger.bind(transcript=True).info(
+                                f"🤖 BOT: {' '.join(self._spoken_words)}"
+                            )
                         await self._emit_final(self._sequence_counter + 1, self._utterance_id)
                         self._utterance_id = None
                         self._sequence_counter = 0
                         self._base_pts = None
+                        self._spoken_words = []
         except Exception as e:
             logger.error(f"[SUBTITLE-SYNC] Error in process_frame: {e}", exc_info=True)
 
@@ -114,7 +125,7 @@ class SubtitleSyncProcessor(FrameProcessor):
         try:
             data_frame = RTVIServerMessageFrame(data=message_data)
             await self.push_frame(data_frame)
-            logger.info(
+            logger.debug(
                 f"[SUBTITLE-SYNC] Finalized utterance {utterance_id[:8]}"
             )
         except Exception as e:

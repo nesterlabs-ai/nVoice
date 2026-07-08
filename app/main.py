@@ -7,6 +7,7 @@ FastAPI HTTP endpoints and WebSocket server for real-time voice communication.
 
 import asyncio
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
@@ -14,6 +15,31 @@ import uvicorn
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+
+# Reconfigure loguru BEFORE importing app modules (they log at import time).
+# The default sink is a SYNCHRONOUS stderr write at DEBUG level: during long
+# bot answers the per-word debug flood blocked the asyncio event loop whenever
+# the terminal fell behind, stalling WebSocket audio receive (observed live:
+# Flux "No audio received for 500 ms" watchdogs, mic frames at half rate, then
+# a burst of queued turns interrupting the bot). enqueue=True moves writes to a
+# background thread; INFO default kills the flood. LOG_LEVEL=DEBUG re-enables.
+logger.remove()
+logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"), enqueue=True)
+
+# Dedicated conversation transcript: records logged via
+# logger.bind(transcript=True) (see STT user turns and SubtitleSyncProcessor
+# bot turns) land BOTH on the console and in logs/transcript.log, giving a
+# clean spoken-dialogue record per run without the pipeline noise.
+os.makedirs("logs", exist_ok=True)
+logger.add(
+    "logs/transcript.log",
+    level="INFO",
+    enqueue=True,
+    rotation="10 MB",
+    retention=10,
+    filter=lambda record: record["extra"].get("transcript", False),
+    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {message}",
+)
 
 from app.api.routes import router
 from app.api.websocket import websocket_endpoint
@@ -89,7 +115,7 @@ async def lifespan(app: FastAPI):
                 logger.info(f"   ├─ ONNX model: LocalSmartTurnAnalyzerV3")
                 logger.info(f"   ├─ CPU threads: {cpu_count}")
                 logger.info(f"   ├─ Turn timeout: {timeout}s")
-                logger.info(f"   └─ Integration: Transport-level turn_analyzer (pipecat 0.0.98)")
+                logger.info(f"   └─ Integration: user-aggregator turn strategy (pipecat 1.x)")
 
                 # Check if SmartTurn v3 module is available
                 try:
@@ -111,6 +137,31 @@ async def lifespan(app: FastAPI):
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.submit(_prewarm_semantic_selector)
+
+    # Pre-warm the MSP-PODCAST emotion model (~661MB, ~4.5s load). It's a
+    # process-global singleton, but previously loaded lazily inside the FIRST
+    # session's pipeline creation — delaying that caller's greeting by ~4.5s.
+    # Warming it here means session startup only does a cached lookup.
+    emotion_enabled = (voice_assistant_server.config or {}).get("server", {}).get(
+        "emotion_detection_enabled", True
+    )
+    if emotion_enabled:
+        try:
+            from app.services.msp_emotion_detector import init_msp_detector
+            asyncio.create_task(init_msp_detector())
+            logger.info("🎭 MSP-PODCAST emotion model pre-warm started (background)")
+        except Exception as e:
+            logger.warning(f"⚠️ MSP pre-warm failed (will lazy-load per session): {e}")
+
+    # Pre-warm the CloudWatch boto3 client: lazily creating it inside the first
+    # session's setup path cost ~2.2s of connect→greeting time. It's sync, so
+    # warm it off-loop.
+    try:
+        from app.services.cloudwatch_metrics import _get_client
+        asyncio.create_task(asyncio.to_thread(_get_client))
+        logger.info("📊 CloudWatch client pre-warm started (background)")
+    except Exception as e:
+        logger.debug(f"CloudWatch pre-warm skipped: {e}")
 
     yield
     logger.info("Shutting down NesterVoiceAI application...")
