@@ -1,0 +1,27 @@
+# On-demand production diagnostics: dump backend container logs over the
+# same SSH path the deploy uses. Manual trigger only — never runs on push.
+name: Prod Backend Logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      lines:
+        description: "How many log lines to tail"
+        default: "300"
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump backend logs
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ec2-user
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            echo "=== containers ==="
+            docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+            echo ""
+            echo "=== backend logs (last ${{ inputs.lines }}) ==="
+            docker logs --tail ${{ inputs.lines }} nester-backend 2>&1
