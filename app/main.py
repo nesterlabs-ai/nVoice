@@ -89,7 +89,7 @@ async def lifespan(app: FastAPI):
                 logger.info(f"   ├─ ONNX model: LocalSmartTurnAnalyzerV3")
                 logger.info(f"   ├─ CPU threads: {cpu_count}")
                 logger.info(f"   ├─ Turn timeout: {timeout}s")
-                logger.info(f"   └─ Integration: Transport-level turn_analyzer (pipecat 0.0.98)")
+                logger.info(f"   └─ Integration: user-aggregator turn strategy (pipecat 1.x)")
 
                 # Check if SmartTurn v3 module is available
                 try:
@@ -111,6 +111,31 @@ async def lifespan(app: FastAPI):
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.submit(_prewarm_semantic_selector)
+
+    # Pre-warm the MSP-PODCAST emotion model (~661MB, ~4.5s load). It's a
+    # process-global singleton, but previously loaded lazily inside the FIRST
+    # session's pipeline creation — delaying that caller's greeting by ~4.5s.
+    # Warming it here means session startup only does a cached lookup.
+    emotion_enabled = (voice_assistant_server.config or {}).get("server", {}).get(
+        "emotion_detection_enabled", True
+    )
+    if emotion_enabled:
+        try:
+            from app.services.msp_emotion_detector import init_msp_detector
+            asyncio.create_task(init_msp_detector())
+            logger.info("🎭 MSP-PODCAST emotion model pre-warm started (background)")
+        except Exception as e:
+            logger.warning(f"⚠️ MSP pre-warm failed (will lazy-load per session): {e}")
+
+    # Pre-warm the CloudWatch boto3 client: lazily creating it inside the first
+    # session's setup path cost ~2.2s of connect→greeting time. It's sync, so
+    # warm it off-loop.
+    try:
+        from app.services.cloudwatch_metrics import _get_client
+        asyncio.create_task(asyncio.to_thread(_get_client))
+        logger.info("📊 CloudWatch client pre-warm started (background)")
+    except Exception as e:
+        logger.debug(f"CloudWatch pre-warm skipped: {e}")
 
     yield
     logger.info("Shutting down NesterVoiceAI application...")
