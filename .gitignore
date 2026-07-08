@@ -95,6 +95,10 @@ LightsailDefaultKey*
 
 # Docker data volumes
 data/
+!data/
+data/*
+!data/question_cards/
+!data/question_cards/*.json
 caddy_data/
 caddy_config/
 

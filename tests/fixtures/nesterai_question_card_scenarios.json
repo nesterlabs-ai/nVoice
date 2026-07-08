@@ -1,0 +1,99 @@
+[
+  {
+    "id": "enterprise_security_timeline_team",
+    "latest_user_text": "Let's start with the basics: how do you handle enterprise security requirements, what's your typical engagement timeline from kickoff to production, and who would be on the team?",
+    "expected_cards": [
+      "enterprise.security_posture",
+      "enterprise.timeline_blockers",
+      "leadership.involvement"
+    ],
+    "prompt_contains": [
+      "Answer the latest user question first",
+      "multiple questions",
+      "Discovery allowed: no"
+    ]
+  },
+  {
+    "id": "enterprise_audit_tenant_isolation",
+    "latest_user_text": "We're in finance, so SOC2 Type II and data residency are table stakes. How do you guarantee audit trails and data isolation in a multi-tenant environment?",
+    "expected_cards": [
+      "enterprise.security_posture",
+      "enterprise.audit_tenant_isolation"
+    ],
+    "prompt_contains": [
+      "audit trails for tool calls",
+      "tenant/data isolation depends on deployment model",
+      "do not guarantee a specific isolation design"
+    ]
+  },
+  {
+    "id": "voice_emotion_adaptation",
+    "latest_user_text": "On the tone adaptation piece, how does Nesterlabs handle emotion-aware responses? Is it rule-based, or does the model dynamically detect and adjust tone in real time?",
+    "expected_cards": [
+      "voice.emotion_adaptation"
+    ],
+    "prompt_contains": [
+      "audio prosody plus text sentiment",
+      "dynamic adaptation with bounded rules/guardrails",
+      "do not answer only with frontend state triggers"
+    ]
+  },
+  {
+    "id": "voice_knowledge_retrieval",
+    "latest_user_text": "If a user asks a detailed wellness question, does the system pull from a structured knowledge base or is it more of a freeform language model response?",
+    "expected_cards": [
+      "voice.knowledge_retrieval"
+    ],
+    "prompt_contains": [
+      "curated knowledge/RAG for approved content",
+      "sensitive domains need clarification and escalation boundaries"
+    ]
+  },
+  {
+    "id": "agentic_orchestration",
+    "latest_user_text": "How do you handle agentic orchestration, workflow state, permissions, approvals, retries, fallback behavior, and human handoff?",
+    "expected_cards": [
+      "agentic.orchestration"
+    ],
+    "prompt_contains": [
+      "workflow state and permissions",
+      "approval gates, retries, fallback",
+      "do not reduce agentic AI to tools connected to an LLM"
+    ]
+  },
+  {
+    "id": "ux_research_brand",
+    "latest_user_text": "Can Nesterlabs help with UX research, product strategy, brand expression, conversation design, and roadmap shaping before we build the AI layer?",
+    "expected_cards": [
+      "ux.product_research_brand"
+    ],
+    "prompt_contains": [
+      "product behavior and trust design come before surfaces",
+      "design, research, engineering, and runtime behavior move together"
+    ]
+  },
+  {
+    "id": "proof_references_nda",
+    "latest_user_text": "I need references from two similar enterprise engagements before we proceed. Can we do that under NDA?",
+    "expected_cards": [
+      "mode.structured_evaluator",
+      "proof.references_nda"
+    ],
+    "prompt_contains": [
+      "confidential client names or finance-grade details require NDA/client permission",
+      "do not invent a finance-grade multi-region case study"
+    ]
+  },
+  {
+    "id": "commercial_terms",
+    "latest_user_text": "For procurement, what are your setup fees, monthly cost, cancellation terms, and standard SLA?",
+    "expected_cards": [
+      "mode.structured_evaluator",
+      "commercial.pricing_scope"
+    ],
+    "prompt_contains": [
+      "do not make up monthly cost",
+      "commercial specifics should be handled by Ankur or the team"
+    ]
+  }
+]

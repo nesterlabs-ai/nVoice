@@ -1,0 +1,60 @@
+[
+  {
+    "id": "voice.emotion_adaptation",
+    "mode": "voice_ai_buyer",
+    "priority": 95,
+    "patterns": [
+      "\\b(emotion|emotional|sentiment|tone adaptation|adapt.*tone|persona|mirror|mirroring)\\b",
+      "\\b(rule[- ]based|detect|dynamically|real time).*(tone|emotion|sentiment)\\b"
+    ],
+    "answer_style": "direct technical voice answer",
+    "guidance": "Explain that Nesterlabs treats emotion-aware response as dynamic signals, not only static rules. The system can combine audio prosody with text sentiment, track emotional trajectory, and feed that into response style, TTS behavior, escalation thresholds, and interface state. Clarify that rules still exist as guardrails for safety-sensitive moments.",
+    "must_include": [
+      "audio prosody plus text sentiment",
+      "dynamic adaptation with bounded rules/guardrails",
+      "can affect response style, TTS delivery, escalation, and UI state"
+    ],
+    "must_avoid": [
+      "do not answer only with frontend state triggers",
+      "do not imply unbounded emotional manipulation"
+    ]
+  },
+  {
+    "id": "voice.knowledge_retrieval",
+    "mode": "voice_ai_buyer",
+    "priority": 94,
+    "patterns": [
+      "\\b(knowledge base|knowledge retrieval|RAG|retrieval|structured dataset|curated content|freeform)\\b",
+      "\\b(pull|draw).*(content|knowledge|documents|dataset)\\b"
+    ],
+    "answer_style": "direct RAG/memory answer",
+    "guidance": "Explain that sensitive or domain-specific systems should not rely on a freeform model alone. Nesterlabs typically uses curated knowledge, retrieval, memory scope, and guardrails so the assistant can answer from approved content, clarify when confidence is low, and escalate when the topic is outside safe boundaries.",
+    "must_include": [
+      "curated knowledge/RAG for approved content",
+      "memory is scoped and layered, not a dumping ground",
+      "sensitive domains need clarification and escalation boundaries"
+    ],
+    "must_avoid": [
+      "do not say the LLM just makes up answers",
+      "do not skip the user's structured-vs-freeform distinction"
+    ]
+  },
+  {
+    "id": "voice.runtime_architecture",
+    "mode": "voice_ai_buyer",
+    "priority": 90,
+    "patterns": [
+      "\\b(voice bot|voice AI|conversational interface|voice agent|voice system)\\b",
+      "\\b(interruption|barge[- ]in|turn[- ]taking|silence|latency|TTS|STT|speech)\\b"
+    ],
+    "answer_style": "compact technical answer",
+    "guidance": "Frame voice as a live runtime: transport, speech processing, turn-taking, interruption control, memory, retrieval, orchestration, safety, synthesis, and downstream actions. Mention Pipecat, LiveKit, OpenAI Realtime, Deepgram, Cartesia, ElevenLabs, Twilio, or n8n only when useful or asked.",
+    "must_include": [
+      "voice is not just STT to LLM to TTS",
+      "runtime control is the hard part"
+    ],
+    "must_avoid": [
+      "do not raw-list vendors unless asked"
+    ]
+  }
+]

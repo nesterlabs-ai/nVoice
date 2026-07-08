@@ -1,0 +1,53 @@
+[
+  {
+    "id": "agentic.orchestration",
+    "mode": "agentic_architecture",
+    "priority": 88,
+    "patterns": [
+      "\\b(agentic|agent|multi[- ]agent|orchestration|workflow state|tool calling|approval|permissions|human[- ]in[- ]the[- ]loop|HITL)\\b",
+      "\\b(LangGraph|CrewAI|OpenAI Agents|Google ADK|Bedrock|MCP|A2A|nFlow)\\b"
+    ],
+    "answer_style": "architecture answer",
+    "guidance": "Lead with agentic systems as workflow, state, and control problems. Cover state ownership, tool permissions, approval gates, retries, fallback paths, memory scope, observability, audit trails, and human takeover. Use framework names only to explain tradeoffs.",
+    "must_include": [
+      "workflow state and permissions",
+      "approval gates, retries, fallback, observability, and human escalation"
+    ],
+    "must_avoid": [
+      "do not reduce agentic AI to tools connected to an LLM"
+    ]
+  },
+  {
+    "id": "stack.internal_accelerators",
+    "mode": "company_positioning",
+    "priority": 70,
+    "patterns": [
+      "\\b(nStack|internal stack|accelerators|start from scratch|rebuild|nMemory|nPulse|nVoice|nFlow|nCompose|nGuard|nForge)\\b"
+    ],
+    "answer_style": "internal stack answer",
+    "guidance": "Explain that Nesterlabs does not rebuild the same production primitives every time. Internal systems support memory, emotion signals, voice runtime, orchestration, design-to-code, code verification, and QA/hardening. Keep it as supporting capability, not the main pitch.",
+    "must_include": [
+      "internal stack helps speed and hardening",
+      "architecture is still shaped around the client workflow"
+    ],
+    "must_avoid": [
+      "do not over-enumerate internal tools unless asked"
+    ]
+  },
+  {
+    "id": "reliability.hardening",
+    "mode": "company_positioning",
+    "priority": 68,
+    "patterns": [
+      "\\b(reliability|hardening|production ready|failure|fallback|observability|governance|evaluation|testing|human oversight|escalation)\\b"
+    ],
+    "answer_style": "reliability answer",
+    "guidance": "Explain reliability as runtime design: observability, failure paths, escalation boundaries, evaluation under edge cases, governance, behavior tuning, and domain-specific controls. For voice, mention interruption recovery, silence handling, latency stability. For agents, mention state, permissions, approvals, retries, auditability.",
+    "must_include": [
+      "reliability is designed in, not added at the end"
+    ],
+    "must_avoid": [
+      "do not say demos are enough"
+    ]
+  }
+]

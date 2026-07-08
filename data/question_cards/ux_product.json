@@ -1,0 +1,91 @@
+[
+  {
+    "id": "ux.product_research_brand",
+    "mode": "ux_product_strategy",
+    "priority": 82,
+    "patterns": [
+      "\\b(UX|user experience|research|user research|product strategy|roadmap|brand|branding|product vision|design system|conversation design|service design)\\b",
+      "\\b(screens|wireframes|prototype|flows|journey|trust signal|error state)\\b"
+    ],
+    "answer_style": "product/UX answer",
+    "guidance": "Explain that Nesterlabs shapes the product around the AI: workflow mapping, UX research, conversation design, trust and error-state design, brand expression, roadmap shaping, and interface systems. For vague design asks, clarify what is broken: usability, conversion, trust, workflow fit, or positioning.",
+    "must_include": [
+      "product behavior and trust design come before surfaces",
+      "design, research, engineering, and runtime behavior move together"
+    ],
+    "must_avoid": [
+      "do not collapse UX/product/brand questions into engineering only"
+    ],
+    "followup_rule": "One sharp product question is allowed if the user's problem is vague.",
+    "escalation": "Route deeper product/brand/design strategy to Shrey."
+  },
+  {
+    "id": "company.positioning",
+    "mode": "company_positioning",
+    "priority": 75,
+    "patterns": [
+      "\\b(what is Nesterlabs|who is Nesterlabs|tell me about Nesterlabs|how are you different|why Nesterlabs)\\b",
+      "\\b(agency|staff augmentation|software agency|vendor)\\b"
+    ],
+    "answer_style": "positioning answer",
+    "guidance": "Lead with Nesterlabs as the internal AI-native product, UX, research, and engineering team many companies need but have not built yet. Explicitly contrast with staff augmentation, generic agency capacity, and a vendor that disappears after delivery.",
+    "must_include": [
+      "embedded AI-native execution layer",
+      "research, product, UX, engineering, and hardening together"
+    ],
+    "must_avoid": [
+      "do not use generic AI studio brochure language"
+    ]
+  },
+  {
+    "id": "process.imagine_make_scale",
+    "mode": "company_positioning",
+    "priority": 74,
+    "patterns": [
+      "\\b(process|how do you work|engagement model|start to finish|from kickoff|methodology|Imagine|Make|Scale)\\b"
+    ],
+    "answer_style": "process answer",
+    "guidance": "Explain Imagine, Make, Scale plainly. Imagine maps workflow, users, constraints, trust boundaries, and where AI should or should not act. Make builds design, engineering, memory, orchestration, and runtime behavior together. Scale hardens through observability, evaluation, governance, calibration, and real-world pressure testing.",
+    "must_include": [
+      "Imagine / Make / Scale",
+      "trust boundaries before architecture",
+      "hardening after launch"
+    ],
+    "must_avoid": [
+      "do not turn it into a generic five-step agency process"
+    ]
+  },
+  {
+    "id": "integration.existing_stack",
+    "mode": "company_positioning",
+    "priority": 65,
+    "patterns": [
+      "\\b(replace our stack|existing stack|existing systems|current systems|integrate with|migration|force replacement)\\b"
+    ],
+    "answer_style": "integration answer",
+    "guidance": "Say Nesterlabs usually works inside the systems that already run the business. The goal is to design AI, orchestration, memory, and control around existing infrastructure rather than force replacement for its own sake.",
+    "must_include": [
+      "no forced replacement",
+      "work inside existing systems where possible"
+    ],
+    "must_avoid": [
+      "do not sound timid or purely implementation-only"
+    ]
+  },
+  {
+    "id": "post_launch.evolution",
+    "mode": "company_positioning",
+    "priority": 55,
+    "patterns": [
+      "\\b(after launch|post[- ]launch|ongoing|maintenance|support|evolve|calibration|optimization|what happens after)\\b"
+    ],
+    "answer_style": "post-launch answer",
+    "guidance": "Explain that most systems continue evolving after launch through reliability tuning, behavioral calibration, workflow expansion, observability review, and operational optimization.",
+    "must_include": [
+      "calibration and reliability tuning after launch"
+    ],
+    "must_avoid": [
+      "do not imply the team disappears after delivery"
+    ]
+  }
+]
