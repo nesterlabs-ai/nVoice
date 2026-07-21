@@ -3359,7 +3359,7 @@ class VoiceScannerApp {
             <div class="contact-icon">📞</div>
             <div class="contact-details">
               <div class="contact-label">PHONE</div>
-              <div class="contact-value">+1 (408) 673-1340</div>
+              <div class="contact-value">+1 (650) 600-6578</div>
             </div>
           </div>
           <div class="contact-method">

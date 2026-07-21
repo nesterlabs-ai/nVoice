@@ -246,7 +246,7 @@ Developed by **[NesterLabs](https://nesterlabs.com)** - an AI-accelerated studio
 **Contact**:
 - Website: [nesterlabs.com](https://nesterlabs.com)
 - Email: contact@nesterlabs.com
-- Phone: +1 (408) 673-1340
+- Phone: +1 (650) 600-6578
 
 ## License
 
