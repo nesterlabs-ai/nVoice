@@ -170,14 +170,34 @@ jobs:
 
       - name: Deploy to production instance
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ec2-user
           key: ${{ secrets.PROD_SSH_KEY }}
+          envs: TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN
           script: |
             set -e
             echo "=== Starting production deployment ==="
             cd /opt/nester
+
+            # === Inject Twilio credentials into /opt/nester/.env (idempotent) ===
+            # The box .env is persistent and not otherwise written by CI, so we
+            # touch ONLY the two TWILIO_ lines and leave everything else intact.
+            # If the secrets aren't set we leave the file untouched (auto hang-up
+            # stays disabled — the call still ends when the caller hangs up / the
+            # media WebSocket closes).
+            if [ -n "$TWILIO_ACCOUNT_SID" ] && [ -n "$TWILIO_AUTH_TOKEN" ]; then
+              echo "Updating Twilio credentials in .env..."
+              touch .env
+              sed -i '/^TWILIO_ACCOUNT_SID=/d;/^TWILIO_AUTH_TOKEN=/d' .env
+              echo "TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID" >> .env
+              echo "TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN" >> .env
+            else
+              echo "TWILIO_* secrets not set; skipping (auto hang-up disabled)"
+            fi
 
             # Update docker-compose.yml from repo
             if [ -f /tmp/deploy/docker-compose.prod.graviton.yml ]; then

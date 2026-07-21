@@ -43,6 +43,7 @@ logger.add(
 
 from app.api.routes import router
 from app.api.websocket import websocket_endpoint
+from app.api.twilio_websocket import twilio_websocket_endpoint
 from app.config.loader import get_assistant_config
 from app.core.server import voice_assistant_server
 
@@ -194,6 +195,9 @@ def create_app() -> FastAPI:
 
     # WebSocket endpoint (emotion detection now handled by Hume AI server-side)
     app.add_api_websocket_route("/ws", websocket_endpoint)
+
+    # Twilio Media Streams WebSocket endpoint (inbound phone calls)
+    app.add_api_websocket_route("/twilio/ws", twilio_websocket_endpoint)
 
     return app
 

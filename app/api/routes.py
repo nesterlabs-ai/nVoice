@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response
 from loguru import logger
 
 from app.config.loader import get_assistant_config
@@ -81,6 +81,41 @@ async def connect(request: Request) -> Dict[str, Any]:
 
     logger.info(f"Returning WebSocket URL: {ws_url} (mode: {server_mode})")
     return {"ws_url": ws_url}
+
+
+@router.post("/twilio/voice")
+async def twilio_voice(request: Request) -> Response:
+    """Twilio inbound-call webhook.
+
+    Twilio POSTs here when a call comes in to the connected phone number
+    (configure the number's "A call comes in" webhook to this URL, HTTP POST).
+    We return TwiML that connects the call's audio to our Media Streams
+    WebSocket (``/twilio/ws``) via the bidirectional ``<Connect><Stream>`` verb.
+
+    The wss:// host is derived from ``PUBLIC_URL`` (set to the ngrok URL for
+    local testing, the prod domain otherwise), falling back to the request Host
+    header. Twilio POSTs ``application/x-www-form-urlencoded``; the body is not
+    needed for basic inbound routing.
+    """
+    public_url = os.getenv("PUBLIC_URL", "")
+    host = (
+        (public_url or f"https://{request.headers.get('host', '')}")
+        .replace("https://", "")
+        .replace("http://", "")
+        .rstrip("/")
+    )
+    ws_url = f"wss://{host}/twilio/ws"
+    logger.info(f"Twilio inbound call — returning stream URL: {ws_url}")
+
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Response>"
+        "<Connect>"
+        f'<Stream url="{ws_url}"/>'
+        "</Connect>"
+        "</Response>"
+    )
+    return Response(content=twiml, media_type="application/xml")
 
 
 @router.get("/status")

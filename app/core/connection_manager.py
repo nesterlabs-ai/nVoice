@@ -66,6 +66,29 @@ class ConnectionManager:
         heartbeat_task = asyncio.create_task(self._heartbeat(websocket, session_id))
         self.heartbeat_tasks[session_id] = heartbeat_task
 
+    def has_capacity(self) -> bool:
+        """Return True if a new session can be accepted under the capacity limit."""
+        return len(self.active_sessions) < self.max_sessions
+
+    def register(self, websocket: WebSocket, session_id: str) -> None:
+        """Register an already-accepted connection WITHOUT starting the JSON heartbeat.
+
+        Used by the Twilio media-stream path: that socket speaks Twilio's binary
+        media protocol and must be accepted before the "start" event can be read,
+        so the normal ``connect()`` flow (which accepts, then sends JSON ping
+        frames Twilio can't parse) does not apply here. Disconnect detection
+        relies on the media stream itself / WebSocketDisconnect instead.
+
+        Args:
+            websocket: An already-accepted FastAPI WebSocket connection
+            session_id: Unique session identifier
+        """
+        self.active_sessions[session_id] = websocket
+        logger.info(
+            f"[Session {session_id}] Registered (pre-accepted). "
+            f"Active sessions: {len(self.active_sessions)}/{self.max_sessions}"
+        )
+
     def disconnect(self, session_id: str) -> None:
         """Unregister a WebSocket connection and cleanup resources.
 
