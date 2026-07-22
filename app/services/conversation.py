@@ -18,6 +18,7 @@ from pipecat.frames.frames import TTSSpeakFrame, EndFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.xai.llm import GrokLLMService
 from pipecat.services.llm_service import FunctionCallParams, LLMService
 
 # Universal context system (pipecat 1.x)
@@ -270,6 +271,25 @@ class ConversationManager:
                     f"Initialized OpenAI LLM service: model={model}, "
                     f"max_completion_tokens={max_tokens}"
                 )
+        elif provider == "xai":
+            # xAI Grok — pipecat's native GrokLLMService (OpenAI-compatible, base
+            # URL defaults to https://api.x.ai/v1, with Grok-specific token-usage
+            # tracking). Grok is NOT a Responses-API model, so reasoning_effort
+            # does not apply. Benchmarked live: grok tool-calling + the real
+            # system prompt behave correctly, warm TTFB ~0.75s.
+            model = self.llm_config.get("model", "grok-4.20-0309-non-reasoning")
+            temperature = self.llm_config.get("temperature", 0.7)
+            max_tokens = self.llm_config.get("max_tokens", 300)
+            settings = GrokLLMService.Settings(
+                model=model,
+                temperature=temperature,
+                max_completion_tokens=max_tokens,
+            )
+            self.llm_service = GrokLLMService(api_key=api_key, settings=settings)
+            logger.info(
+                f"Initialized xAI Grok LLM service (pipecat native): model={model}, "
+                f"max_completion_tokens={max_tokens}"
+            )
         elif provider == "groq":
             # Groq — uses GroqLLMService which merges consecutive user
             # messages to prevent intermittent "Failed to call a function" errors

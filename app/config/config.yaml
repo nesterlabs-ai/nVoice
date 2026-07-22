@@ -167,16 +167,16 @@ conversation:
   question_cards_enabled: true
 
   llm:
-    provider: "openai"  # Using OpenAI
-    model: "gpt-5.5"    # was gpt-4.1 (TTFB ~1.8s — chat-model latency). gpt-5.5 with
-                        # reasoning_effort "none" targets voice-grade first-token latency.
-    api_key: "${OPENAI_API_KEY}"
-    reasoning_effort: "none"  # REQUIRED for voice: disables reasoning tokens before output.
-                              # Raise to "low" only if answer quality visibly drops.
-                              # NOTE: setting this routes the LLM through OpenAI's
-                              # /v1/responses WebSocket service (OpenAIResponsesLLMService) —
-                              # chat completions rejects reasoning_effort + function tools.
-                              # Unset it to fall back to plain chat completions.
+    # HOTPATCH 2026-07-22: switched from OpenAI gpt-5.5 to xAI Grok after the
+    # prod OpenAI account hit insufficient_quota (billing) and every LLM turn
+    # failed. Grok is OpenAI-compatible (pipecat native GrokLLMService), faster
+    # (warm TTFB ~0.75s), and on a separate account. To revert: provider
+    # "openai" + model "gpt-5.5" + api_key ${OPENAI_API_KEY} + reasoning_effort "none".
+    provider: "xai"  # xAI Grok via pipecat GrokLLMService (endpoint https://api.x.ai/v1)
+    model: "grok-4.20-0309-non-reasoning"
+    api_key: "${XAI_API_KEY}"
+    # reasoning_effort intentionally omitted: Grok is not a Responses-API model;
+    # the xai branch uses the plain chat-completions path.
     temperature: 0.7  # Balanced - natural but focused responses
     max_tokens: 160   # was 300 (and previously not even applied) — ~2-4 spoken sentences.
                       # Hard cap backs up the prompt's brevity rules; mapped to
