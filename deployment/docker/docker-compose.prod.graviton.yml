@@ -52,9 +52,11 @@ services:
       # Rotating keys — passed straight from the deploy shell env (GitHub
       # secrets) so they cannot be clobbered by any .env regeneration on the box.
       # environment: overrides env_file, so these always win. XAI_API_KEY is the
-      # LLM (hotpatched to Grok); CARTESIA_API_KEY is the TTS.
+      # LLM (hotpatched to Grok); CARTESIA_API_KEY is the TTS; DEEPGRAM_API_KEY
+      # is the STT.
       - XAI_API_KEY=${XAI_API_KEY}
       - CARTESIA_API_KEY=${CARTESIA_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       # Graviton PyTorch optimizations
       - DNNL_DEFAULT_FPMATH_MODE=BF16
       - LRU_CACHE_CAPACITY=1024
