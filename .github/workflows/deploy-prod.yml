@@ -174,11 +174,12 @@ jobs:
           TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
           TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          CARTESIA_API_KEY: ${{ secrets.CARTESIA_API_KEY }}
         with:
           host: ${{ secrets.PROD_HOST }}
           username: ec2-user
           key: ${{ secrets.PROD_SSH_KEY }}
-          envs: TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN,XAI_API_KEY
+          envs: TWILIO_ACCOUNT_SID,TWILIO_AUTH_TOKEN,XAI_API_KEY,CARTESIA_API_KEY
           script: |
             set -e
             echo "=== Starting production deployment ==="

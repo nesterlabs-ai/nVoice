@@ -49,10 +49,12 @@ services:
     env_file:
       - .env
     environment:
-      # LLM key — passed straight from the deploy shell env (GitHub secret) so it
-      # cannot be clobbered by any .env regeneration on the box. The backend was
-      # hotpatched to xAI Grok (conversation.llm.api_key = ${XAI_API_KEY}).
+      # Rotating keys — passed straight from the deploy shell env (GitHub
+      # secrets) so they cannot be clobbered by any .env regeneration on the box.
+      # environment: overrides env_file, so these always win. XAI_API_KEY is the
+      # LLM (hotpatched to Grok); CARTESIA_API_KEY is the TTS.
       - XAI_API_KEY=${XAI_API_KEY}
+      - CARTESIA_API_KEY=${CARTESIA_API_KEY}
       # Graviton PyTorch optimizations
       - DNNL_DEFAULT_FPMATH_MODE=BF16
       - LRU_CACHE_CAPACITY=1024
