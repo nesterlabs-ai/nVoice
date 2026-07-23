@@ -336,15 +336,26 @@ class VoiceAssistant:
         else:
             logger.info("🛡️ SmartInterruptionProcessor DISABLED - not added to pipeline")
 
+        # Guardrail runtime controller (Phase 1): two roles sharing per-session
+        # state on the conversation manager. `inject` runs before the aggregator
+        # to drive loop-proof crisis escalation on each user turn; `end` runs after
+        # the LLM to deterministically close the call once escalation reaches the
+        # final round. See app/processors/safety_controller.py.
+        from app.processors.safety_controller import SafetyController
+        safety_inject = SafetyController(self.conversation_manager, role="inject")
+        safety_end = SafetyController(self.conversation_manager, role="end")
+
         # Continue with rest of pipeline
         # Greeting-mute is now enforced inside context_aggregator.user() via
         # MuteUntilFirstBotCompleteUserMuteStrategy (pipecat 1.x).
         pipeline_processors.extend([
             self.tone_processor,          # AFTER STT to receive both audio AND transcriptions for hybrid mode
             self.question_card_processor,  # Inject latest-question house answer guidance before LLM context
+            safety_inject,                # Drive crisis escalation on the user turn (before context)
             context_aggregator.user(),    # Context aggregator (receives only unmuted frames)
             self.rtvi,
             llm,
+            safety_end,                   # Deterministically close the call after a final-round safety turn
             self.visual_hint_processor,   # Stream text and detect content for visual cards
             self.text_filter,             # Remove markdown before TTS
             # SentenceAggregator intentionally omitted: Cartesia's CartesiaTTSService

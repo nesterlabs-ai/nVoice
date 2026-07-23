@@ -167,6 +167,14 @@ class ConversationManager:
         self._rtvi_processor = None
         self._conversation_ending = False
 
+        # Guardrail runtime state — shared with the SafetyController processors.
+        # safety_mode/round/severity drive the loop-proof crisis escalation;
+        # pending_end arms the deterministic close; offtopic_count paces declines.
+        self._guardrail_state = {
+            "safety_mode": False, "round": 0, "severity": None,
+            "pending_end": False, "offtopic_count": 0,
+        }
+
         # A2UI integration
         self._a2ui_enabled = a2ui_enabled and A2UI_AVAILABLE
         self._a2ui_rag_service: Optional[A2UIRAGService] = None
@@ -318,6 +326,8 @@ class ConversationManager:
         self.llm_service.register_function("end_conversation", self._handle_end_conversation)
         self.llm_service.register_function("start_appointment_booking", self._handle_start_booking)
         self.llm_service.register_function("submit_appointment", self._handle_submit_appointment)
+        self.llm_service.register_function("report_safety_concern", self._handle_safety_concern)
+        self.llm_service.register_function("report_off_topic", self._handle_off_topic)
 
         return self.llm_service
 
@@ -546,15 +556,29 @@ class ConversationManager:
             logger.warning("⚠️ end_conversation called while already ending — ignoring")
             await params.result_callback("")
             return
+        # Return empty response so the LLM adds no extra text; farewell is TTS'd.
+        await params.result_callback("")
+        await self.trigger_session_end(
+            lambda f, d: params.llm.push_frame(f, d), speak_farewell=True
+        )
+
+    async def trigger_session_end(self, push_frame_fn, speak_farewell: bool = True) -> None:
+        """Deterministically end the session: notify the UI, optionally speak a
+        farewell, wait for TTS playback, then push EndFrame upstream.
+
+        Reusable by BOTH the end_conversation tool handler (speak_farewell=True)
+        and the SafetyController's runtime close (speak_farewell=False — the model
+        already spoke the final caring line). `push_frame_fn(frame, direction)`
+        pushes from the caller's own place in the pipeline.
+        """
+        import asyncio
+        import random
+
         self._conversation_ending = True
 
-        # NOTE: pipecat 1.x PipelineParams is immutable (pydantic), so runtime
-        # toggling of allow_interruptions is no longer possible. Farewell
-        # protection now comes from MinWordsUserTurnStartStrategy (2 real words
-        # needed to barge in during bot speech), which filters the background
-        # noise this toggle used to guard against.
-
-        # Signal frontend that session is ending so it can show the "session ended" UI
+        # NOTE: pipecat 1.x PipelineParams is immutable, so allow_interruptions
+        # can't be toggled at runtime; MinWordsUserTurnStartStrategy protects the
+        # farewell from background-noise barge-in.
         if self._rtvi_processor:
             try:
                 from pipecat.processors.frameworks.rtvi import RTVIServerMessageFrame
@@ -565,30 +589,61 @@ class ConversationManager:
             except Exception as e:
                 logger.warning(f"Could not send conversation_ending signal: {e}")
 
-        # Pick a varied farewell from a pool — sounds more natural than a single hardcoded line
-        farewell_options = [
-            "It was great chatting with you! Hope to connect again soon — take care!",
-            "Thanks for stopping by. Best of luck with your project!",
-            "Really enjoyed talking through this with you. Best of luck!",
-            "Thanks for the conversation! Reach out anytime — goodbye for now.",
-        ]
-        farewell_message = random.choice(farewell_options)
-        logger.info(f"📢 Pushing farewell message to TTS: '{farewell_message}'")
+        if speak_farewell and self.tts_service:
+            farewell = random.choice([
+                "It was great chatting with you! Hope to connect again soon — take care!",
+                "Thanks for stopping by. Best of luck with your project!",
+                "Really enjoyed talking through this with you. Best of luck!",
+                "Thanks for the conversation! Reach out anytime — goodbye for now.",
+            ])
+            logger.info(f"📢 Pushing farewell message to TTS: '{farewell}'")
+            await self.tts_service.queue_frame(TTSSpeakFrame(farewell))
 
-        if self.tts_service:
-            await self.tts_service.queue_frame(TTSSpeakFrame(farewell_message))
-
-        # Return empty response so LLM does not generate additional text
-        await params.result_callback("")
-
-        # Wait for TTS generation + playback (~1s gen + ~2.5s playback = 3.5s)
-        logger.info("⏳ Waiting 3.5 seconds for farewell TTS to complete...")
+        # Wait for TTS generation + playback (~1s gen + ~2.5s playback).
+        logger.info("⏳ Waiting 3.5s for final TTS to complete before EndFrame...")
         await asyncio.sleep(3.5)
-        logger.info("✅ Wait complete, sending EndFrame")
-
-        # Push EndFrame upstream to terminate the session
-        await params.llm.push_frame(EndFrame(), FrameDirection.UPSTREAM)
+        await push_frame_fn(EndFrame(), FrameDirection.UPSTREAM)
         logger.info("🛑 EndFrame sent - session will terminate")
+
+    async def _handle_safety_concern(self, params: FunctionCallParams) -> None:
+        """Guardrail tool: the caller expressed a safety concern.
+
+        Enters safety mode (first detection) and returns the round-1 directive.
+        All subsequent escalation/close is driven by the SafetyController from
+        app.services.safety_policy — NOT by the model re-calling this tool.
+        """
+        from app.services.safety_policy import decide, severity_of
+
+        args = params.arguments or {}
+        category = args.get("category", "distress")
+        st = self._guardrail_state
+        if not st["safety_mode"]:
+            st["safety_mode"] = True
+            st["severity"] = severity_of(category)
+            st["round"] = 1
+            logger.warning(f"🛟 Safety mode ENTERED: category={category} severity={st['severity']}")
+        action, directive = decide(st["severity"], st["round"])
+        if action == "final_end":
+            st["pending_end"] = True
+        try:
+            from app.services.cloudwatch_metrics import emit_safety_event
+            import asyncio
+            asyncio.get_running_loop().create_task(
+                asyncio.to_thread(emit_safety_event, st["severity"], st["round"], action)
+            )
+        except Exception:
+            pass
+        await params.result_callback({"instruction": directive})
+
+    async def _handle_off_topic(self, params: FunctionCallParams) -> None:
+        """Guardrail tool: the caller asked for something outside NesterLabs."""
+        from app.services.safety_policy import decide_offtopic
+
+        st = self._guardrail_state
+        st["offtopic_count"] += 1
+        _, directive = decide_offtopic(st["offtopic_count"])
+        logger.info(f"🧭 Off-topic #{st['offtopic_count']} — steering back to NesterLabs")
+        await params.result_callback({"instruction": directive})
 
     async def _handle_start_booking(self, params: FunctionCallParams) -> None:
         """Handle start appointment booking function call.
@@ -730,11 +785,61 @@ class ConversationManager:
             required=["first_name", "last_name", "email"],
         )
 
+        # Guardrail tools (Phase 1): the model DETECTS and calls; the runtime
+        # SafetyController owns escalation/disengagement (see safety_policy.py).
+        report_safety_function = FunctionSchema(
+            name="report_safety_concern",
+            description=(
+                "Call this the MOMENT the caller expresses a GENUINE safety matter: "
+                "self-harm, suicide, abuse, violence, a weapon, a medical or safety "
+                "emergency, or ACUTE emotional distress (hopelessness, 'I can't go on'), "
+                "in ANY language. Do NOT use it for ordinary sadness or frustration, and "
+                "NEVER for off-topic requests (use report_off_topic for those). After "
+                "calling it, say ONLY what its returned instruction tells you."
+            ),
+            properties={
+                "category": {
+                    "type": "string",
+                    "enum": ["self_harm", "abuse", "violence", "medical", "distress"],
+                    "description": "The kind of safety concern detected.",
+                },
+                "language": {
+                    "type": "string",
+                    "enum": ["en", "es", "other"],
+                    "description": "The language the caller is speaking.",
+                },
+            },
+            required=["category", "language"],
+        )
+
+        report_offtopic_function = FunctionSchema(
+            name="report_off_topic",
+            description=(
+                "Call ONLY when the caller clearly asks for something UNRELATED to "
+                "NesterLabs — trivia, weather, news, sports, coding help, math, "
+                "translation, or general medical/legal/financial/personal advice, "
+                "roleplay, or a persona change. NEVER call it for questions about "
+                "NesterLabs, what we do or build, voice or agentic AI, our capabilities, "
+                "technology, reliability, security, process, timeline, or pricing — those "
+                "ARE your job; answer them directly. NOT for safety matters (use "
+                "report_safety_concern). After calling it, say ONLY the returned instruction."
+            ),
+            properties={
+                "topic": {
+                    "type": "string",
+                    "description": "Short description of the off-topic request.",
+                },
+            },
+            required=["topic"],
+        )
+
         return ToolsSchema(standard_tools=[
             rag_function,
             end_conversation_function,
             start_booking_function,
-            submit_appointment_function
+            submit_appointment_function,
+            report_safety_function,
+            report_offtopic_function,
         ])
 
     def create_context(self) -> LLMContext:

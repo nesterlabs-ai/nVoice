@@ -163,4 +163,12 @@ class NesterQuestionCardRouter:
                 "Because at least one matched card disables discovery, do not end with a broad discovery question. Only ask for a missing detail if it is essential to answer the user's exact question."
             )
 
+        # RAG suppression at the point of highest salience: a matched card means the
+        # question is already covered, so answering from it must beat the model's
+        # instinct to fetch "deeper specifics" via call_rag_system.
+        sections.append(
+            "This card covers the question. Answer directly from this guidance and do NOT "
+            "call call_rag_system this turn."
+        )
+
         return "\n".join(sections)

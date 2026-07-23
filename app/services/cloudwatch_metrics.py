@@ -145,6 +145,20 @@ def emit_rag_call(session_id: str, latency_ms: float, success: bool = True):
         _put_metric("RAGErrors", 1, "Count", dims)
 
 
+def emit_safety_event(severity: str, round_n: int, action: str):
+    """Emit a guardrail safety-handoff metric (observability for the crisis path).
+
+    One data point per safety turn — lets us see how often the safety guardrail
+    fires in production and at what severity, which prose guardrails never surfaced.
+    """
+    dims = [
+        {"Name": "Environment", "Value": os.getenv("ENVIRONMENT", "production")},
+        {"Name": "Severity", "Value": severity},
+        {"Name": "Action", "Value": action},
+    ]
+    _put_metric("SafetyHandoff", 1, "Count", dims)
+
+
 def emit_tts_latency(latency_ms: float):
     """Emit TTS latency metric."""
     dims = [{"Name": "Environment", "Value": os.getenv("ENVIRONMENT", "production")}]
